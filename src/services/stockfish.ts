@@ -103,6 +103,28 @@ export async function evaluatePosition(fen: string, depth = 10): Promise<EvalRes
   return runExclusive(() => evaluateOne(engine, fen, depth));
 }
 
+// Returns the best move for a position as { from, to } squares.
+export async function getBestMove(fen: string, depth = 6): Promise<{ from: string; to: string } | null> {
+  const engine = await getEngine();
+  return runExclusive(() => new Promise<{ from: string; to: string } | null>((resolve) => {
+    let settled = false;
+    const finish = (uciMove: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      engine.listener = null;
+      if (!uciMove || uciMove === "(none)") { resolve(null); return; }
+      resolve({ from: uciMove.slice(0, 2), to: uciMove.slice(2, 4) });
+    };
+    const timer = setTimeout(() => finish(null), 3000);
+    engine.listener = (line: string) => {
+      if (line.startsWith("bestmove")) finish(line.split(" ")[1] ?? null);
+    };
+    engine.sendCommand("position fen " + fen);
+    engine.sendCommand("go depth " + depth);
+  }));
+}
+
 // Evaluates multiple FENs sequentially on the shared engine.
 export async function analyzeAllFens(
   fens: string[],

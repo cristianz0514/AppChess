@@ -294,31 +294,49 @@ function MoveTable({ moves, idx, onGo, compact }: {
 
 // ── Insight card ──────────────────────────────────────────────────────────────
 
-function InsightCard({ move }: { move: MoveInfo | null }) {
+function InsightCard({ move, onShowBestMove, loadingBestMove }: {
+  move: MoveInfo | null;
+  onShowBestMove?: () => void;
+  loadingBestMove?: boolean;
+}) {
   if (!move?.classification || !["blunder", "mistake"].includes(move.classification)) return null;
   const col = CLASS_COLOR[move.classification] ?? "var(--bv-orange)";
   const isBlunder = move.classification === "blunder";
   return (
-    <div className="rounded-2xl p-3 flex items-start gap-3 border-l-4"
+    <div className="rounded-2xl border-l-4 overflow-hidden"
       style={{ background: "var(--card)", border: `1px solid var(--border)`, borderLeftColor: col, borderLeftWidth: 4 }}>
-      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
-        style={{ background: `${col}20` }}>
-        {isBlunder ? "⚠️" : "⚡"}
+      <div className="p-3 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
+          style={{ background: `${col}20` }}>
+          {isBlunder ? "⚠️" : "⚡"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-bold tracking-widest uppercase mb-0.5" style={{ color: col }}>
+            {isBlunder ? "Error Grave" : "Error"}
+          </p>
+          <p className="text-sm leading-snug">
+            Jugaste <span className="font-bold font-mono" style={{ color: col }}>{move.san}</span>.{" "}
+            {isBlunder
+              ? "Error crítico — revisa las amenazas del rival antes de mover."
+              : "Esta jugada cedió ventaja innecesariamente."}
+            {move.centipawnLoss != null && move.centipawnLoss > 0 && (
+              <span className="text-muted-foreground text-xs"> (−{move.centipawnLoss} cp)</span>
+            )}
+          </p>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-bold tracking-widest uppercase mb-0.5" style={{ color: col }}>
-          {isBlunder ? "Error Grave" : "Error"}
-        </p>
-        <p className="text-sm leading-snug">
-          Jugaste <span className="font-bold font-mono" style={{ color: col }}>{move.san}</span>.{" "}
-          {isBlunder
-            ? "Error crítico — revisa las amenazas del rival antes de mover."
-            : "Esta jugada cedió ventaja innecesariamente."}
-          {move.centipawnLoss != null && move.centipawnLoss > 0 && (
-            <span className="text-muted-foreground text-xs"> (−{move.centipawnLoss} cp)</span>
-          )}
-        </p>
-      </div>
+      {onShowBestMove && (
+        <div className="border-t" style={{ borderColor: "var(--border)" }}>
+          <button
+            onClick={onShowBestMove}
+            disabled={loadingBestMove}
+            className="w-full py-2 text-xs font-bold transition-colors disabled:opacity-50"
+            style={{ color: "var(--bv-green)" }}
+          >
+            {loadingBestMove ? "Calculando…" : "✨ Ver mejor jugada"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -394,7 +412,64 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     }
   }
 
+  // Best move arrow state
+  const [bestMoveArrow, setBestMoveArrow] = useState<Arrow | null>(null);
+  const [loadingBestMove, setLoadingBestMove] = useState(false);
+
+  // Exploration mode state (free interactive moves from any position)
+  const [exploreFens, setExploreFens] = useState<string[]>([]);
+  const [exploreMoves, setExploreMoves] = useState<Array<{ from: string; to: string }>>([]);
+  const [exploreIdx, setExploreIdx] = useState(0);
+  const inExplore = exploreFens.length > 0;
+  const currentExploreFen = inExplore ? exploreFens[exploreIdx] : null;
+  const exploreLastMove = inExplore && exploreIdx > 0 ? exploreMoves[exploreIdx - 1] : null;
+
+  function enterExplore() {
+    setBestMoveArrow(null);
+    setExploreFens([currentFen]);
+    setExploreMoves([]);
+    setExploreIdx(0);
+  }
+
+  function exitExplore() {
+    setExploreFens([]);
+    setExploreMoves([]);
+    setExploreIdx(0);
+  }
+
+  function handleExploreMove(from: string, to: string) {
+    const fen = exploreFens[exploreIdx];
+    const chess = new Chess(fen);
+    try {
+      const m = chess.move({ from, to, promotion: "q" });
+      if (!m) return;
+    } catch { return; }
+    const newFen = chess.fen();
+    const slicedFens = exploreFens.slice(0, exploreIdx + 1);
+    const slicedMoves = exploreMoves.slice(0, exploreIdx);
+    setExploreFens([...slicedFens, newFen]);
+    setExploreMoves([...slicedMoves, { from, to }]);
+    setExploreIdx(exploreIdx + 1);
+  }
+
+  async function fetchBestMove(blunderIdx: number) {
+    const beforeFen = blunderIdx > 0 ? moves[blunderIdx - 1].fen : new Chess().fen();
+    setLoadingBestMove(true);
+    setBestMoveArrow(null);
+    // Navigate to position before the blunder so the arrow makes sense visually
+    setIdx(Math.max(-1, blunderIdx - 1));
+    try {
+      const r = await fetch(`/api/bestmove?fen=${encodeURIComponent(beforeFen)}`);
+      if (r.ok) {
+        const data = await r.json();
+        if (data.from && data.to) setBestMoveArrow({ from: data.from, to: data.to, color: "green" });
+      }
+    } catch {}
+    setLoadingBestMove(false);
+  }
+
   const go = useCallback((n: number) => {
+    setBestMoveArrow(null);
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
   }, [moves.length]);
 
@@ -443,16 +518,65 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         <>
           {/* Board + eval bar */}
           <div className="flex gap-2 items-stretch">
-            <EvalBar moves={moves} idx={idx} />
-            <div className="flex-1 min-w-0">
-              <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
+            <EvalBar moves={moves} idx={inExplore ? -1 : idx} />
+            <div className="flex-1 min-w-0 relative">
+              {/* Explore mode banner */}
+              {inExplore && (
+                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
+                  style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
+                  <span>🔍 Exploración libre</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setExploreIdx(Math.max(0, exploreIdx - 1))}
+                      disabled={exploreIdx === 0}
+                      className="px-2 py-0.5 rounded-lg text-white font-bold disabled:opacity-40 hover:bg-white/20 transition-colors">
+                      ←
+                    </button>
+                    <button
+                      onClick={() => setExploreIdx(Math.min(exploreFens.length - 1, exploreIdx + 1))}
+                      disabled={exploreIdx >= exploreFens.length - 1}
+                      className="px-2 py-0.5 rounded-lg text-white font-bold disabled:opacity-40 hover:bg-white/20 transition-colors">
+                      →
+                    </button>
+                    <button onClick={exitExplore}
+                      className="ml-1 px-2 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 transition-colors">
+                      Salir
+                    </button>
+                  </div>
+                </div>
+              )}
+              <ChessBoard
+                fen={inExplore ? currentExploreFen! : currentFen}
+                orientation={playedAs}
+                lastMove={inExplore ? exploreLastMove : lastMove}
+                arrows={!inExplore && bestMoveArrow ? [bestMoveArrow] : []}
+                interactive={inExplore}
+                onMove={inExplore ? handleExploreMove : undefined}
+              />
             </div>
           </div>
 
-          {/* Insight on current move */}
-          <InsightCard move={currentMove} />
+          {/* Explore button */}
+          {!inExplore && (
+            <button
+              onClick={enterExplore}
+              className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40"
+              style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
+              🔍 Explorar desde aquí
+            </button>
+          )}
 
-          {/* Controls */}
+          {/* Insight on current move (only when not exploring) */}
+          {!inExplore && (
+            <InsightCard
+              move={currentMove}
+              onShowBestMove={currentMove && ["blunder", "mistake"].includes(currentMove.classification ?? "") ? () => fetchBestMove(idx) : undefined}
+              loadingBestMove={loadingBestMove}
+            />
+          )}
+
+          {/* Controls (game navigation, hidden in explore mode) */}
+          {!inExplore && (
           <div className="flex items-center justify-center gap-2">
             <button
               onClick={() => go(-1)} disabled={idx <= -1}
@@ -483,11 +607,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               <ChevronsRight size={18} />
             </button>
           </div>
+          )}
 
           {/* Move indicator */}
           <p className="text-center text-[11px] text-muted-foreground">
-            {idx < 0 ? "Posición inicial" : `Jugada ${moves[idx].moveNumber} · ${moves[idx].color === "w" ? "Blancas" : "Negras"}`}
-            {" · "}{idx + 2}/{moves.length + 1}
+            {inExplore
+              ? `Exploración — jugada ${exploreIdx} desde jug. ${idx < 0 ? "inicial" : `${moves[idx].moveNumber}`}`
+              : idx < 0 ? "Posición inicial" : `Jugada ${moves[idx].moveNumber} · ${moves[idx].color === "w" ? "Blancas" : "Negras"}`}
+            {!inExplore && ` · ${idx + 2}/${moves.length + 1}`}
           </p>
 
           {/* Compact move list */}
@@ -591,11 +718,16 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                           </p>
                         </div>
                       </div>
-                      <div className="flex border-t" style={{ borderColor: "var(--border)" }}>
+                      <div className="flex border-t divide-x" style={{ borderColor: "var(--border)" }}>
                         <button onClick={() => { go(m.flatIdx); setTab("analizar"); }}
-                          className="flex-1 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors border-r"
-                          style={{ borderColor: "var(--border)" }}>
+                          className="flex-1 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors">
                           Ver en tablero
+                        </button>
+                        <button onClick={() => { fetchBestMove(m.flatIdx); setTab("analizar"); }}
+                          disabled={loadingBestMove}
+                          className="flex-1 py-2 text-xs font-bold transition-colors disabled:opacity-50"
+                          style={{ color: "var(--bv-green)" }}>
+                          ✨ Mejor jugada
                         </button>
                         <button onClick={() => startPractice(m.flatIdx)}
                           className="flex-1 py-2 text-xs font-bold transition-colors"
