@@ -1,16 +1,17 @@
+import { cache } from "react";
 import { supabase } from "@/lib/supabase";
 import type { DashboardStats, OpeningStat, Game } from "@/types";
 
-export async function getUserId(username: string): Promise<string | null> {
+export const getUserId = cache(async function(username: string): Promise<string | null> {
   const { data } = await supabase
     .from("users")
     .select("id")
     .eq("chess_username", username.toLowerCase())
     .single();
   return data?.id ?? null;
-}
+});
 
-export async function getDashboardStats(userId: string): Promise<DashboardStats> {
+export const getDashboardStats = cache(async function(userId: string): Promise<DashboardStats> {
   const { data: games } = await supabase
     .from("games")
     .select("result, accuracy, white_rating, black_rating, played_as")
@@ -42,9 +43,9 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
     avgAccuracy,
     currentRating,
   };
-}
+});
 
-export async function getTopOpenings(userId: string): Promise<OpeningStat[]> {
+export const getTopOpenings = cache(async function(userId: string): Promise<OpeningStat[]> {
   const { data } = await supabase
     .from("opening_stats")
     .select("*")
@@ -52,7 +53,7 @@ export async function getTopOpenings(userId: string): Promise<OpeningStat[]> {
     .order("games_played", { ascending: false })
     .limit(8);
   return data ?? [];
-}
+});
 
 export interface ColorStats {
   winrate: number;
@@ -167,6 +168,75 @@ export async function getExampleGames(userId: string): Promise<ExampleGamesMap> 
 
   return { tactical, time_management, opening, recurring_blunder };
 }
+
+export interface HighlightGame {
+  id: string;
+  opening: string;
+  result: "win" | "loss" | "draw";
+  accuracy: number | null;
+  errorCount: number;
+  played_as: "white" | "black";
+}
+
+export interface HighlightGames {
+  best:       HighlightGame | null;
+  worst:      HighlightGame | null;
+  mostErrors: HighlightGame | null;
+}
+
+export const getHighlightGames = cache(async function(userId: string): Promise<HighlightGames> {
+  const { data: games } = await supabase
+    .from("games")
+    .select("id, opening, result, accuracy, played_as")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (!games || games.length === 0) return { best: null, worst: null, mostErrors: null };
+
+  const ids = games.map((g) => g.id);
+
+  const { data: moveRows } = await supabase
+    .from("moves")
+    .select("game_id")
+    .in("game_id", ids)
+    .in("classification", ["blunder", "mistake"]);
+
+  const errorCount = new Map<string, number>();
+  for (const row of moveRows ?? []) {
+    errorCount.set(row.game_id, (errorCount.get(row.game_id) ?? 0) + 1);
+  }
+
+  type GameRow = { id: string; opening: string | null; result: string; accuracy: number | null; played_as: string };
+  function toHighlight(g: GameRow): HighlightGame {
+    return {
+      id: g.id,
+      opening: g.opening ?? "Apertura Desconocida",
+      result: g.result as "win" | "loss" | "draw",
+      accuracy: g.accuracy,
+      errorCount: errorCount.get(g.id) ?? 0,
+      played_as: g.played_as as "white" | "black",
+    };
+  }
+
+  // Best: highest accuracy among games with accuracy data; fallback: fewest errors
+  const withAccuracy = games.filter((g) => g.accuracy !== null);
+  const best = withAccuracy.length > 0
+    ? toHighlight(withAccuracy.reduce((a, b) => (b.accuracy! > a.accuracy! ? b : a)))
+    : toHighlight(games.reduce((a, b) => ((errorCount.get(b.id) ?? 0) < (errorCount.get(a.id) ?? 0) ? b : a)));
+
+  // Worst: lowest accuracy; fallback: most errors
+  const worst = withAccuracy.length > 0
+    ? toHighlight(withAccuracy.reduce((a, b) => (b.accuracy! < a.accuracy! ? b : a)))
+    : toHighlight(games.reduce((a, b) => ((errorCount.get(b.id) ?? 0) > (errorCount.get(a.id) ?? 0) ? b : a)));
+
+  // Most errors (blunders + mistakes combined)
+  const mostErrors = toHighlight(
+    games.reduce((a, b) => ((errorCount.get(b.id) ?? 0) > (errorCount.get(a.id) ?? 0) ? b : a))
+  );
+
+  return { best, worst, mostErrors };
+});
 
 export async function getRecentGames(userId: string, limit = 20): Promise<RecentGame[]> {
   const { data } = await supabase

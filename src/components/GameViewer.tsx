@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import { ChevronLeft, ChevronRight, Play, Pause } from "lucide-react";
@@ -88,15 +88,15 @@ function EvalBar({ moves, idx, playedAs }: { moves: MoveInfo[]; idx: number; pla
   const fillPct = Math.max(10, Math.min(90, 50 - penalty));
 
   return (
-    <div className="w-7 shrink-0 h-full rounded-xl overflow-hidden flex flex-col relative border"
-      style={{ background: "oklch(0.10 0.02 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+    <div className="w-7 shrink-0 self-stretch rounded-xl overflow-hidden flex flex-col relative border"
+      style={{ background: "var(--card)", borderColor: "var(--border)" }}>
       <div className="absolute top-2 left-0 right-0 flex justify-center">
         <span className="text-[8px] font-bold tracking-widest text-muted-foreground" style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}>
           GANANDO
         </span>
       </div>
       {/* Opponent area (top) */}
-      <div className="flex-1" style={{ background: "oklch(0.25 0.04 265)" }} />
+      <div className="flex-1" style={{ background: "var(--border)" }} />
       {/* Player fill (bottom) */}
       <div style={{ height: `${fillPct}%`, background: "var(--bv-purple)", transition: "height 0.6s ease" }} />
       <div className="absolute bottom-2 left-0 right-0 flex justify-center">
@@ -146,16 +146,16 @@ function MoveTable({ moves, idx, onGo }: { moves: MoveInfo[]; idx: number; onGo:
 
   return (
     <div className="rounded-2xl overflow-hidden border flex flex-col"
-      style={{ background: "oklch(0.10 0.02 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+      style={{ background: "var(--card)", borderColor: "var(--border)" }}>
       {/* Header */}
       <div className="grid grid-cols-7 px-4 py-2 border-b text-[10px] font-bold tracking-widest uppercase text-muted-foreground"
-        style={{ borderColor: "oklch(0.25 0.04 265)" }}>
+        style={{ borderColor: "var(--border)" }}>
         <div className="col-span-1">#</div>
         <div className="col-span-3">BLANCAS</div>
         <div className="col-span-3">NEGRAS</div>
       </div>
       {/* Rows */}
-      <div className="overflow-y-auto max-h-60 divide-y" style={{ divideColor: "oklch(0.20 0.03 265)" }}>
+      <div className="overflow-y-auto max-h-60 divide-y divide-border">
         {pairs.map(({ n, white, black }) => {
           const wi = white ? moves.indexOf(white) : -1;
           const bi = black ? moves.indexOf(black) : -1;
@@ -185,7 +185,7 @@ function InsightCard({ move }: { move: MoveInfo | null }) {
         background: "oklch(0.165 0.025 265 / 0.6)",
         backdropFilter: "blur(20px)",
         borderColor: col,
-        border: `1px solid oklch(0.25 0.04 265)`,
+        border: `1px solid var(--border)`,
         borderLeftColor: col,
         borderLeftWidth: 4,
       }}>
@@ -224,7 +224,7 @@ interface Props {
 }
 
 export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy }: Props) {
-  const moves = buildMoves(pgn, dbMoves);
+  const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
 
   const firstBlunderIdx = jumpToBlunder
     ? moves.findIndex((m) => m.classification === "blunder")
@@ -242,12 +242,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
   }, [moves.length]);
 
-  const blunderCount = moves.filter(m => m.classification === "blunder").length;
-  const mistakeCount = moves.filter(m => m.classification === "mistake").length;
+  const blunderCount = useMemo(() => moves.filter(m => m.classification === "blunder").length, [moves]);
+  const mistakeCount = useMemo(() => moves.filter(m => m.classification === "mistake").length, [moves]);
 
   if (moves.length === 0) {
     return (
-      <div className="rounded-2xl border p-8 text-center" style={{ background: "oklch(0.165 0.025 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+      <div className="rounded-2xl border p-8 text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
         <p className="text-sm text-muted-foreground">No se pudo cargar el PGN de esta partida.</p>
       </div>
     );
@@ -277,11 +277,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       </div>
 
       {/* Board row: eval bar + board */}
-      <div className="flex gap-3" style={{ height: "min(75vw, 380px)" }}>
-        <EvalBar moves={moves} idx={idx} playedAs={playedAs} />
-        <div className="flex-1">
+      <div className="flex gap-3 items-stretch">
+        <div className="flex-1 min-w-0">
           <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
         </div>
+        <EvalBar moves={moves} idx={idx} playedAs={playedAs} />
       </div>
 
       {/* AI Insight card — only shows on blunder/mistake moves */}
@@ -292,9 +292,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         <button
           onClick={() => go(idx - 1)} disabled={idx <= -1}
           className="flex-1 max-w-[130px] h-14 flex items-center justify-center gap-2 rounded-2xl border transition-all active:scale-95 disabled:opacity-30"
-          style={{ borderColor: "oklch(0.25 0.04 265)", background: "oklch(0.165 0.025 265)" }}>
+          style={{ borderColor: "var(--border)", background: "var(--card)" }}>
           <ChevronLeft size={18} />
-          <span className="text-sm font-semibold">Prev</span>
+          <span className="text-sm font-semibold">Anterior</span>
         </button>
 
         <button
@@ -307,8 +307,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         <button
           onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
           className="flex-1 max-w-[130px] h-14 flex items-center justify-center gap-2 rounded-2xl border transition-all active:scale-95 disabled:opacity-30"
-          style={{ borderColor: "oklch(0.25 0.04 265)", background: "oklch(0.165 0.025 265)" }}>
-          <span className="text-sm font-semibold">Next</span>
+          style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+          <span className="text-sm font-semibold">Siguiente</span>
           <ChevronRight size={18} />
         </button>
       </div>
@@ -319,7 +319,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       {/* Mini stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl p-4 border"
-          style={{ background: "oklch(0.165 0.025 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+          style={{ background: "var(--card)", borderColor: "var(--border)" }}>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">PRECISIÓN</p>
           <div className="flex items-end gap-2">
             <span className="text-2xl font-bold" style={{ color: "var(--bv-purple)" }}>
@@ -329,7 +329,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           </div>
         </div>
         <div className="rounded-xl p-4 border"
-          style={{ background: "oklch(0.165 0.025 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+          style={{ background: "var(--card)", borderColor: "var(--border)" }}>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">ERRORES</p>
           <div className="flex items-end gap-2">
             <span className="text-2xl font-bold" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>

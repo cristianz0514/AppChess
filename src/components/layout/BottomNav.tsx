@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Inicio",     icon: LayoutDashboard },
-  { href: "/insights",  label: "Coach",      icon: Brain },
+  { href: "/insights",  label: "Coach IA",   icon: Brain },
   null,
   { href: "/openings",  label: "Aperturas",  icon: BookOpen },
   { href: "/stats",     label: "Perfil",     icon: User },
@@ -29,7 +29,7 @@ export function BottomNav() {
                 <button
                   className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
                   style={{ background: "var(--bv-purple)" }}
-                  aria-label="Quick action"
+                  aria-label="Acción rápida"
                 >
                   <Plus size={22} strokeWidth={2.5} className="text-white" />
                 </button>

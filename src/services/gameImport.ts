@@ -10,7 +10,7 @@ export async function importGames(username: string): Promise<{
   if (!valid) throw new Error("Username not found on Chess.com");
 
   const userId = await getOrCreateUser(username);
-  const rawGames = await fetchRecentGames(username);
+  const rawGames = await fetchRecentGames(username, 200);
   const parsed = parseGames(rawGames, username);
 
   if (parsed.length === 0) return { imported: 0, userId };

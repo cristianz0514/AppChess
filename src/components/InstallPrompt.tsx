@@ -4,17 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { Zap, Home, Star, LayoutList, X } from "lucide-react";
 import { trackSession, shouldShowPrompt, dismissPrompt } from "@/lib/installTracking";
 
-// BeforeInstallPromptEvent is not in the standard TS lib
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
 const BENEFITS = [
-  { icon: Zap,        label: "Faster loading"     },
-  { icon: Home,       label: "Home screen icon"   },
-  { icon: Star,       label: "App experience"     },
-  { icon: LayoutList, label: "Quick game review"  },
+  { icon: Zap,        label: "Carga más rápida"      },
+  { icon: Home,       label: "Ícono en pantalla"      },
+  { icon: Star,       label: "Experiencia de app"     },
+  { icon: LayoutList, label: "Revisión de partidas"   },
 ];
 
 export function InstallPrompt() {
@@ -24,7 +23,6 @@ export function InstallPrompt() {
   useEffect(() => {
     trackSession();
 
-    // Already installed — nothing to show
     if (window.matchMedia("(display-mode: standalone)").matches) return;
 
     function onBeforeInstall(e: Event) {
@@ -67,26 +65,24 @@ export function InstallPrompt() {
     <div
       className="fixed bottom-[5.5rem] md:bottom-6 left-3 right-3 md:left-auto md:right-6 md:w-76 z-50 animate-in slide-in-from-bottom-4 duration-300"
       role="dialog"
-      aria-label="Install BlunderVision"
+      aria-label="Instalar BlunderVision"
     >
       <div className="bg-card border border-border rounded-2xl p-4 shadow-2xl">
 
-        {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-sm font-semibold leading-snug">Install BlunderVision</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Faster access, any time</p>
+            <p className="text-sm font-semibold leading-snug">Instalar BlunderVision</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Acceso rápido, en cualquier momento</p>
           </div>
           <button
             onClick={handleDismiss}
             className="p-1 -mt-0.5 -mr-0.5 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent/50"
-            aria-label="Dismiss"
+            aria-label="Cerrar"
           >
             <X size={14} />
           </button>
         </div>
 
-        {/* Benefits grid */}
         <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-4">
           {BENEFITS.map(({ icon: Icon, label }) => (
             <div key={label} className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -96,19 +92,18 @@ export function InstallPrompt() {
           ))}
         </div>
 
-        {/* Actions */}
         <div className="flex gap-2">
           <button
             onClick={handleInstall}
             className="flex-1 bg-foreground text-background text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
           >
-            Install app
+            Instalar app
           </button>
           <button
             onClick={handleDismiss}
             className="flex-1 text-xs text-muted-foreground py-2 rounded-xl border border-border hover:bg-accent/50 active:bg-accent/70 transition-colors"
           >
-            Not now
+            Ahora no
           </button>
         </div>
 

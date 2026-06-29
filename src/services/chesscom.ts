@@ -16,16 +16,14 @@ export interface ChessComGame {
 
 export async function fetchRecentGames(
   username: string,
-  maxGames = 50
+  maxGames = 200
 ): Promise<ChessComGame[]> {
   const now = new Date();
-  const months = [
-    { year: now.getFullYear(), month: now.getMonth() + 1 },
-    {
-      year: now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear(),
-      month: now.getMonth() === 0 ? 12 : now.getMonth(),
-    },
-  ];
+  const months: { year: number; month: number }[] = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+  }
 
   const results = await Promise.all(
     months.map(({ year, month }) =>

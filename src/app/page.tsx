@@ -33,7 +33,7 @@ export default function Home() {
       document.cookie = `bv_username=${encodeURIComponent(username.trim())}; path=/; max-age=2592000; SameSite=Lax`;
       router.push(`/dashboard`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(err instanceof Error ? err.message : "Ocurrió un error inesperado");
       setLoading(false);
     }
   }
@@ -46,23 +46,23 @@ export default function Home() {
             BlunderVision <span className="text-primary">AI</span>
           </h1>
           <p className="text-sm text-muted-foreground">
-            Chess analytics for blitz and rapid players.
+            Análisis de ajedrez para jugadores de blitz y rapid.
           </p>
         </div>
         <form onSubmit={handleImport} className="space-y-3">
           <Input
-            placeholder="Chess.com username"
+            placeholder="Usuario de Chess.com"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
           />
           <Button type="submit" className="w-full" disabled={loading || !username.trim()}>
-            {loading ? "Importing games..." : "Analyze Games"}
+            {loading ? "Importando partidas..." : "Analizar Partidas"}
           </Button>
           {error && <p className="text-xs text-destructive">{error}</p>}
         </form>
         <p className="text-xs text-muted-foreground text-center">
-          Fetches your last 50 public games. No account needed.
+          Obtiene tus últimas 200 partidas públicas. Sin registro.
         </p>
       </div>
     </main>

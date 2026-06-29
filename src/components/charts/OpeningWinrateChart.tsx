@@ -28,7 +28,7 @@ export function OpeningWinrateChart({ openings }: Props) {
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-3">
-      <h2 className="text-sm font-medium">Opening Win Rate</h2>
+      <h2 className="text-sm font-medium">Tasa de Victoria por Apertura</h2>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 40 }}>
           <XAxis
@@ -44,7 +44,7 @@ export function OpeningWinrateChart({ openings }: Props) {
             tickFormatter={(v) => `${v}%`}
           />
           <Tooltip
-            formatter={(v) => [`${v}%`, "Win rate"]}
+            formatter={(v) => [`${v}%`, "Victorias"]}
             contentStyle={{
               background: "var(--card)",
               border: "1px solid var(--border)",

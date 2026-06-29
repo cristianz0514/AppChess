@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "BlunderVision AI",
-  description: "AI Chess Analytics",
+  description: "Análisis de ajedrez con IA",
   manifest: "/manifest.json",
   themeColor: "#0B0D0F",
 };
@@ -26,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="es"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">{children}</body>

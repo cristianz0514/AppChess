@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import type { Insight } from "@/types";
 
@@ -23,6 +24,7 @@ const severityStyle: Record<Insight["severity"], { dot: string; tag: string }> =
 };
 
 export function InsightsCard({ insights: initial, username }: Props) {
+  const router = useRouter();
   const [insights, setInsights] = useState<Insight[]>(initial);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
@@ -40,7 +42,7 @@ export function InsightsCard({ insights: initial, username }: Props) {
         const data = await res.json();
         throw new Error(data.error ?? "Failed");
       }
-      window.location.reload();
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);
@@ -54,7 +56,7 @@ export function InsightsCard({ insights: initial, username }: Props) {
         <div className="flex items-center gap-2">
           <Sparkles size={14} style={{ color: "var(--bv-purple)" }} />
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-            AI Coach
+            Coach IA
           </p>
         </div>
         <button

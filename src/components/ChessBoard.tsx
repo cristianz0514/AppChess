@@ -57,8 +57,8 @@ export function ChessBoard({ fen, orientation = "white", lastMove }: Props) {
   }
 
   return (
-    <div className="w-full aspect-square rounded-2xl overflow-hidden border border-border select-none">
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", width: "100%", height: "100%" }}>
+    <div className="w-full aspect-square rounded-xl overflow-hidden select-none" style={{ border: "2px solid var(--border)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)", width: "100%", height: "100%" }}>
         {Array.from({ length: 8 }, (_, rankIdx) =>
           Array.from({ length: 8 }, (_, fileIdx) => {
             const sq = sqLabel(rankIdx, fileIdx);
@@ -67,8 +67,8 @@ export function ChessBoard({ fen, orientation = "white", lastMove }: Props) {
             const isHighlighted = highlightSquares.has(sq);
             const isWhitePiece = piece !== null && piece === piece.toUpperCase();
 
-            let bg = isDark ? "#94a3b8" : "#f1f5f9";
-            if (isHighlighted) bg = isDark ? "rgba(210,187,255,0.55)" : "rgba(210,187,255,0.35)";
+            let bg = isDark ? "#2d4a6e" : "#8ea8c3";
+            if (isHighlighted) bg = isDark ? "rgba(155,109,255,0.55)" : "rgba(155,109,255,0.40)";
 
             return (
               <div
@@ -102,7 +102,7 @@ export function ChessBoard({ fen, orientation = "white", lastMove }: Props) {
                   <span style={{
                     position: "absolute", top: 2, left: 3,
                     fontSize: "clamp(7px, 1.2vw, 10px)",
-                    color: isDark ? "#f1f5f9" : "#64748b",
+                    color: isDark ? "#c8d8e8" : "#1e3a5f",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {orientation === "white" ? 8 - rankIdx : rankIdx + 1}
@@ -113,7 +113,7 @@ export function ChessBoard({ fen, orientation = "white", lastMove }: Props) {
                   <span style={{
                     position: "absolute", bottom: 2, right: 3,
                     fontSize: "clamp(7px, 1.2vw, 10px)",
-                    color: isDark ? "#f1f5f9" : "#64748b",
+                    color: isDark ? "#c8d8e8" : "#1e3a5f",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {String.fromCharCode(97 + (orientation === "white" ? fileIdx : 7 - fileIdx))}

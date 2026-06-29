@@ -78,10 +78,10 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
       <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-4 pt-2 border-t backdrop-blur-xl"
         style={{ background: "oklch(0.115 0.025 265 / 0.85)", borderColor: "oklch(0.25 0.04 265)" }}>
         {[
-          { label: "Analizar", emoji: "📊", active: true },
-          { label: "Jugadas",  emoji: "☰",  active: false },
-          { label: "Insights", emoji: "🧠", active: false },
-          { label: "Motor",    emoji: "⚙️", active: false },
+          { label: "Analizar",  emoji: "📊", active: true },
+          { label: "Jugadas",   emoji: "☰",  active: false },
+          { label: "Consejos",  emoji: "🧠", active: false },
+          { label: "Motor",     emoji: "⚙️", active: false },
         ].map(({ label, emoji, active }) => (
           <button key={label}
             className="flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors"

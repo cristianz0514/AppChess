@@ -15,16 +15,16 @@ const COLORS = [
 
 export function ResultsPieChart({ stats }: Props) {
   const data = [
-    { name: "Wins", value: stats.wins },
-    { name: "Losses", value: stats.losses },
-    { name: "Draws", value: stats.draws },
+    { name: "Victorias", value: stats.wins },
+    { name: "Derrotas",  value: stats.losses },
+    { name: "Tablas",    value: stats.draws },
   ].filter((d) => d.value > 0);
 
   if (data.length === 0) return null;
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-3">
-      <h2 className="text-sm font-medium">Results Breakdown</h2>
+      <h2 className="text-sm font-medium">Distribución de Resultados</h2>
       <ResponsiveContainer width="100%" height={220}>
         <PieChart>
           <Pie
@@ -41,7 +41,7 @@ export function ResultsPieChart({ stats }: Props) {
             ))}
           </Pie>
           <Tooltip
-            formatter={(v) => [v, "Games"]}
+            formatter={(v) => [v, "Partidas"]}
             contentStyle={{
               background: "var(--card)",
               border: "1px solid var(--border)",
