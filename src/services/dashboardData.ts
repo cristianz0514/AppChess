@@ -100,60 +100,72 @@ export interface RecentGame {
   created_at: string;
 }
 
-// Returns one "example game" per insight category — the game most relevant to each pattern.
-export async function getExampleGames(userId: string): Promise<{
-  tactical: string | null;
-  time_management: string | null;
-  opening: string | null;
-  recurring_blunder: string | null;
-}> {
+export interface ExampleGame {
+  id: string;
+  opening: string;
+  result: "win" | "loss" | "draw";
+  errorCount: number;
+}
+
+export interface ExampleGamesMap {
+  tactical:          ExampleGame[];
+  time_management:   ExampleGame[];
+  opening:           ExampleGame[];
+  recurring_blunder: ExampleGame[];
+}
+
+// Returns up to 5 representative games per insight category.
+export async function getExampleGames(userId: string): Promise<ExampleGamesMap> {
+  const empty = (): ExampleGame[] => [];
+  const emptyMap = (): ExampleGamesMap => ({
+    tactical: empty(), time_management: empty(), opening: empty(), recurring_blunder: empty(),
+  });
+
   const { data: games } = await supabase
     .from("games")
-    .select("id")
+    .select("id, opening, result")
     .eq("user_id", userId)
-    .limit(50);
+    .order("created_at", { ascending: false })
+    .limit(200);
 
-  if (!games || games.length === 0) {
-    return { tactical: null, time_management: null, opening: null, recurring_blunder: null };
-  }
+  if (!games || games.length === 0) return emptyMap();
 
   const ids = games.map((g) => g.id);
+  const gameInfo = new Map(games.map((g) => [g.id, { opening: g.opening ?? "Desconocido", result: g.result as "win" | "loss" | "draw" }]));
 
-  // Game with most blunders → tactical + recurring_blunder
-  const { data: blunderCounts } = await supabase
-    .from("moves")
-    .select("game_id")
-    .in("game_id", ids)
-    .in("classification", ["blunder", "mistake"]);
+  const [blunderRows, openingBlunderRows] = await Promise.all([
+    supabase.from("moves").select("game_id").in("game_id", ids).in("classification", ["blunder", "mistake"]),
+    supabase.from("moves").select("game_id").in("game_id", ids).eq("classification", "blunder").lte("move_number", 10),
+  ]);
 
-  const countByGame = new Map<string, number>();
-  for (const row of blunderCounts ?? []) {
-    countByGame.set(row.game_id, (countByGame.get(row.game_id) ?? 0) + 1);
+  // Count errors per game
+  const errorCount = new Map<string, number>();
+  for (const row of blunderRows.data ?? []) {
+    errorCount.set(row.game_id, (errorCount.get(row.game_id) ?? 0) + 1);
   }
-  const blunderGameId = [...countByGame.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-
-  // For time_management: game with the most moves (proxy for long scrambles — good enough without clock parse)
-  // We reuse blunderGameId since blunders often correlate with time pressure.
-  // For opening: game with worst accuracy that's in the first 15 moves blunder zone.
-  const { data: openingBlunders } = await supabase
-    .from("moves")
-    .select("game_id")
-    .in("game_id", ids)
-    .in("classification", ["blunder"])
-    .lte("move_number", 10);
-
-  const openingGameCounts = new Map<string, number>();
-  for (const row of openingBlunders ?? []) {
-    openingGameCounts.set(row.game_id, (openingGameCounts.get(row.game_id) ?? 0) + 1);
+  const openingErrorCount = new Map<string, number>();
+  for (const row of openingBlunderRows.data ?? []) {
+    openingErrorCount.set(row.game_id, (openingErrorCount.get(row.game_id) ?? 0) + 1);
   }
-  const openingGameId = [...openingGameCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? blunderGameId;
 
-  return {
-    tactical: blunderGameId,
-    time_management: blunderGameId,
-    opening: openingGameId,
-    recurring_blunder: blunderGameId,
-  };
+  function topGames(countMap: Map<string, number>, limit = 5): ExampleGame[] {
+    return [...countMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([id, count]) => ({
+        id,
+        opening: gameInfo.get(id)?.opening ?? "Desconocido",
+        result: gameInfo.get(id)?.result ?? "draw",
+        errorCount: count,
+      }));
+  }
+
+  const tactical          = topGames(errorCount);
+  const recurring_blunder = topGames(errorCount);
+  const opening           = topGames(openingErrorCount);
+  const time_management   = topGames(errorCount); // best proxy without re-parsing clocks here
+
+  return { tactical, time_management, opening, recurring_blunder };
 }
 
 export async function getRecentGames(userId: string, limit = 20): Promise<RecentGame[]> {

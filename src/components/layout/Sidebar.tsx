@@ -6,11 +6,11 @@ import { LayoutDashboard, BookOpen, Swords, Lightbulb, Settings } from "lucide-r
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/openings",  label: "Openings",  icon: BookOpen },
-  { href: "/blunders",  label: "Games",     icon: Swords },
-  { href: "/insights",  label: "Insights",  icon: Lightbulb },
-  { href: "/stats",     label: "Settings",  icon: Settings },
+  { href: "/dashboard", label: "Inicio",     icon: LayoutDashboard },
+  { href: "/openings",  label: "Aperturas",  icon: BookOpen },
+  { href: "/blunders",  label: "Partidas",   icon: Swords },
+  { href: "/insights",  label: "Coach IA",   icon: Lightbulb },
+  { href: "/stats",     label: "Perfil",     icon: Settings },
 ];
 
 export function Sidebar() {

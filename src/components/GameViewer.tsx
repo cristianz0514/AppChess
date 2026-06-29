@@ -1,79 +1,229 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Chessboard } from "react-chessboard";
 import { Chess } from "chess.js";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChessBoard } from "./ChessBoard";
+import { ChevronLeft, ChevronRight, Play, Pause } from "lucide-react";
+import type { Game } from "@/types";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface DbMove {
+  move_number: number;
+  classification: string | null;
+  centipawn_loss?: number | null;
+  evaluation?: number | null;
+}
 
 interface MoveInfo {
   san: string;
   fen: string;
   moveNumber: number;
   color: "w" | "b";
-  classification?: string | null;
+  from: string;
+  to: string;
+  classification: string | null;
+  centipawnLoss: number | null;
 }
 
-function classificationColor(c?: string | null) {
-  if (!c) return undefined;
-  const map: Record<string, string> = {
-    blunder:    "var(--bv-red)",
-    mistake:    "var(--bv-orange)",
-    inaccuracy: "#FFD700",
-    best:       "var(--bv-green)",
-    excellent:  "var(--bv-green)",
-    good:       "var(--bv-green)",
-  };
-  return map[c];
-}
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-function classificationEmoji(c?: string | null) {
-  if (!c) return "";
-  const map: Record<string, string> = {
-    blunder: "?? ", mistake: "? ", inaccuracy: "?! ",
-    best: "!!", excellent: "!", good: "",
-  };
-  return map[c] ?? "";
-}
+const CLASS_COLOR: Record<string, string> = {
+  blunder:    "#ff5757",
+  mistake:    "#ff8c42",
+  inaccuracy: "#ffd700",
+  best:       "#00d4a1",
+  excellent:  "#00d4a1",
+  good:       "#00d4a1",
+};
 
-function buildMoves(pgn: string, dbMoves?: Array<{ move_number: number; classification: string | null }>): MoveInfo[] {
-  const chess = new Chess();
-  try { chess.loadPgn(pgn); } catch { return []; }
+const CLASS_LABEL: Record<string, string> = {
+  blunder:    "Error grave",
+  mistake:    "Error",
+  inaccuracy: "Inexactitud",
+  best:       "Mejor jugada",
+  excellent:  "Excelente",
+  good:       "Buena",
+};
 
-  const history = chess.history({ verbose: true });
-  const classMap = new Map<string, string | null>();
-  if (dbMoves) {
-    for (const m of dbMoves) {
-      classMap.set(String(m.move_number), m.classification);
-    }
-  }
+const CLASS_EMOJI: Record<string, string> = {
+  blunder: "??", mistake: "?", inaccuracy: "?!", best: "!!", excellent: "!", good: "",
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
+  const classMap = new Map<number, DbMove>();
+  for (const m of dbMoves) classMap.set(m.move_number, m);
+
+  const master = new Chess();
+  try { master.loadPgn(pgn); } catch { return []; }
+  const history = master.history({ verbose: true });
 
   const game = new Chess();
-  const moves: MoveInfo[] = [];
-
-  for (let i = 0; i < history.length; i++) {
-    const h = history[i];
+  return history.map((h, i) => {
     game.move(h.san);
-    const moveNumber = Math.floor(i / 2) + 1;
-    moves.push({
+    const db = classMap.get(i + 1);
+    return {
       san: h.san,
       fen: game.fen(),
-      moveNumber,
-      color: h.color,
-      classification: classMap.get(String(i + 1)) ?? null,
-    });
+      moveNumber: Math.floor(i / 2) + 1,
+      color: h.color as "w" | "b",
+      from: h.from,
+      to: h.to,
+      classification: db?.classification ?? null,
+      centipawnLoss: db?.centipawn_loss ?? null,
+    };
+  });
+}
+
+// ── Eval bar ──────────────────────────────────────────────────────────────────
+// Shows a simple vertical fill: top = opponent advantage, bottom = player advantage
+function EvalBar({ moves, idx, playedAs }: { moves: MoveInfo[]; idx: number; playedAs: "white" | "black" }) {
+  const blundersBefore = moves.slice(0, idx + 1).filter(m => m.classification === "blunder").length;
+  const mistakesBefore = moves.slice(0, idx + 1).filter(m => m.classification === "mistake").length;
+  // Rough heuristic: each blunder = -10%, each mistake = -5%
+  const penalty = blundersBefore * 10 + mistakesBefore * 5;
+  // Player fill %: starts at 50, loses with blunders
+  const fillPct = Math.max(10, Math.min(90, 50 - penalty));
+
+  return (
+    <div className="w-7 shrink-0 h-full rounded-xl overflow-hidden flex flex-col relative border"
+      style={{ background: "oklch(0.10 0.02 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+      <div className="absolute top-2 left-0 right-0 flex justify-center">
+        <span className="text-[8px] font-bold tracking-widest text-muted-foreground" style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}>
+          GANANDO
+        </span>
+      </div>
+      {/* Opponent area (top) */}
+      <div className="flex-1" style={{ background: "oklch(0.25 0.04 265)" }} />
+      {/* Player fill (bottom) */}
+      <div style={{ height: `${fillPct}%`, background: "var(--bv-purple)", transition: "height 0.6s ease" }} />
+      <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+        <span className="text-[8px] font-bold tracking-widest text-muted-foreground" style={{ writingMode: "vertical-lr" }}>
+          PERDIENDO
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Move History Table ────────────────────────────────────────────────────────
+
+function MoveTable({ moves, idx, onGo }: { moves: MoveInfo[]; idx: number; onGo: (n: number) => void }) {
+  // Group moves into pairs: [white, black]
+  const pairs: Array<{ n: number; white: MoveInfo | null; black: MoveInfo | null }> = [];
+  for (let i = 0; i < moves.length; i += 2) {
+    pairs.push({ n: moves[i].moveNumber, white: moves[i] ?? null, black: moves[i + 1] ?? null });
   }
 
-  return moves;
+  function MoveCell({ m, flatIdx }: { m: MoveInfo | null; flatIdx: number }) {
+    if (!m) return <div className="col-span-3 text-muted-foreground opacity-40">…</div>;
+    const isActive = flatIdx === idx;
+    const col = m.classification ? CLASS_COLOR[m.classification] : undefined;
+    const emoji = m.classification ? CLASS_EMOJI[m.classification] ?? "" : "";
+    return (
+      <div
+        className="col-span-3 flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 transition-colors"
+        style={{
+          background: isActive ? "oklch(0.61 0.22 285 / 0.25)" : m.classification === "blunder" ? "oklch(0.63 0.23 25 / 0.08)" : "transparent",
+          borderLeft: isActive ? "2px solid var(--bv-purple)" : m.classification === "blunder" ? "2px solid var(--bv-red)" : "2px solid transparent",
+          color: col ?? "var(--foreground)",
+          fontWeight: m.classification ? 700 : 400,
+        }}
+        onClick={() => onGo(flatIdx)}
+      >
+        <span className="font-mono text-xs">{emoji && <span>{emoji} </span>}{m.san}</span>
+        {m.classification && (
+          <span className="text-[9px] px-1 rounded font-bold ml-auto shrink-0"
+            style={{ background: `${col}22`, color: col }}>
+            {CLASS_LABEL[m.classification]}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl overflow-hidden border flex flex-col"
+      style={{ background: "oklch(0.10 0.02 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+      {/* Header */}
+      <div className="grid grid-cols-7 px-4 py-2 border-b text-[10px] font-bold tracking-widest uppercase text-muted-foreground"
+        style={{ borderColor: "oklch(0.25 0.04 265)" }}>
+        <div className="col-span-1">#</div>
+        <div className="col-span-3">BLANCAS</div>
+        <div className="col-span-3">NEGRAS</div>
+      </div>
+      {/* Rows */}
+      <div className="overflow-y-auto max-h-60 divide-y" style={{ divideColor: "oklch(0.20 0.03 265)" }}>
+        {pairs.map(({ n, white, black }) => {
+          const wi = white ? moves.indexOf(white) : -1;
+          const bi = black ? moves.indexOf(black) : -1;
+          return (
+            <div key={n} className="grid grid-cols-7 px-3 py-1.5 text-xs font-mono items-center"
+              style={{ borderBottomColor: "oklch(0.20 0.03 265)" }}>
+              <div className="col-span-1 text-muted-foreground text-[11px]">{n}</div>
+              <MoveCell m={white} flatIdx={wi} />
+              <MoveCell m={black} flatIdx={bi} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
+
+// ── Master Insight card ───────────────────────────────────────────────────────
+
+function InsightCard({ move }: { move: MoveInfo | null }) {
+  if (!move?.classification || !["blunder", "mistake"].includes(move.classification)) return null;
+  const col = CLASS_COLOR[move.classification] ?? "var(--bv-orange)";
+  const isBlunder = move.classification === "blunder";
+  return (
+    <div className="rounded-2xl p-4 flex items-start gap-3 border-l-4"
+      style={{
+        background: "oklch(0.165 0.025 265 / 0.6)",
+        backdropFilter: "blur(20px)",
+        borderColor: col,
+        border: `1px solid oklch(0.25 0.04 265)`,
+        borderLeftColor: col,
+        borderLeftWidth: 4,
+      }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl"
+        style={{ background: `${col}20` }}>
+        {isBlunder ? "⚠️" : "⚡"}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-bold tracking-widest uppercase mb-1" style={{ color: col }}>
+          {isBlunder ? "Error Grave" : "Punto de Quiebre"}
+        </p>
+        <p className="text-sm leading-relaxed text-foreground">
+          Jugaste <span className="font-bold font-mono" style={{ color: col }}>{move.san}</span>.{" "}
+          {isBlunder
+            ? "Este fue el error más crítico. Considera las amenazas del rival antes de cada jugada."
+            : "Esta jugada cedió ventaja innecesariamente en esta posición."}
+          {move.centipawnLoss && move.centipawnLoss > 0 && (
+            <span className="text-muted-foreground"> ({move.centipawnLoss} centipeones perdidos)</span>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
 
 interface Props {
   pgn: string;
   playedAs: "white" | "black";
-  dbMoves?: Array<{ move_number: number; classification: string | null }>;
+  dbMoves: DbMove[];
   jumpToBlunder?: boolean;
+  gameResult?: Game["result"];
+  opening?: string;
+  accuracy?: number | null;
 }
 
-export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder }: Props) {
+export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy }: Props) {
   const moves = buildMoves(pgn, dbMoves);
 
   const firstBlunderIdx = jumpToBlunder
@@ -81,93 +231,117 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder }: Props) {
     : -1;
 
   const [idx, setIdx] = useState(firstBlunderIdx >= 0 ? firstBlunderIdx : moves.length - 1);
+  const [playing, setPlaying] = useState(false);
 
-  const currentFen = idx >= 0 ? moves[idx].fen : new Chess().fen();
-  const currentMove = idx >= 0 ? moves[idx] : null;
+  const startFen = new Chess().fen();
+  const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
+  const currentMove = idx >= 0 ? moves[idx]       : null;
+  const lastMove    = currentMove ? { from: currentMove.from, to: currentMove.to } : null;
 
-  const go = useCallback((n: number) => setIdx(Math.max(-1, Math.min(moves.length - 1, n))), [moves.length]);
+  const go = useCallback((n: number) => {
+    setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
+  }, [moves.length]);
 
-  // Highlight blunders on board
-  const customSquareStyles: Record<string, React.CSSProperties> = {};
-  if (currentMove?.classification === "blunder") {
-    // The move destination square — we just tint the whole board differently via a border
+  const blunderCount = moves.filter(m => m.classification === "blunder").length;
+  const mistakeCount = moves.filter(m => m.classification === "mistake").length;
+
+  if (moves.length === 0) {
+    return (
+      <div className="rounded-2xl border p-8 text-center" style={{ background: "oklch(0.165 0.025 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+        <p className="text-sm text-muted-foreground">No se pudo cargar el PGN de esta partida.</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Board */}
-      <div className="rounded-2xl overflow-hidden border border-border">
-        <Chessboard
-          key={currentFen}
-          position={currentFen}
-          boardOrientation={playedAs}
-          arePiecesDraggable={false}
-          customBoardStyle={{ borderRadius: 0 }}
-          customDarkSquareStyle={{ backgroundColor: "oklch(0.28 0.06 265)" }}
-          customLightSquareStyle={{ backgroundColor: "oklch(0.55 0.06 265)" }}
-        />
-      </div>
+    <div className="space-y-4 pt-2">
 
-      {/* Move info */}
-      {currentMove && (
-        <div className="flex items-center gap-3 px-1">
-          <div className="flex-1 min-w-0">
-            <span className="text-xs text-muted-foreground mr-1">
-              {currentMove.color === "w" ? currentMove.moveNumber + "." : currentMove.moveNumber + "..."}
-            </span>
-            <span className="text-sm font-bold">
-              {classificationEmoji(currentMove.classification)}{currentMove.san}
-            </span>
-          </div>
-          {currentMove.classification && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full capitalize"
+      {/* Opening title */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-muted-foreground">{opening}</p>
+          {gameResult && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full mt-1 inline-block"
               style={{
-                background: `${classificationColor(currentMove.classification)}22`,
-                color: classificationColor(currentMove.classification),
+                background: gameResult === "win" ? "oklch(0.77 0.17 177 / 0.2)" : gameResult === "loss" ? "oklch(0.63 0.23 25 / 0.2)" : "oklch(0.70 0.18 50 / 0.2)",
+                color: gameResult === "win" ? "var(--bv-green)" : gameResult === "loss" ? "var(--bv-red)" : "var(--bv-orange)",
               }}>
-              {currentMove.classification}
+              {gameResult === "win" ? "Victoria" : gameResult === "loss" ? "Derrota" : "Tablas"}
             </span>
           )}
         </div>
-      )}
-
-      {/* Controls */}
-      <div className="flex items-center justify-center gap-2">
-        {[
-          { icon: ChevronsLeft,  action: () => go(-1),       label: "Start" },
-          { icon: ChevronLeft,   action: () => go(idx - 1),  label: "Prev" },
-          { icon: ChevronRight,  action: () => go(idx + 1),  label: "Next" },
-          { icon: ChevronsRight, action: () => go(moves.length - 1), label: "End" },
-        ].map(({ icon: Icon, action, label }) => (
-          <button key={label} onClick={action}
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-card border border-border hover:bg-muted transition-colors"
-            aria-label={label}>
-            <Icon size={16} />
-          </button>
-        ))}
-      </div>
-
-      {/* Move list */}
-      <div className="bg-card border border-border rounded-2xl p-3 max-h-48 overflow-y-auto">
-        <div className="flex flex-wrap gap-x-2 gap-y-1">
-          {moves.map((m, i) => {
-            const isActive = i === idx;
-            const color = classificationColor(m.classification);
-            return (
-              <button key={i} onClick={() => go(i)}
-                className="text-xs px-1.5 py-0.5 rounded font-mono transition-colors"
-                style={{
-                  background: isActive ? "var(--bv-green)" : "transparent",
-                  color: isActive ? "#000" : color ?? "var(--foreground)",
-                  fontWeight: m.classification ? 700 : 400,
-                }}>
-                {m.color === "w" && `${m.moveNumber}.`}
-                {classificationEmoji(m.classification)}{m.san}
-              </button>
-            );
-          })}
+        <div className="flex gap-2 text-xs text-muted-foreground font-mono">
+          {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>??{blunderCount}</span>}
+          {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>?{mistakeCount}</span>}
         </div>
       </div>
+
+      {/* Board row: eval bar + board */}
+      <div className="flex gap-3" style={{ height: "min(75vw, 380px)" }}>
+        <EvalBar moves={moves} idx={idx} playedAs={playedAs} />
+        <div className="flex-1">
+          <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
+        </div>
+      </div>
+
+      {/* AI Insight card — only shows on blunder/mistake moves */}
+      <InsightCard move={currentMove} />
+
+      {/* Controls */}
+      <div className="flex items-center justify-center gap-4">
+        <button
+          onClick={() => go(idx - 1)} disabled={idx <= -1}
+          className="flex-1 max-w-[130px] h-14 flex items-center justify-center gap-2 rounded-2xl border transition-all active:scale-95 disabled:opacity-30"
+          style={{ borderColor: "oklch(0.25 0.04 265)", background: "oklch(0.165 0.025 265)" }}>
+          <ChevronLeft size={18} />
+          <span className="text-sm font-semibold">Prev</span>
+        </button>
+
+        <button
+          onClick={() => { setPlaying(p => !p); go(playing ? idx : Math.min(idx + 1, moves.length - 1)); }}
+          className="w-16 h-14 flex items-center justify-center rounded-2xl shadow-lg transition-all active:scale-90 hover:brightness-110"
+          style={{ background: "var(--bv-purple)" }}>
+          {playing ? <Pause size={22} className="text-white" /> : <Play size={22} className="text-white" fill="white" />}
+        </button>
+
+        <button
+          onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
+          className="flex-1 max-w-[130px] h-14 flex items-center justify-center gap-2 rounded-2xl border transition-all active:scale-95 disabled:opacity-30"
+          style={{ borderColor: "oklch(0.25 0.04 265)", background: "oklch(0.165 0.025 265)" }}>
+          <span className="text-sm font-semibold">Next</span>
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
+      {/* Move History Table */}
+      <MoveTable moves={moves} idx={idx} onGo={go} />
+
+      {/* Mini stats */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl p-4 border"
+          style={{ background: "oklch(0.165 0.025 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">PRECISIÓN</p>
+          <div className="flex items-end gap-2">
+            <span className="text-2xl font-bold" style={{ color: "var(--bv-purple)" }}>
+              {accuracy ? `${accuracy}%` : "—"}
+            </span>
+            <span className="text-sm text-muted-foreground mb-0.5">↗</span>
+          </div>
+        </div>
+        <div className="rounded-xl p-4 border"
+          style={{ background: "oklch(0.165 0.025 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">ERRORES</p>
+          <div className="flex items-end gap-2">
+            <span className="text-2xl font-bold" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
+              {blunderCount + mistakeCount}
+            </span>
+            <span className="text-sm text-muted-foreground mb-0.5">
+              {blunderCount > 0 ? "↘" : "↗"}
+            </span>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }

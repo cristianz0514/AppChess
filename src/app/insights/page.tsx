@@ -2,22 +2,50 @@ import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId, getExampleGames } from "@/services/dashboardData";
+import type { ExampleGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { Sparkles } from "lucide-react";
 import type { Insight } from "@/types";
 
 const categoryLabel: Record<Insight["category"], string> = {
-  opening:           "Opening Habit",
-  tactical:          "Tactical Pattern",
-  time_management:   "Time Pressure",
-  recurring_blunder: "Biggest Blindspot",
+  opening:           "Hábito de Apertura",
+  tactical:          "Patrón Táctico",
+  time_management:   "Gestión del Tiempo",
+  recurring_blunder: "Error Recurrente",
 };
 
+const resultLabel: Record<string, string> = {
+  win: "V", loss: "D", draw: "E",
+};
+const resultColor: Record<string, string> = {
+  win: "var(--bv-green)", loss: "var(--bv-red)", draw: "var(--bv-orange)",
+};
+
+function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: boolean }) {
+  if (games.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Partidas relacionadas</p>
+      {games.map((g) => (
+        <Link key={g.id} href={`/blunders/${g.id}${jumpBlunder ? "?blunder=1" : ""}`}
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/50">
+          <span className="text-[10px] font-bold w-4 text-center" style={{ color: resultColor[g.result] ?? "var(--foreground)" }}>
+            {resultLabel[g.result] ?? "—"}
+          </span>
+          <span className="text-xs flex-1 truncate">{g.opening}</span>
+          <span className="text-[10px] text-muted-foreground shrink-0">{g.errorCount} error{g.errorCount !== 1 ? "es" : ""}</span>
+          <span className="text-muted-foreground text-xs">›</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 const coachRecommends = [
-  { icon: "⏱", title: "Clock Discipline",  desc: "Practice with 10-min rapid games." },
-  { icon: "♟", title: "Pawn Endgames",     desc: "Study king & pawn vs king positions." },
-  { icon: "📖", title: "Opening Theory",    desc: "Review your critical openings." },
+  { icon: "⏱", title: "Disciplina con el reloj", desc: "Practica con partidas rápidas de 10 min." },
+  { icon: "♟", title: "Finales de peones",       desc: "Estudia posiciones de rey y peón vs rey." },
+  { icon: "📖", title: "Teoría de aperturas",    desc: "Repasa tus aperturas críticas." },
 ];
 
 export default async function InsightsPage() {
@@ -33,79 +61,70 @@ export default async function InsightsPage() {
   const featured = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
   const rest      = insights.filter((i) => i !== featured);
 
-  function gameLink(category: Insight["category"]) {
-    const id = exampleGames[category];
-    if (!id) return null;
-    const jumpBlunder = category === "tactical" || category === "recurring_blunder";
-    return `/blunders/${id}${jumpBlunder ? "?blunder=1" : ""}`;
-  }
-
   return (
     <AppLayout username={username}>
       <div className="space-y-4 max-w-lg mx-auto">
 
-        {/* Greeting */}
+        {/* Saludo */}
         <div>
-          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">AI Coach</p>
-          <h1 className="text-xl font-bold mt-0.5">Good day, <span className="capitalize">{username}</span>.</h1>
+          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Coach IA</p>
+          <h1 className="text-xl font-bold mt-0.5">Hola, <span className="capitalize">{username}</span>.</h1>
           {insights.length > 0 && (
             <p className="text-sm text-muted-foreground mt-1">
-              I&apos;ve analyzed your recent games. Here&apos;s what I found.
+              Analicé tus últimas partidas. Esto es lo que encontré.
             </p>
           )}
         </div>
 
-        {/* Daily Insight — featured */}
+        {/* Insight destacado */}
         {featured ? (
           <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
             <div className="flex items-center gap-2">
               <Sparkles size={13} style={{ color: "var(--bv-purple)" }} />
-              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Daily Insight</p>
+              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Consejo del día</p>
               <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium"
                 style={{ background: "oklch(0.77 0.17 177 / 0.15)", color: "var(--bv-green)" }}>
                 {categoryLabel[featured.category]}
               </span>
             </div>
             <p className="text-sm leading-relaxed font-medium">{featured.message}</p>
-            {gameLink(featured.category) && (
-              <Link href={gameLink(featured.category)!}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-1.5 transition-colors"
-                style={{ background: "oklch(0.61 0.22 285 / 0.2)", color: "var(--bv-purple)" }}>
-                ♟ Ver partido de ejemplo
-              </Link>
-            )}
+            <GameList
+              games={exampleGames[featured.category]}
+              jumpBlunder={featured.category === "tactical" || featured.category === "recurring_blunder"}
+            />
           </div>
         ) : (
           <InsightsCard insights={[]} username={username} />
         )}
 
-        {/* Behavioral Patterns */}
+        {/* Patrones de comportamiento */}
         {rest.length > 0 && (
           <div className="bg-card border border-border rounded-2xl overflow-hidden">
             <p className="px-4 pt-4 pb-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-              Behavioral Patterns
+              Patrones de Comportamiento
             </p>
             <div className="divide-y divide-border">
               {rest.map((insight) => {
                 const isPositive = insight.severity === "low";
-                const link = gameLink(insight.category);
+                const games = exampleGames[insight.category];
+                const jumpBlunder = insight.category === "tactical" || insight.category === "recurring_blunder";
                 return (
-                  <div key={insight.id} className="flex items-start gap-3 px-4 py-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-sm"
-                      style={{ background: isPositive ? "oklch(0.77 0.17 177 / 0.12)" : "oklch(0.70 0.18 50 / 0.12)" }}>
-                      {isPositive ? "📈" : "⚠️"}
+                  <div key={insight.id} className="px-4 py-3 space-y-2">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-sm"
+                        style={{ background: isPositive ? "oklch(0.77 0.17 177 / 0.12)" : "oklch(0.70 0.18 50 / 0.12)" }}>
+                        {isPositive ? "📈" : "⚠️"}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold">{categoryLabel[insight.category]}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{insight.message}</p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold">{categoryLabel[insight.category]}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{insight.message}</p>
-                      {link && (
-                        <Link href={link}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold mt-1.5 transition-opacity hover:opacity-70"
-                          style={{ color: "var(--bv-purple)" }}>
-                          ♟ Ver partido →
-                        </Link>
-                      )}
-                    </div>
+                    {games.length > 0 && (
+                      <div className="pl-11">
+                        <GameList games={games} jumpBlunder={jumpBlunder} />
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -115,10 +134,10 @@ export default async function InsightsPage() {
 
         {insights.length === 0 && <InsightsCard insights={[]} username={username} />}
 
-        {/* Coach Recommends */}
+        {/* Coach recomienda */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <p className="px-4 pt-4 pb-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-            Coach Recommends
+            Coach Recomienda
           </p>
           <div className="divide-y divide-border">
             {coachRecommends.map((item) => (
@@ -137,10 +156,10 @@ export default async function InsightsPage() {
         </div>
 
         {/* CTA */}
-        <div className="rounded-2xl p-5 text-center space-y-3"
+        <div className="rounded-2xl p-5 text-center space-y-2"
           style={{ background: "oklch(0.61 0.22 285 / 0.15)", border: "1px solid oklch(0.61 0.22 285 / 0.25)" }}>
-          <p className="text-sm font-bold">Mastery is a Journey.</p>
-          <p className="text-xs text-muted-foreground">Keep analyzing your games to unlock deeper insights.</p>
+          <p className="text-sm font-bold">La maestría es un camino.</p>
+          <p className="text-xs text-muted-foreground">Sigue analizando tus partidas para descubrir patrones más profundos.</p>
         </div>
 
       </div>

@@ -12,10 +12,10 @@ interface Props {
 }
 
 const categoryLabel: Record<Insight["category"], string> = {
-  opening: "Opening Habit",
-  tactical: "Tactical Pattern",
-  time_management: "Time Pressure",
-  recurring_blunder: "Biggest Blindspot",
+  opening:           "Hábito de Apertura",
+  tactical:          "Patrón Táctico",
+  time_management:   "Gestión del Tiempo",
+  recurring_blunder: "Error Recurrente",
 };
 
 export default async function DashboardPage({ searchParams }: Props) {
@@ -74,9 +74,9 @@ export default async function DashboardPage({ searchParams }: Props) {
         {/* ── Stats strip ─────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: "Accuracy",  value: stats.avgAccuracy ? `${stats.avgAccuracy}%` : "—", color: "var(--bv-green)" },
-            { label: "Draws",     value: stats.draws,    color: "var(--bv-orange)" },
-            { label: "Win Rate",  value: `${stats.winrate}%`, color: "var(--bv-green)" },
+            { label: "Precisión", value: stats.avgAccuracy ? `${stats.avgAccuracy}%` : "—", color: "var(--bv-green)" },
+            { label: "Tablas",    value: stats.draws,    color: "var(--bv-orange)" },
+            { label: "Victorias", value: `${stats.winrate}%`, color: "var(--bv-green)" },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-card border border-border rounded-xl p-3 text-center">
               <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{label}</p>
@@ -117,7 +117,7 @@ export default async function DashboardPage({ searchParams }: Props) {
         {/* ── Recent Performance ──────────────────────────────── */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <p className="px-4 pt-4 pb-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-            Recent Performance
+            Rendimiento Reciente
           </p>
           <div className="divide-y divide-border">
             <div className="flex items-center justify-between px-4 py-3">
@@ -127,8 +127,8 @@ export default async function DashboardPage({ searchParams }: Props) {
                   📈
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Accuracy</p>
-                  <p className="text-xs text-muted-foreground">Last 50 games</p>
+                  <p className="text-sm font-medium">Precisión</p>
+                  <p className="text-xs text-muted-foreground">Últimas {stats.totalGames} partidas</p>
                 </div>
               </div>
               <p className="text-sm font-bold" style={{ color: "var(--bv-green)" }}>
@@ -142,8 +142,8 @@ export default async function DashboardPage({ searchParams }: Props) {
                   🎯
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Win Rate</p>
-                  <p className="text-xs text-muted-foreground">{stats.wins}W · {stats.losses}L · {stats.draws}D</p>
+                  <p className="text-sm font-medium">Tasa de Victoria</p>
+                  <p className="text-xs text-muted-foreground">{stats.wins}V · {stats.losses}D · {stats.draws}T</p>
                 </div>
               </div>
               <p className="text-sm font-bold" style={{ color: stats.winrate >= 50 ? "var(--bv-green)" : "var(--bv-red)" }}>
@@ -158,7 +158,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-                Openings
+                Aperturas
               </p>
             </div>
 
@@ -168,7 +168,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                 <div className="bg-card border rounded-2xl p-3 space-y-2"
                   style={{ borderColor: "oklch(0.77 0.17 177 / 0.3)" }}>
                   <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-green)" }}>
-                    Strongest
+                    Más Fuertes
                   </p>
                   {strongOpenings.map((o) => (
                     <div key={o.id}>
@@ -184,7 +184,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                 <div className="bg-card border rounded-2xl p-3 space-y-2"
                   style={{ borderColor: "oklch(0.63 0.23 25 / 0.3)" }}>
                   <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-red)" }}>
-                    Critical
+                    Críticas
                   </p>
                   {weakOpenings.map((o) => (
                     <div key={o.id}>

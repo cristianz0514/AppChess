@@ -6,11 +6,11 @@ import { LayoutDashboard, Brain, BookOpen, User, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/insights",  label: "Coach",     icon: Brain },
-  null, // FAB placeholder
-  { href: "/openings",  label: "Openings",  icon: BookOpen },
-  { href: "/stats",     label: "Profile",   icon: User },
+  { href: "/dashboard", label: "Inicio",     icon: LayoutDashboard },
+  { href: "/insights",  label: "Coach",      icon: Brain },
+  null,
+  { href: "/openings",  label: "Aperturas",  icon: BookOpen },
+  { href: "/stats",     label: "Perfil",     icon: User },
 ];
 
 export function BottomNav() {

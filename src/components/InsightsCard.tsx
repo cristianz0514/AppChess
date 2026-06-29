@@ -10,10 +10,10 @@ interface Props {
 }
 
 const categoryLabel: Record<Insight["category"], string> = {
-  opening:           "Opening Habit",
-  tactical:          "Tactical Pattern",
-  time_management:   "Time Pressure",
-  recurring_blunder: "Blunder Pattern",
+  opening:           "Hábito de Apertura",
+  tactical:          "Patrón Táctico",
+  time_management:   "Gestión del Tiempo",
+  recurring_blunder: "Error Recurrente",
 };
 
 const severityStyle: Record<Insight["severity"], { dot: string; tag: string }> = {
@@ -62,7 +62,7 @@ export function InsightsCard({ insights: initial, username }: Props) {
           disabled={loading}
           className="text-[10px] font-semibold px-3 py-1 rounded-full border border-border hover:bg-accent/50 transition-colors disabled:opacity-40"
         >
-          {loading ? "Analyzing…" : insights.length === 0 ? "Generate" : "Refresh"}
+          {loading ? "Analizando…" : insights.length === 0 ? "Generar" : "Actualizar"}
         </button>
       </div>
 
@@ -76,7 +76,7 @@ export function InsightsCard({ insights: initial, username }: Props) {
 
         {insights.length === 0 && !loading && !error && (
           <p className="text-sm text-muted-foreground text-center py-6">
-            Generate personalized coaching based on your games.
+            Genera consejos personalizados basados en tus partidas.
           </p>
         )}
 

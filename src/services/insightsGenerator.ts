@@ -75,7 +75,9 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   const { data: gameRows } = await supabase
     .from("games")
     .select("id, result, accuracy, pgn, played_as")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(200);
 
   if (!gameRows || gameRows.length === 0) return null;
 
@@ -247,8 +249,9 @@ function buildPrompt(s: PlayerSnapshot): string {
 - Time pressure error rate: ${pct(s.timePressureBlunders, s.totalBlundersInTimeGames)} of errors occurred under 30s`
     : `Time Pressure: no clock data available for this player's games`;
 
-  return `You are an expert chess coach. A player has ${s.totalGames} recent blitz/rapid games in our database.
-Generate exactly 4 coaching insights covering these three areas. Each insight must be grounded in the specific numbers below.
+  return `Eres un entrenador de ajedrez experto. Un jugador tiene ${s.totalGames} partidas recientes de blitz/rapid en nuestra base de datos.
+Genera exactamente 4 consejos de entrenamiento cubriendo estas tres áreas. Cada consejo debe basarse en los números específicos a continuación.
+IMPORTANTE: Responde SIEMPRE en español.
 
 ═══════════════════════════════════
 PLAYER DATA
@@ -276,17 +279,17 @@ Tactical Weaknesses:
 RULES — READ CAREFULLY
 ═══════════════════════════════════
 
-✅ MUST:
-- Reference exact numbers from the data above in every insight.
-- Cover at least 2 of the 3 areas (opening habits, time pressure, tactical weaknesses).
-- Give ONE specific, actionable instruction per insight.
-- Sound personal — like a coach who studied this specific player's games.
+✅ DEBES:
+- Mencionar los números exactos de los datos en cada consejo.
+- Cubrir al menos 2 de las 3 áreas (hábitos de apertura, presión de tiempo, debilidades tácticas).
+- Dar UNA instrucción específica y accionable por consejo.
+- Sonar personal, como un entrenador que estudió las partidas de este jugador específico.
 
-❌ NEVER:
-- Give advice that could apply to any chess player ("study tactics", "be more careful").
-- Repeat the same advice across two insights.
-- Mention categories or labels in the message text.
-- Use jargon without explaining it in plain language.
+❌ NUNCA:
+- Dar consejos que apliquen a cualquier jugador ("estudia táctica", "ten más cuidado").
+- Repetir el mismo consejo en dos insights diferentes.
+- Mencionar categorías o etiquetas en el texto del mensaje.
+- Usar jerga sin explicarla en lenguaje sencillo.
 
 FORMAT:
 Return a JSON array of exactly 4 objects:
