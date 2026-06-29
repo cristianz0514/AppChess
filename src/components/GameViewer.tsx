@@ -3,7 +3,8 @@
 import { useState, useCallback, useMemo } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
-import { ChevronLeft, ChevronRight, Play, Pause } from "lucide-react";
+import type { Arrow } from "./ChessBoard";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -24,26 +25,55 @@ interface MoveInfo {
   to: string;
   classification: string | null;
   centipawnLoss: number | null;
+  evaluation: number | null;   // in pawns, white's perspective; ±9999 = mate
+}
+
+type Tab = "analizar" | "jugadas" | "consejos";
+
+// ── Practice mode evaluator ───────────────────────────────────────────────────
+
+interface PracticeResult {
+  verdict: "excellent" | "good" | "neutral" | "illegal";
+  message: string;
+}
+
+function evaluatePracticeMove(fenBefore: string, from: string, to: string): PracticeResult {
+  const game = new Chess(fenBefore);
+  let move;
+  try {
+    move = game.move({ from, to, promotion: "q" });
+  } catch {
+    return { verdict: "illegal", message: "Movimiento ilegal en esta posición." };
+  }
+  if (!move) return { verdict: "illegal", message: "Movimiento ilegal en esta posición." };
+
+  if (game.isCheckmate()) return { verdict: "excellent", message: "¡Jaque mate! La jugada perfecta." };
+  if (game.isCheck() && move.captured) return { verdict: "excellent", message: "¡Capturaste material y das jaque! Excelente combinación." };
+  if (move.captured) {
+    const vals: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+    const gain = vals[move.captured] ?? 1;
+    return gain >= 3
+      ? { verdict: "excellent", message: `¡Excelente! Ganaste material (${move.captured === "n" || move.captured === "b" ? "pieza menor" : move.captured === "r" ? "torre" : "dama"}).` }
+      : { verdict: "good", message: "Capturaste un peón. Puede ser una mejora." };
+  }
+  if (game.isCheck()) return { verdict: "good", message: "Das jaque — presionas al rival. Buena idea." };
+
+  // Check if it's a developing move (knight or bishop to active square)
+  const developingPieces = ["n", "b"];
+  if (developingPieces.includes(move.piece)) return { verdict: "good", message: "Desarrollas una pieza — generalmente mejor que el error cometido." };
+
+  return { verdict: "neutral", message: "Jugada legal. No pierde material, pero tampoco es la óptima. Intenta buscar capturas o amenazas." };
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CLASS_COLOR: Record<string, string> = {
-  blunder:    "#ff5757",
-  mistake:    "#ff8c42",
+  blunder:    "var(--bv-red)",
+  mistake:    "var(--bv-orange)",
   inaccuracy: "#ffd700",
-  best:       "#00d4a1",
-  excellent:  "#00d4a1",
-  good:       "#00d4a1",
-};
-
-const CLASS_LABEL: Record<string, string> = {
-  blunder:    "Error grave",
-  mistake:    "Error",
-  inaccuracy: "Inexactitud",
-  best:       "Mejor jugada",
-  excellent:  "Excelente",
-  good:       "Buena",
+  best:       "var(--bv-green)",
+  excellent:  "var(--bv-green)",
+  good:       "var(--bv-green)",
 };
 
 const CLASS_EMOJI: Record<string, string> = {
@@ -73,98 +103,189 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
       to: h.to,
       classification: db?.classification ?? null,
       centipawnLoss: db?.centipawn_loss ?? null,
+      evaluation: db?.evaluation ?? null,
     };
   });
 }
 
 // ── Eval bar ──────────────────────────────────────────────────────────────────
-// Shows a simple vertical fill: top = opponent advantage, bottom = player advantage
-function EvalBar({ moves, idx, playedAs }: { moves: MoveInfo[]; idx: number; playedAs: "white" | "black" }) {
-  const blundersBefore = moves.slice(0, idx + 1).filter(m => m.classification === "blunder").length;
-  const mistakesBefore = moves.slice(0, idx + 1).filter(m => m.classification === "mistake").length;
-  // Rough heuristic: each blunder = -10%, each mistake = -5%
-  const penalty = blundersBefore * 10 + mistakesBefore * 5;
-  // Player fill %: starts at 50, loses with blunders
-  const fillPct = Math.max(10, Math.min(90, 50 - penalty));
+
+function evalToWhitePct(ev: number | null): number {
+  if (ev === null) return 50;
+  if (ev >= 90)  return 97;   // mate for white
+  if (ev <= -90) return 3;    // mate for black
+  // Sigmoid scaled: ±4 pawns ≈ ±40%, clamped 5–95
+  return Math.min(95, Math.max(5, 50 + ev * 10));
+}
+
+function evalLabel(ev: number | null, whiteWinning: boolean): string {
+  if (ev === null) return "";
+  const abs = Math.abs(ev);
+  if (abs >= 90)   return whiteWinning ? "Mate blancas" : "Mate negras";
+  if (abs < 0.2)   return "Iguales";
+  if (abs < 0.8)   return (whiteWinning ? "Blancas" : "Negras") + " mejor";
+  if (abs < 2.0)   return (whiteWinning ? "Blancas" : "Negras") + " ganan";
+  if (abs < 4.5)   return "Ventaja decisiva";
+  return "Posición aplastante";
+}
+
+function evalScore(ev: number | null): string {
+  if (ev === null) return "=";
+  if (Math.abs(ev) >= 90) return "M#";
+  const sign = ev > 0 ? "+" : ev < 0 ? "−" : "";
+  return sign + Math.abs(ev).toFixed(1);
+}
+
+function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
+  const currentEval = idx >= 0 ? moves[idx].evaluation : null;
+
+  // Fallback heuristic when no engine data
+  const fallbackEval = (() => {
+    const blunders = moves.slice(0, Math.max(0, idx + 1)).filter(m => m.classification === "blunder").length;
+    const mistakes  = moves.slice(0, Math.max(0, idx + 1)).filter(m => m.classification === "mistake").length;
+    return -(blunders * 1.5 + mistakes * 0.7);
+  })();
+
+  const ev = currentEval ?? fallbackEval;
+  const whitePct = evalToWhitePct(ev);
+  const whiteWinning = ev >= 0;
+  const isMate = Math.abs(ev) >= 90;
+  const score = evalScore(ev);
+  const label = evalLabel(ev, whiteWinning);
+  const hasRealData = currentEval !== null;
 
   return (
-    <div className="w-7 shrink-0 self-stretch rounded-xl overflow-hidden flex flex-col relative border"
-      style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-      <div className="absolute top-2 left-0 right-0 flex justify-center">
-        <span className="text-[8px] font-bold tracking-widest text-muted-foreground" style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}>
-          GANANDO
-        </span>
+    <div className="flex flex-col items-center gap-1 self-stretch" style={{ width: 28 }}>
+      {/* Score chip */}
+      <div
+        className="text-[9px] font-bold font-mono px-1 py-0.5 rounded leading-none shrink-0"
+        style={{
+          background: whiteWinning ? "#f0f4ff" : "#0d1117",
+          color: whiteWinning ? "#0d1117" : "#f0f4ff",
+          boxShadow: isMate ? `0 0 8px ${whiteWinning ? "rgba(0,212,161,0.6)" : "rgba(255,87,87,0.6)"}` : "none",
+        }}
+      >
+        {score}
       </div>
-      {/* Opponent area (top) */}
-      <div className="flex-1" style={{ background: "var(--border)" }} />
-      {/* Player fill (bottom) */}
-      <div style={{ height: `${fillPct}%`, background: "var(--bv-purple)", transition: "height 0.6s ease" }} />
-      <div className="absolute bottom-2 left-0 right-0 flex justify-center">
-        <span className="text-[8px] font-bold tracking-widest text-muted-foreground" style={{ writingMode: "vertical-lr" }}>
-          PERDIENDO
-        </span>
+
+      {/* Bar */}
+      <div
+        className="flex-1 w-full rounded-lg overflow-hidden flex flex-col relative border"
+        style={{ borderColor: "var(--border)" }}
+      >
+        {/* Black section (top) */}
+        <div
+          style={{
+            flex: `${100 - whitePct} 0 0`,
+            background: "#0d1117",
+            transition: "flex 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        />
+
+        {/* Divider line */}
+        <div style={{ height: 2, background: "var(--border)", flexShrink: 0 }} />
+
+        {/* White section (bottom) */}
+        <div
+          style={{
+            flex: `${whitePct} 0 0`,
+            background: isMate
+              ? (whiteWinning ? "var(--bv-green)" : "var(--bv-red)")
+              : "#e8edf5",
+            transition: "flex 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
+            boxShadow: isMate ? `inset 0 0 12px ${whiteWinning ? "rgba(0,212,161,0.4)" : "rgba(255,87,87,0.4)"}` : "none",
+          }}
+        />
+
+        {/* Advantage band — colored stripe when clearly winning */}
+        {Math.abs(ev) > 1.5 && !isMate && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: whiteWinning ? 0 : "auto",
+              top: whiteWinning ? "auto" : 0,
+              left: 0, right: 0,
+              height: `${Math.min(30, Math.abs(ev) * 3)}%`,
+              background: whiteWinning
+                ? "linear-gradient(to top, rgba(0,212,161,0.35), transparent)"
+                : "linear-gradient(to bottom, rgba(155,109,255,0.35), transparent)",
+              transition: "height 0.55s ease",
+            }}
+          />
+        )}
       </div>
+
+      {/* Label */}
+      <p
+        className="text-[7px] font-semibold text-center leading-tight"
+        style={{
+          writingMode: "vertical-lr",
+          transform: "rotate(180deg)",
+          color: "var(--muted-foreground)",
+          maxHeight: 60,
+          overflow: "hidden",
+          opacity: hasRealData ? 1 : 0.5,
+        }}
+      >
+        {label}
+      </p>
     </div>
   );
 }
 
 // ── Move History Table ────────────────────────────────────────────────────────
 
-function MoveTable({ moves, idx, onGo }: { moves: MoveInfo[]; idx: number; onGo: (n: number) => void }) {
-  // Group moves into pairs: [white, black]
+function MoveTable({ moves, idx, onGo, compact }: {
+  moves: MoveInfo[];
+  idx: number;
+  onGo: (n: number) => void;
+  compact?: boolean;
+}) {
   const pairs: Array<{ n: number; white: MoveInfo | null; black: MoveInfo | null }> = [];
   for (let i = 0; i < moves.length; i += 2) {
     pairs.push({ n: moves[i].moveNumber, white: moves[i] ?? null, black: moves[i + 1] ?? null });
   }
 
   function MoveCell({ m, flatIdx }: { m: MoveInfo | null; flatIdx: number }) {
-    if (!m) return <div className="col-span-3 text-muted-foreground opacity-40">…</div>;
+    if (!m) return <div className="flex-1" />;
     const isActive = flatIdx === idx;
     const col = m.classification ? CLASS_COLOR[m.classification] : undefined;
     const emoji = m.classification ? CLASS_EMOJI[m.classification] ?? "" : "";
+    const isError = m.classification === "blunder" || m.classification === "mistake";
     return (
       <div
-        className="col-span-3 flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 transition-colors"
+        className="flex-1 flex items-center gap-1 cursor-pointer rounded px-1.5 py-1 transition-colors text-xs font-mono"
         style={{
-          background: isActive ? "oklch(0.61 0.22 285 / 0.25)" : m.classification === "blunder" ? "oklch(0.63 0.23 25 / 0.08)" : "transparent",
-          borderLeft: isActive ? "2px solid var(--bv-purple)" : m.classification === "blunder" ? "2px solid var(--bv-red)" : "2px solid transparent",
+          background: isActive ? "oklch(0.61 0.22 285 / 0.22)" : isError ? `${col}11` : "transparent",
+          borderLeft: isActive ? `2px solid var(--bv-purple)` : isError ? `2px solid ${col}` : "2px solid transparent",
           color: col ?? "var(--foreground)",
-          fontWeight: m.classification ? 700 : 400,
+          fontWeight: isActive || m.classification ? 600 : 400,
         }}
         onClick={() => onGo(flatIdx)}
       >
-        <span className="font-mono text-xs">{emoji && <span>{emoji} </span>}{m.san}</span>
-        {m.classification && (
-          <span className="text-[9px] px-1 rounded font-bold ml-auto shrink-0"
-            style={{ background: `${col}22`, color: col }}>
-            {CLASS_LABEL[m.classification]}
-          </span>
-        )}
+        {emoji && <span className="text-[10px]">{emoji}</span>}
+        <span>{m.san}</span>
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl overflow-hidden border flex flex-col"
-      style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-      {/* Header */}
-      <div className="grid grid-cols-7 px-4 py-2 border-b text-[10px] font-bold tracking-widest uppercase text-muted-foreground"
+    <div className="rounded-2xl overflow-hidden border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+      <div className="grid grid-cols-7 px-3 py-2 border-b text-[10px] font-bold tracking-widest uppercase text-muted-foreground"
         style={{ borderColor: "var(--border)" }}>
         <div className="col-span-1">#</div>
-        <div className="col-span-3">BLANCAS</div>
-        <div className="col-span-3">NEGRAS</div>
+        <div className="col-span-3">Blancas</div>
+        <div className="col-span-3">Negras</div>
       </div>
-      {/* Rows */}
-      <div className="overflow-y-auto max-h-60 divide-y divide-border">
+      <div className={`overflow-y-auto divide-y divide-border ${compact ? "max-h-48" : "max-h-[60vh]"}`}>
         {pairs.map(({ n, white, black }) => {
           const wi = white ? moves.indexOf(white) : -1;
           const bi = black ? moves.indexOf(black) : -1;
           return (
-            <div key={n} className="grid grid-cols-7 px-3 py-1.5 text-xs font-mono items-center"
-              style={{ borderBottomColor: "oklch(0.20 0.03 265)" }}>
-              <div className="col-span-1 text-muted-foreground text-[11px]">{n}</div>
-              <MoveCell m={white} flatIdx={wi} />
-              <MoveCell m={black} flatIdx={bi} />
+            <div key={n} className="grid grid-cols-7 px-2 py-0.5 items-center text-xs">
+              <div className="col-span-1 text-[10px] text-muted-foreground font-mono pl-1">{n}</div>
+              <div className="col-span-3"><MoveCell m={white} flatIdx={wi} /></div>
+              <div className="col-span-3"><MoveCell m={black} flatIdx={bi} /></div>
             </div>
           );
         })}
@@ -173,37 +294,30 @@ function MoveTable({ moves, idx, onGo }: { moves: MoveInfo[]; idx: number; onGo:
   );
 }
 
-// ── Master Insight card ───────────────────────────────────────────────────────
+// ── Insight card ──────────────────────────────────────────────────────────────
 
 function InsightCard({ move }: { move: MoveInfo | null }) {
   if (!move?.classification || !["blunder", "mistake"].includes(move.classification)) return null;
   const col = CLASS_COLOR[move.classification] ?? "var(--bv-orange)";
   const isBlunder = move.classification === "blunder";
   return (
-    <div className="rounded-2xl p-4 flex items-start gap-3 border-l-4"
-      style={{
-        background: "oklch(0.165 0.025 265 / 0.6)",
-        backdropFilter: "blur(20px)",
-        borderColor: col,
-        border: `1px solid var(--border)`,
-        borderLeftColor: col,
-        borderLeftWidth: 4,
-      }}>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl"
+    <div className="rounded-2xl p-3 flex items-start gap-3 border-l-4"
+      style={{ background: "var(--card)", border: `1px solid var(--border)`, borderLeftColor: col, borderLeftWidth: 4 }}>
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
         style={{ background: `${col}20` }}>
         {isBlunder ? "⚠️" : "⚡"}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-bold tracking-widest uppercase mb-1" style={{ color: col }}>
-          {isBlunder ? "Error Grave" : "Punto de Quiebre"}
+        <p className="text-[10px] font-bold tracking-widest uppercase mb-0.5" style={{ color: col }}>
+          {isBlunder ? "Error Grave" : "Error"}
         </p>
-        <p className="text-sm leading-relaxed text-foreground">
+        <p className="text-sm leading-snug">
           Jugaste <span className="font-bold font-mono" style={{ color: col }}>{move.san}</span>.{" "}
           {isBlunder
-            ? "Este fue el error más crítico. Considera las amenazas del rival antes de cada jugada."
-            : "Esta jugada cedió ventaja innecesariamente en esta posición."}
-          {move.centipawnLoss && move.centipawnLoss > 0 && (
-            <span className="text-muted-foreground"> ({move.centipawnLoss} centipeones perdidos)</span>
+            ? "Error crítico — revisa las amenazas del rival antes de mover."
+            : "Esta jugada cedió ventaja innecesariamente."}
+          {move.centipawnLoss != null && move.centipawnLoss > 0 && (
+            <span className="text-muted-foreground text-xs"> (−{move.centipawnLoss} cp)</span>
           )}
         </p>
       </div>
@@ -225,18 +339,62 @@ interface Props {
 
 export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
+  const [tab, setTab] = useState<Tab>("analizar");
+
+  // Practice mode state
+  const [practiceBlunderIdx, setPracticeBlunderIdx] = useState<number | null>(null);
+  const [practiceResult, setPracticeResult] = useState<PracticeResult | null>(null);
+  const [practiceMovePlayed, setPracticeMovePlayed] = useState<{ from: string; to: string } | null>(null);
+  const inPractice = practiceBlunderIdx !== null;
 
   const firstBlunderIdx = jumpToBlunder
     ? moves.findIndex((m) => m.classification === "blunder")
     : -1;
 
   const [idx, setIdx] = useState(firstBlunderIdx >= 0 ? firstBlunderIdx : moves.length - 1);
-  const [playing, setPlaying] = useState(false);
 
-  const startFen = new Chess().fen();
+  const startFen    = new Chess().fen();
   const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
   const currentMove = idx >= 0 ? moves[idx]       : null;
   const lastMove    = currentMove ? { from: currentMove.from, to: currentMove.to } : null;
+
+  // Practice mode: show position BEFORE the blunder
+  const practiceMove = practiceBlunderIdx !== null ? moves[practiceBlunderIdx] : null;
+  const practiceFen  = practiceBlunderIdx !== null
+    ? (practiceBlunderIdx > 0 ? moves[practiceBlunderIdx - 1].fen : new Chess().fen())
+    : null;
+
+  // Arrow showing the blunder that was played
+  const practiceArrows: Arrow[] = practiceMove
+    ? [{ from: practiceMove.from, to: practiceMove.to, color: "red" }]
+    : [];
+
+  // Arrow showing user's practice move
+  const userArrows: Arrow[] = practiceMovePlayed
+    ? [{ from: practiceMovePlayed.from, to: practiceMovePlayed.to, color: "green" }]
+    : [];
+
+  function startPractice(blunderIdx: number) {
+    setPracticeBlunderIdx(blunderIdx);
+    setPracticeResult(null);
+    setPracticeMovePlayed(null);
+    setTab("consejos");
+  }
+
+  function exitPractice() {
+    setPracticeBlunderIdx(null);
+    setPracticeResult(null);
+    setPracticeMovePlayed(null);
+  }
+
+  function handlePracticeMove(from: string, to: string) {
+    if (!practiceFen || practiceResult) return;
+    const result = evaluatePracticeMove(practiceFen, from, to);
+    setPracticeResult(result);
+    if (result.verdict !== "illegal") {
+      setPracticeMovePlayed({ from, to });
+    }
+  }
 
   const go = useCallback((n: number) => {
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
@@ -253,15 +411,21 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     );
   }
 
-  return (
-    <div className="space-y-4 pt-2">
+  const TABS = [
+    { id: "analizar" as Tab, label: "Analizar",  Icon: BarChart2 },
+    { id: "jugadas"  as Tab, label: "Jugadas",   Icon: List      },
+    { id: "consejos" as Tab, label: "Consejos",  Icon: Brain     },
+  ];
 
-      {/* Opening title */}
+  return (
+    <div className="flex flex-col gap-3 pt-2 pb-2">
+
+      {/* ── Header info ──────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-muted-foreground">{opening}</p>
+          <p className="text-xs text-muted-foreground truncate max-w-[200px]">{opening}</p>
           {gameResult && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full mt-1 inline-block"
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full mt-0.5 inline-block"
               style={{
                 background: gameResult === "win" ? "oklch(0.77 0.17 177 / 0.2)" : gameResult === "loss" ? "oklch(0.63 0.23 25 / 0.2)" : "oklch(0.70 0.18 50 / 0.2)",
                 color: gameResult === "win" ? "var(--bv-green)" : gameResult === "loss" ? "var(--bv-red)" : "var(--bv-orange)",
@@ -270,75 +434,323 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </span>
           )}
         </div>
-        <div className="flex gap-2 text-xs text-muted-foreground font-mono">
+        <div className="flex gap-2 text-xs font-mono shrink-0">
           {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>??{blunderCount}</span>}
           {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>?{mistakeCount}</span>}
         </div>
       </div>
 
-      {/* Board row: eval bar + board */}
-      <div className="flex gap-3 items-stretch">
-        <div className="flex-1 min-w-0">
-          <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
+      {/* ── Tab: Analizar ────────────────────────────────────── */}
+      {tab === "analizar" && (
+        <>
+          {/* Board + eval bar */}
+          <div className="flex gap-2 items-stretch">
+            <EvalBar moves={moves} idx={idx} />
+            <div className="flex-1 min-w-0">
+              <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
+            </div>
+          </div>
+
+          {/* Insight on current move */}
+          <InsightCard move={currentMove} />
+
+          {/* Controls */}
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => go(-1)} disabled={idx <= -1}
+              className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}
+              title="Inicio">
+              <ChevronsLeft size={18} />
+            </button>
+            <button
+              onClick={() => go(idx - 1)} disabled={idx <= -1}
+              className="flex-1 h-11 flex items-center justify-center gap-1.5 rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+              <ChevronLeft size={16} />
+              <span className="text-sm font-semibold">Anterior</span>
+            </button>
+            <button
+              onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
+              className="flex-1 h-11 flex items-center justify-center gap-1.5 rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+              <span className="text-sm font-semibold">Siguiente</span>
+              <ChevronRight size={16} />
+            </button>
+            <button
+              onClick={() => go(moves.length - 1)} disabled={idx >= moves.length - 1}
+              className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}
+              title="Final">
+              <ChevronsRight size={18} />
+            </button>
+          </div>
+
+          {/* Move indicator */}
+          <p className="text-center text-[11px] text-muted-foreground">
+            {idx < 0 ? "Posición inicial" : `Jugada ${moves[idx].moveNumber} · ${moves[idx].color === "w" ? "Blancas" : "Negras"}`}
+            {" · "}{idx + 2}/{moves.length + 1}
+          </p>
+
+          {/* Compact move list */}
+          <MoveTable moves={moves} idx={idx} onGo={go} compact />
+
+          {/* Stats row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">PRECISIÓN</p>
+              <p className="text-2xl font-bold" style={{ color: "var(--bv-purple)" }}>
+                {accuracy ? `${accuracy}%` : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">ERRORES</p>
+              <p className="text-2xl font-bold" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
+                {blunderCount + mistakeCount}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Tab: Jugadas ─────────────────────────────────────── */}
+      {tab === "jugadas" && (
+        <div className="space-y-3">
+          {/* Mini board for reference */}
+          <div className="flex gap-2 items-stretch">
+            <EvalBar moves={moves} idx={idx} />
+            <div className="flex-1 min-w-0">
+              <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => go(-1)} disabled={idx <= -1}
+              className="w-9 h-9 flex items-center justify-center rounded-xl border disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+              <ChevronsLeft size={15} />
+            </button>
+            <button onClick={() => go(idx - 1)} disabled={idx <= -1}
+              className="flex-1 h-9 flex items-center justify-center gap-1 rounded-xl border disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+              <ChevronLeft size={15} /><span className="text-xs font-semibold">Anterior</span>
+            </button>
+            <button onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
+              className="flex-1 h-9 flex items-center justify-center gap-1 rounded-xl border disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+              <span className="text-xs font-semibold">Siguiente</span><ChevronRight size={15} />
+            </button>
+            <button onClick={() => go(moves.length - 1)} disabled={idx >= moves.length - 1}
+              className="w-9 h-9 flex items-center justify-center rounded-xl border disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+              <ChevronsRight size={15} />
+            </button>
+          </div>
+          {/* Full move list */}
+          <MoveTable moves={moves} idx={idx} onGo={go} />
         </div>
-        <EvalBar moves={moves} idx={idx} playedAs={playedAs} />
-      </div>
+      )}
 
-      {/* AI Insight card — only shows on blunder/mistake moves */}
-      <InsightCard move={currentMove} />
+      {/* ── Tab: Consejos / Práctica ─────────────────────────── */}
+      {tab === "consejos" && !inPractice && (
+        <div className="space-y-3">
+          {moves.filter(m => m.classification === "blunder" || m.classification === "mistake").length === 0 ? (
+            <div className="rounded-2xl p-8 text-center border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+              <p className="text-3xl mb-2">🎯</p>
+              <p className="text-sm font-semibold">¡Partida limpia!</p>
+              <p className="text-xs text-muted-foreground mt-1">No se detectaron errores graves en esta partida.</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground px-1">
+                Toca <span className="font-semibold text-foreground">Practicar</span> en cualquier error para intentar la posición tú mismo.
+              </p>
+              {moves
+                .map((m, i) => ({ ...m, flatIdx: i }))
+                .filter(m => m.classification === "blunder" || m.classification === "mistake")
+                .map((m, i) => {
+                  const col = CLASS_COLOR[m.classification!];
+                  const isBlunder = m.classification === "blunder";
+                  return (
+                    <div key={i} className="rounded-2xl border overflow-hidden"
+                      style={{ background: "var(--card)", borderColor: "var(--border)", borderLeftColor: col, borderLeftWidth: 4 }}>
+                      <div className="p-3 flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
+                          style={{ background: `${col}20` }}>
+                          {isBlunder ? "⚠️" : "⚡"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: col }}>
+                              {isBlunder ? "Error Grave" : "Error"} · Jug. {m.moveNumber}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground ml-auto">{m.color === "w" ? "Blancas" : "Negras"}</span>
+                          </div>
+                          <p className="text-sm">
+                            Jugaste <span className="font-bold font-mono" style={{ color: col }}>{m.san}</span>
+                            {m.centipawnLoss != null && m.centipawnLoss > 0 && (
+                              <span className="text-muted-foreground text-xs ml-1">−{m.centipawnLoss} cp</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex border-t" style={{ borderColor: "var(--border)" }}>
+                        <button onClick={() => { go(m.flatIdx); setTab("analizar"); }}
+                          className="flex-1 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors border-r"
+                          style={{ borderColor: "var(--border)" }}>
+                          Ver en tablero
+                        </button>
+                        <button onClick={() => startPractice(m.flatIdx)}
+                          className="flex-1 py-2 text-xs font-bold transition-colors"
+                          style={{ color: "var(--bv-purple)" }}>
+                          🎯 Practicar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </>
+          )}
 
-      {/* Controls */}
-      <div className="flex items-center justify-center gap-4">
-        <button
-          onClick={() => go(idx - 1)} disabled={idx <= -1}
-          className="flex-1 max-w-[130px] h-14 flex items-center justify-center gap-2 rounded-2xl border transition-all active:scale-95 disabled:opacity-30"
-          style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-          <ChevronLeft size={18} />
-          <span className="text-sm font-semibold">Anterior</span>
-        </button>
-
-        <button
-          onClick={() => { setPlaying(p => !p); go(playing ? idx : Math.min(idx + 1, moves.length - 1)); }}
-          className="w-16 h-14 flex items-center justify-center rounded-2xl shadow-lg transition-all active:scale-90 hover:brightness-110"
-          style={{ background: "var(--bv-purple)" }}>
-          {playing ? <Pause size={22} className="text-white" /> : <Play size={22} className="text-white" fill="white" />}
-        </button>
-
-        <button
-          onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
-          className="flex-1 max-w-[130px] h-14 flex items-center justify-center gap-2 rounded-2xl border transition-all active:scale-95 disabled:opacity-30"
-          style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-          <span className="text-sm font-semibold">Siguiente</span>
-          <ChevronRight size={18} />
-        </button>
-      </div>
-
-      {/* Move History Table */}
-      <MoveTable moves={moves} idx={idx} onGo={go} />
-
-      {/* Mini stats */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl p-4 border"
-          style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">PRECISIÓN</p>
-          <div className="flex items-end gap-2">
-            <span className="text-2xl font-bold" style={{ color: "var(--bv-purple)" }}>
-              {accuracy ? `${accuracy}%` : "—"}
-            </span>
-            <span className="text-sm text-muted-foreground mb-0.5">↗</span>
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">PRECISIÓN</p>
+              <p className="text-2xl font-bold" style={{ color: "var(--bv-purple)" }}>{accuracy ? `${accuracy}%` : "—"}</p>
+            </div>
+            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">ERRORES</p>
+              <p className="text-2xl font-bold" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
+                {blunderCount + mistakeCount}
+              </p>
+            </div>
           </div>
         </div>
-        <div className="rounded-xl p-4 border"
-          style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">ERRORES</p>
-          <div className="flex items-end gap-2">
-            <span className="text-2xl font-bold" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
-              {blunderCount + mistakeCount}
-            </span>
-            <span className="text-sm text-muted-foreground mb-0.5">
-              {blunderCount > 0 ? "↘" : "↗"}
-            </span>
+      )}
+
+      {/* ── Modo Práctica ────────────────────────────────────── */}
+      {tab === "consejos" && inPractice && practiceFen && practiceMove && (
+        <div className="space-y-3">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+                Modo Práctica
+              </p>
+              <p className="text-sm font-semibold">
+                Jugada {practiceMove.moveNumber} · {practiceMove.color === "w" ? "Blancas" : "Negras"}
+              </p>
+            </div>
+            <button onClick={exitPractice}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border transition-colors hover:bg-muted/50"
+              style={{ borderColor: "var(--border)", color: "var(--muted-foreground)" }}>
+              <RotateCcw size={12} /> Volver
+            </button>
           </div>
+
+          {/* Instruction */}
+          {!practiceResult && (
+            <div className="rounded-2xl p-3 border" style={{ background: "oklch(0.61 0.22 285 / 0.08)", borderColor: "oklch(0.61 0.22 285 / 0.3)" }}>
+              <p className="text-xs font-semibold" style={{ color: "var(--bv-purple)" }}>¿Qué hubieras jugado?</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                La flecha <span className="text-red-400 font-bold">roja</span> muestra el error cometido ({practiceMove.san}).
+                Toca una pieza y luego el destino para intentar tu jugada.
+              </p>
+            </div>
+          )}
+
+          {/* Practice board */}
+          <div className="flex gap-2 items-stretch">
+            <EvalBar moves={moves} idx={Math.max(-1, practiceBlunderIdx! - 1)} />
+            <div className="flex-1 min-w-0">
+              <ChessBoard
+                fen={practiceResult && practiceMovePlayed
+                  ? (() => {
+                      const g = new Chess(practiceFen);
+                      try { g.move({ from: practiceMovePlayed.from, to: practiceMovePlayed.to, promotion: "q" }); } catch {}
+                      return g.fen();
+                    })()
+                  : practiceFen
+                }
+                orientation={playedAs}
+                arrows={practiceResult ? userArrows : practiceArrows}
+                interactive={!practiceResult}
+                onMove={handlePracticeMove}
+              />
+            </div>
+          </div>
+
+          {/* Result feedback */}
+          {practiceResult && (
+            <div className="rounded-2xl p-4 border-l-4"
+              style={{
+                background: "var(--card)",
+                borderColor: "var(--border)",
+                borderLeftColor: practiceResult.verdict === "excellent" ? "var(--bv-green)"
+                  : practiceResult.verdict === "good" ? "var(--bv-green)"
+                  : practiceResult.verdict === "neutral" ? "var(--bv-orange)"
+                  : "var(--bv-red)",
+                borderLeftWidth: 4,
+              }}>
+              <p className="text-lg font-bold mb-1">
+                {practiceResult.verdict === "excellent" ? "✅ ¡Excelente!" :
+                 practiceResult.verdict === "good"      ? "✅ ¡Buena jugada!" :
+                 practiceResult.verdict === "neutral"   ? "⚠️ Jugada aceptable" :
+                 "❌ Movimiento ilegal"}
+              </p>
+              <p className="text-sm text-muted-foreground">{practiceResult.message}</p>
+              {practiceResult.verdict !== "illegal" && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  El error original fue <span className="font-bold font-mono" style={{ color: "var(--bv-red)" }}>{practiceMove.san}</span>.
+                  {practiceMove.centipawnLoss != null && practiceMove.centipawnLoss > 0 && ` Costó ${practiceMove.centipawnLoss} centipeones.`}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Try again / next blunder */}
+          <div className="flex gap-2">
+            {practiceResult && (
+              <button onClick={() => { setPracticeResult(null); setPracticeMovePlayed(null); }}
+                className="flex-1 py-2.5 rounded-2xl border text-xs font-semibold transition-all"
+                style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+                Intentar de nuevo
+              </button>
+            )}
+            {practiceResult && (() => {
+              const errors = moves.map((m, i) => ({ ...m, flatIdx: i })).filter(m => m.classification === "blunder" || m.classification === "mistake");
+              const nextErr = errors.find(e => e.flatIdx > practiceBlunderIdx!);
+              return nextErr ? (
+                <button onClick={() => startPractice(nextErr.flatIdx)}
+                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition-all"
+                  style={{ background: "var(--bv-purple)", color: "#fff" }}>
+                  Siguiente error →
+                </button>
+              ) : (
+                <button onClick={exitPractice}
+                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition-all"
+                  style={{ background: "var(--bv-green)", color: "#fff" }}>
+                  ¡Completado! 🎉
+                </button>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── Bottom Tab Bar ───────────────────────────────────── */}
+      <div className="sticky bottom-0 -mx-4 px-4 pb-3 pt-2 mt-2 border-t backdrop-blur-xl"
+        style={{ background: "var(--background)", borderColor: "var(--border)" }}>
+        <div className="flex justify-around">
+          {TABS.map(({ id, label, Icon }) => {
+            const isActive = tab === id;
+            return (
+              <button key={id} onClick={() => setTab(id)}
+                className="flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition-all"
+                style={{ color: isActive ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
+                <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8} />
+                <span className="text-[10px] font-semibold">{label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

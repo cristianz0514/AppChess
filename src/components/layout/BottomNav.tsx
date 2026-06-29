@@ -22,17 +22,18 @@ export function BottomNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="flex items-center justify-around h-16 px-2">
-        {navItems.map((item, i) => {
+        {navItems.map((item) => {
           if (!item) {
             return (
               <div key="fab" className="flex items-center justify-center flex-1">
-                <button
+                <Link
+                  href="/"
                   className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
                   style={{ background: "var(--bv-purple)" }}
-                  aria-label="Acción rápida"
+                  aria-label="Importar partidas"
                 >
                   <Plus size={22} strokeWidth={2.5} className="text-white" />
-                </button>
+                </Link>
               </div>
             );
           }

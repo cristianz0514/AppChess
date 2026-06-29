@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
-import { getUserId, getDashboardStats, getRecentGames } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getRecentGames, getGamesByOpening } from "@/services/dashboardData";
 
 function resultBadge(result: string) {
   if (result === "win")  return { label: "V", bg: "oklch(0.77 0.17 177 / 0.18)", color: "var(--bv-green)" };
@@ -14,14 +14,21 @@ function formatDate(iso: string) {
   return d.toLocaleDateString("es-ES", { month: "short", day: "numeric" });
 }
 
-export default async function BlundersPage() {
+interface Props {
+  searchParams: Promise<{ opening?: string }>;
+}
+
+export default async function BlundersPage({ searchParams }: Props) {
+  const { opening } = await searchParams;
   const username = await getUsername();
   const userId   = await getUserId(username);
   if (!userId) return null;
 
   const [stats, games] = await Promise.all([
     getDashboardStats(userId),
-    getRecentGames(userId, 200),
+    opening
+      ? getGamesByOpening(userId, opening)
+      : getRecentGames(userId, 200),
   ]);
 
   const wins   = games.filter((g) => g.result === "win").length;
@@ -34,7 +41,20 @@ export default async function BlundersPage() {
 
         <div>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Historial</p>
-          <h1 className="text-xl font-bold mt-0.5">Partidas Recientes</h1>
+          <h1 className="text-xl font-bold mt-0.5">
+            {opening ? "Partidas por Apertura" : "Partidas Recientes"}
+          </h1>
+          {opening && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs px-2 py-1 rounded-full border font-medium truncate max-w-[260px]"
+                style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.1)" }}>
+                {opening}
+              </span>
+              <Link href="/blunders" className="text-xs text-muted-foreground underline underline-offset-2">
+                Ver todas
+              </Link>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-2">

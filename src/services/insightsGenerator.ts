@@ -291,17 +291,17 @@ RULES — READ CAREFULLY
 - Mencionar categorías o etiquetas en el texto del mensaje.
 - Usar jerga sin explicarla en lenguaje sencillo.
 
-FORMAT:
-Return a JSON array of exactly 4 objects:
+FORMATO DE RESPUESTA:
+Devuelve un array JSON de exactamente 4 objetos. Los mensajes deben estar en español, máximo 70 palabras, tono personal como un entrenador:
 [
   {
     "category": "opening" | "tactical" | "time_management" | "recurring_blunder",
-    "message": "...(under 70 words, plain English, personal tone)...",
+    "message": "...(máximo 70 palabras, en español, tono personal de entrenador)...",
     "severity": "low" | "medium" | "high"
   }
 ]
 
-JSON only — no explanation, no markdown, no preamble:`;
+Solo JSON — sin explicaciones, sin markdown, sin texto adicional:`;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -12,11 +12,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#0B0D0F",
+};
+
 export const metadata: Metadata = {
   title: "BlunderVision AI",
   description: "Análisis de ajedrez con IA",
   manifest: "/manifest.json",
-  themeColor: "#0B0D0F",
 };
 
 export default function RootLayout({

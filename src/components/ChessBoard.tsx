@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 const PIECE_UNICODE: Record<string, string> = {
   K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
   k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟",
@@ -11,68 +13,126 @@ function parseFen(fen: string): Array<Array<string | null>> {
   for (let rank = 0; rank < 8; rank++) {
     let file = 0;
     for (const ch of rows[rank] ?? "") {
-      if (/\d/.test(ch)) {
-        file += parseInt(ch);
-      } else {
-        board[rank][file] = ch;
-        file++;
-      }
+      if (/\d/.test(ch)) { file += parseInt(ch); }
+      else { board[rank][file] = ch; file++; }
     }
   }
   return board;
+}
+
+function sqToColRow(sq: string, orientation: "white" | "black"): { col: number; row: number } {
+  const file = sq.charCodeAt(0) - 97;
+  const rank = parseInt(sq[1]) - 1;
+  return {
+    col: orientation === "white" ? file : 7 - file,
+    row: orientation === "white" ? 7 - rank : rank,
+  };
+}
+
+function sqToXYPct(sq: string, orientation: "white" | "black"): { x: number; y: number } {
+  const { col, row } = sqToColRow(sq, orientation);
+  return { x: (col + 0.5) / 8 * 100, y: (row + 0.5) / 8 * 100 };
+}
+
+export interface Arrow {
+  from: string;
+  to: string;
+  color?: string;
 }
 
 interface Props {
   fen: string;
   orientation?: "white" | "black";
   lastMove?: { from: string; to: string } | null;
+  arrows?: Arrow[];
+  interactive?: boolean;
+  onMove?: (from: string, to: string) => void;
 }
 
-export function ChessBoard({ fen, orientation = "white", lastMove }: Props) {
+export function ChessBoard({
+  fen,
+  orientation = "white",
+  lastMove,
+  arrows = [],
+  interactive = false,
+  onMove,
+}: Props) {
+  const [selected, setSelected] = useState<string | null>(null);
   const board = parseFen(fen);
-
-  // Convert algebraic square to [rank, file] indices in the board array
-  function sqToIdx(sq: string): [number, number] {
-    const file = sq.charCodeAt(0) - 97; // a=0 … h=7
-    const rank = 8 - parseInt(sq[1]);   // rank 8 = row 0
-    return [rank, file];
-  }
+  const turnColor = fen.split(" ")[1] === "w" ? "white" : "black";
 
   const highlightSquares = new Set<string>();
-  if (lastMove) {
-    highlightSquares.add(lastMove.from);
-    highlightSquares.add(lastMove.to);
-  }
+  if (lastMove) { highlightSquares.add(lastMove.from); highlightSquares.add(lastMove.to); }
 
-  function sqLabel(displayRank: number, displayFile: number): string {
-    const file = orientation === "white" ? displayFile : 7 - displayFile;
-    const rank = orientation === "white" ? 8 - displayRank : displayRank + 1;
+  function sqLabel(displayRow: number, displayCol: number): string {
+    const file = orientation === "white" ? displayCol : 7 - displayCol;
+    const rank = orientation === "white" ? 8 - displayRow : displayRow + 1;
     return String.fromCharCode(97 + file) + rank;
   }
 
-  function pieceAt(displayRank: number, displayFile: number): string | null {
-    const file = orientation === "white" ? displayFile : 7 - displayFile;
-    const rank = orientation === "white" ? displayRank : 7 - displayRank;
+  function pieceAt(displayRow: number, displayCol: number): string | null {
+    const file = orientation === "white" ? displayCol : 7 - displayCol;
+    const rank = orientation === "white" ? displayRow : 7 - displayRow;
     return board[rank]?.[file] ?? null;
   }
 
+  function pieceColor(piece: string): "white" | "black" {
+    return piece === piece.toUpperCase() ? "white" : "black";
+  }
+
+  function handleClick(sq: string) {
+    if (!interactive || !onMove) return;
+    const piece = (() => {
+      const { col, row } = sqToColRow(sq, orientation);
+      const file = orientation === "white" ? col : 7 - col;
+      const rank = orientation === "white" ? row : 7 - row;
+      return board[rank]?.[file] ?? null;
+    })();
+
+    if (selected === null) {
+      if (piece && pieceColor(piece) === turnColor) setSelected(sq);
+    } else if (selected === sq) {
+      setSelected(null);
+    } else if (piece && pieceColor(piece) === turnColor) {
+      setSelected(sq);
+    } else {
+      onMove(selected, sq);
+      setSelected(null);
+    }
+  }
+
   return (
-    <div className="w-full aspect-square rounded-xl overflow-hidden select-none" style={{ border: "2px solid var(--border)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)", width: "100%", height: "100%" }}>
-        {Array.from({ length: 8 }, (_, rankIdx) =>
-          Array.from({ length: 8 }, (_, fileIdx) => {
-            const sq = sqLabel(rankIdx, fileIdx);
-            const piece = pieceAt(rankIdx, fileIdx);
-            const isDark = (rankIdx + fileIdx) % 2 === 1;
+    <div
+      className="w-full aspect-square rounded-xl select-none relative overflow-hidden"
+      style={{ border: "2px solid var(--border)" }}
+    >
+      {/* Board grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(8, 1fr)",
+          gridTemplateRows: "repeat(8, 1fr)",
+          width: "100%",
+          height: "100%",
+        }}
+      >
+        {Array.from({ length: 8 }, (_, rowIdx) =>
+          Array.from({ length: 8 }, (_, colIdx) => {
+            const sq = sqLabel(rowIdx, colIdx);
+            const piece = pieceAt(rowIdx, colIdx);
+            const isDark = (rowIdx + colIdx) % 2 === 1;
             const isHighlighted = highlightSquares.has(sq);
+            const isSelected = selected === sq;
             const isWhitePiece = piece !== null && piece === piece.toUpperCase();
 
             let bg = isDark ? "#2d4a6e" : "#8ea8c3";
             if (isHighlighted) bg = isDark ? "rgba(155,109,255,0.55)" : "rgba(155,109,255,0.40)";
+            if (isSelected) bg = "rgba(255,210,0,0.55)";
 
             return (
               <div
                 key={sq}
+                onClick={() => handleClick(sq)}
                 style={{
                   background: bg,
                   display: "flex",
@@ -81,42 +141,38 @@ export function ChessBoard({ fen, orientation = "white", lastMove }: Props) {
                   position: "relative",
                   fontSize: "clamp(18px, 5vw, 42px)",
                   lineHeight: 1,
-                  cursor: "default",
+                  cursor: interactive ? "pointer" : "default",
                 }}
               >
                 {piece && (
-                  <span
-                    style={{
-                      color: isWhitePiece ? "#ffffff" : "#1e293b",
-                      textShadow: isWhitePiece
-                        ? "0 1px 3px rgba(0,0,0,0.6), 0 0 8px rgba(0,0,0,0.3)"
-                        : "0 1px 0 rgba(255,255,255,0.4)",
-                      userSelect: "none",
-                    }}
-                  >
+                  <span style={{
+                    color: isWhitePiece ? "#f0f4ff" : "#0d1117",
+                    textShadow: isWhitePiece
+                      ? "0 1px 4px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5)"
+                      : "0 0 3px rgba(255,255,255,0.6), 0 1px 2px rgba(255,255,255,0.4)",
+                    userSelect: "none",
+                  }}>
                     {PIECE_UNICODE[piece] ?? piece}
                   </span>
                 )}
-                {/* Rank label on leftmost file */}
-                {fileIdx === 0 && (
+                {colIdx === 0 && (
                   <span style={{
                     position: "absolute", top: 2, left: 3,
                     fontSize: "clamp(7px, 1.2vw, 10px)",
                     color: isDark ? "#c8d8e8" : "#1e3a5f",
                     fontWeight: 700, lineHeight: 1,
                   }}>
-                    {orientation === "white" ? 8 - rankIdx : rankIdx + 1}
+                    {orientation === "white" ? 8 - rowIdx : rowIdx + 1}
                   </span>
                 )}
-                {/* File label on bottom rank */}
-                {rankIdx === 7 && (
+                {rowIdx === 7 && (
                   <span style={{
                     position: "absolute", bottom: 2, right: 3,
                     fontSize: "clamp(7px, 1.2vw, 10px)",
                     color: isDark ? "#c8d8e8" : "#1e3a5f",
                     fontWeight: 700, lineHeight: 1,
                   }}>
-                    {String.fromCharCode(97 + (orientation === "white" ? fileIdx : 7 - fileIdx))}
+                    {String.fromCharCode(97 + (orientation === "white" ? colIdx : 7 - colIdx))}
                   </span>
                 )}
               </div>
@@ -124,6 +180,51 @@ export function ChessBoard({ fen, orientation = "white", lastMove }: Props) {
           })
         )}
       </div>
+
+      {/* SVG overlay for arrows */}
+      {arrows.length > 0 && (
+        <svg
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            {["red", "green", "blue", "orange"].map(c => {
+              const colMap: Record<string, string> = {
+                red: "#ff4444", green: "#00d4a1", blue: "#9b6dff", orange: "#ff8c42",
+              };
+              return (
+                <marker key={c} id={`arrow-${c}`} markerWidth="4" markerHeight="4"
+                  refX="2" refY="2" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,4 L4,2 z" fill={colMap[c]} />
+                </marker>
+              );
+            })}
+          </defs>
+          {arrows.map((arrow, i) => {
+            const from = sqToXYPct(arrow.from, orientation);
+            const to   = sqToXYPct(arrow.to,   orientation);
+            const c = arrow.color ?? "blue";
+            const colMap: Record<string, string> = {
+              red: "#ff4444", green: "#00d4a1", blue: "#9b6dff", orange: "#ff8c42",
+            };
+            const stroke = colMap[c] ?? c;
+            // Shorten line slightly so it doesn't overlap the arrowhead
+            const dx = to.x - from.x, dy = to.y - from.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const ux = dx / len, uy = dy / len;
+            const ex = to.x - ux * 3, ey = to.y - uy * 3;
+            return (
+              <line key={i}
+                x1={from.x} y1={from.y} x2={ex} y2={ey}
+                stroke={stroke} strokeWidth="2.5" strokeOpacity="0.82"
+                markerEnd={`url(#arrow-${c})`}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </svg>
+      )}
     </div>
   );
 }

@@ -1,58 +1,127 @@
-import { type ChildProcess, spawn } from "child_process";
-import path from "path";
-
-const STOCKFISH_PATH = path.join(
-  process.cwd(),
-  "node_modules/stockfish/src/stockfish.js"
-);
+// In-process Stockfish (WASM) engine.
+//
+// Deploy note: we load the `lite-single` flavour of stockfish.js (~7MB, single
+// threaded, no SharedArrayBuffer) directly in-process via the npm package's
+// initializer. This runs inside the serverless function — NO child process is
+// spawned — so it works on Vercel/Node serverless where `spawn("node", …)` does
+// not. The engine instance is a module-level singleton reused across warm
+// invocations, and all evaluations are serialized through a single promise chain
+// because there is only one engine.
 
 interface EvalResult {
-  score: number;
+  score: number;      // pawns, side-to-move perspective; ±9999 = mate
   mate: number | null;
 }
 
-export async function evaluatePosition(fen: string, depth = 12): Promise<EvalResult> {
-  return new Promise((resolve, reject) => {
-    const proc: ChildProcess = spawn("node", [STOCKFISH_PATH], { stdio: "pipe" });
+interface StockfishEngine {
+  sendCommand: (cmd: string) => void;
+  listener: ((line: string) => void) | null;
+  terminate?: () => void;
+}
 
-    let output = "";
-    const timeout = setTimeout(() => {
-      proc.kill();
-      reject(new Error("Stockfish timeout"));
-    }, 8000);
+let enginePromise: Promise<StockfishEngine> | null = null;
 
-    proc.stdout?.on("data", (data: Buffer) => {
-      output += data.toString();
-      const lines = output.split("\n");
+async function getEngine(): Promise<StockfishEngine> {
+  if (!enginePromise) {
+    enginePromise = (async () => {
+      // stockfish is a CommonJS package with no types; default export is the initializer.
+      const mod = (await import("stockfish")) as unknown as {
+        default?: (path?: string) => Promise<StockfishEngine>;
+      };
+      const initEngine = (mod.default ?? (mod as unknown)) as (path?: string) => Promise<StockfishEngine>;
 
-      for (const line of lines) {
-        if (line.startsWith(`info depth ${depth}`) && line.includes("score")) {
-          const mateMatch = line.match(/score mate (-?\d+)/);
-          const cpMatch = line.match(/score cp (-?\d+)/);
+      const engine = await initEngine("lite-single");
 
-          if (mateMatch) {
-            clearTimeout(timeout);
-            proc.kill();
-            resolve({ score: mateMatch[1].startsWith("-") ? -9999 : 9999, mate: parseInt(mateMatch[1]) });
-            return;
-          }
-          if (cpMatch) {
-            clearTimeout(timeout);
-            proc.kill();
-            resolve({ score: parseInt(cpMatch[1]) / 100, mate: null });
-            return;
-          }
+      // Wait for a clean ready handshake before the first evaluation.
+      await new Promise<void>((resolve) => {
+        engine.listener = (line: string) => {
+          if (line === "readyok") resolve();
+        };
+        engine.sendCommand("uci");
+        engine.sendCommand("setoption name Threads value 1");
+        engine.sendCommand("setoption name Hash value 16");
+        engine.sendCommand("isready");
+      });
+      engine.listener = null;
+      return engine;
+    })().catch((err) => {
+      enginePromise = null; // allow retry on a later request if init failed
+      throw err;
+    });
+  }
+  return enginePromise;
+}
+
+// Serialize all engine access: there is a single engine instance shared across
+// concurrent requests, so evaluations must not interleave.
+let chain: Promise<unknown> = Promise.resolve();
+function runExclusive<T>(task: () => Promise<T>): Promise<T> {
+  const result = chain.then(task, task);
+  chain = result.catch(() => {});
+  return result;
+}
+
+function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promise<EvalResult> {
+  return new Promise((resolve) => {
+    let best: EvalResult = { score: 0, mate: null };
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      engine.listener = null;
+      resolve(best);
+    };
+
+    const timer = setTimeout(finish, 8000);
+
+    engine.listener = (line: string) => {
+      if (typeof line !== "string") return;
+      if (line.startsWith("info") && line.includes("score")) {
+        // Keep the deepest score line seen before bestmove.
+        const mateMatch = line.match(/score mate (-?\d+)/);
+        const cpMatch   = line.match(/score cp (-?\d+)/);
+        if (mateMatch) {
+          best = { score: mateMatch[1].startsWith("-") ? -9999 : 9999, mate: parseInt(mateMatch[1]) };
+        } else if (cpMatch) {
+          best = { score: parseInt(cpMatch[1]) / 100, mate: null };
         }
+      } else if (line.startsWith("bestmove")) {
+        finish();
       }
-    });
+    };
 
-    proc.on("error", (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-
-    proc.stdin?.write("uci\n");
-    proc.stdin?.write(`position fen ${fen}\n`);
-    proc.stdin?.write(`go depth ${depth}\n`);
+    engine.sendCommand("position fen " + fen);
+    engine.sendCommand("go depth " + depth);
   });
+}
+
+// Evaluates a single FEN position.
+export async function evaluatePosition(fen: string, depth = 10): Promise<EvalResult> {
+  const engine = await getEngine();
+  return runExclusive(() => evaluateOne(engine, fen, depth));
+}
+
+// Evaluates multiple FENs sequentially on the shared engine.
+export async function analyzeAllFens(
+  fens: string[],
+  depth = 10,
+  onProgress?: (done: number, total: number) => void
+): Promise<(EvalResult | null)[]> {
+  if (fens.length === 0) return [];
+  const engine = await getEngine();
+  const results: (EvalResult | null)[] = [];
+
+  for (let i = 0; i < fens.length; i++) {
+    try {
+      const r = await runExclusive(() => evaluateOne(engine, fens[i], depth));
+      results.push(r);
+    } catch {
+      results.push(null);
+    }
+    onProgress?.(i + 1, fens.length);
+  }
+
+  return results;
 }

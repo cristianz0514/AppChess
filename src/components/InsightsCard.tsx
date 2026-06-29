@@ -25,7 +25,7 @@ const severityStyle: Record<Insight["severity"], { dot: string; tag: string }> =
 
 export function InsightsCard({ insights: initial, username }: Props) {
   const router = useRouter();
-  const [insights, setInsights] = useState<Insight[]>(initial);
+  const [insights] = useState<Insight[]>(initial);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
 

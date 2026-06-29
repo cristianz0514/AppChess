@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getUnanalyzedGameIds } from "@/services/dashboardData";
 import type { HighlightGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
+import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
 import { OpeningWinrateChart } from "@/components/charts/OpeningWinrateChart";
 import type { Insight } from "@/types";
 
@@ -68,12 +69,14 @@ export default async function DashboardPage({ searchParams }: Props) {
   const userId = await getUserId(username);
   if (!userId) redirect("/");
 
-  const [stats, openings, insights, highlights] = await Promise.all([
+  const [stats, openings, insights, highlights, pendingIds] = await Promise.all([
     getDashboardStats(userId),
     getTopOpenings(userId),
     getInsights(userId),
     getHighlightGames(userId),
+    getUnanalyzedGameIds(userId),
   ]);
+  const pendingCount = pendingIds.length;
 
   const topInsight = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
   const remainingInsights = insights.filter((i) => i !== topInsight);
@@ -84,6 +87,11 @@ export default async function DashboardPage({ searchParams }: Props) {
   return (
     <AppLayout username={username}>
       <div className="space-y-4 max-w-lg mx-auto">
+
+        {/* ── Engine analysis prompt (only when games are pending) ── */}
+        {pendingCount > 0 && (
+          <AnalyzeAllButton username={username} />
+        )}
 
         {/* ── Rating row ──────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
