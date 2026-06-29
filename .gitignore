@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# next-pwa generated files (built on deploy)
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/workbox-*.js.map
+
+# environment variables — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# debug
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
