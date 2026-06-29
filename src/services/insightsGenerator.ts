@@ -1,9 +1,8 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 import { supabase } from "@/lib/supabase";
 import type { Insight } from "@/types";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
 
@@ -314,8 +313,13 @@ export async function generateInsights(userId: string): Promise<void> {
   const snapshot = await buildSnapshot(userId);
   if (!snapshot) return;
 
-  const result = await model.generateContent(buildPrompt(snapshot));
-  const text = result.response.text();
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [{ role: "user", content: buildPrompt(snapshot) }],
+    max_tokens: 1200,
+    temperature: 0.7,
+  });
+  const text = completion.choices[0]?.message?.content ?? "";
 
   let insights: GeneratedInsight[];
   try {
