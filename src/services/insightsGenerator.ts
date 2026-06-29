@@ -1,8 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { supabase } from "@/lib/supabase";
 import type { Insight } from "@/types";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
 
@@ -313,20 +314,12 @@ export async function generateInsights(userId: string): Promise<void> {
   const snapshot = await buildSnapshot(userId);
   if (!snapshot) return;
 
-  const stream = await client.messages.stream({
-    model: "claude-opus-4-8",
-    max_tokens: 1200,
-    thinking: { type: "adaptive" },
-    messages: [{ role: "user", content: buildPrompt(snapshot) }],
-  });
-
-  const response = await stream.finalMessage();
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") return;
+  const result = await model.generateContent(buildPrompt(snapshot));
+  const text = result.response.text();
 
   let insights: GeneratedInsight[];
   try {
-    const jsonMatch = textBlock.text.match(/\[[\s\S]*\]/);
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return;
     insights = JSON.parse(jsonMatch[0]);
   } catch {
