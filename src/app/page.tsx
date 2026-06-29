@@ -29,7 +29,9 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error ?? "Import failed");
 
       trackGamesImported(data.imported ?? 1);
-      router.push(`/dashboard?username=${encodeURIComponent(username.trim())}`);
+      // Persist username in a long-lived cookie so the dashboard works without query params
+      document.cookie = `bv_username=${encodeURIComponent(username.trim())}; path=/; max-age=2592000; SameSite=Lax`;
+      router.push(`/dashboard`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { DashboardStats, OpeningStat } from "@/types";
+import type { DashboardStats, OpeningStat, Game } from "@/types";
 
 export async function getUserId(username: string): Promise<string | null> {
   const { data } = await supabase
@@ -52,4 +52,60 @@ export async function getTopOpenings(userId: string): Promise<OpeningStat[]> {
     .order("games_played", { ascending: false })
     .limit(8);
   return data ?? [];
+}
+
+export interface ColorStats {
+  winrate: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  games: number;
+}
+
+export async function getColorStats(userId: string): Promise<{ white: ColorStats; black: ColorStats }> {
+  const { data: games } = await supabase
+    .from("games")
+    .select("result, played_as")
+    .eq("user_id", userId);
+
+  const empty = (): ColorStats => ({ winrate: 0, wins: 0, losses: 0, draws: 0, games: 0 });
+
+  if (!games || games.length === 0) return { white: empty(), black: empty() };
+
+  const calc = (color: "white" | "black"): ColorStats => {
+    const filtered = games.filter((g) => g.played_as === color);
+    if (filtered.length === 0) return empty();
+    const wins   = filtered.filter((g) => g.result === "win").length;
+    const losses = filtered.filter((g) => g.result === "loss").length;
+    const draws  = filtered.filter((g) => g.result === "draw").length;
+    return {
+      wins, losses, draws,
+      games: filtered.length,
+      winrate: Math.round((wins / filtered.length) * 100),
+    };
+  };
+
+  return { white: calc("white"), black: calc("black") };
+}
+
+export interface RecentGame {
+  id: string;
+  opening: string;
+  result: Game["result"];
+  accuracy: number | null;
+  played_as: "white" | "black";
+  white_rating: number;
+  black_rating: number;
+  time_control: string;
+  created_at: string;
+}
+
+export async function getRecentGames(userId: string, limit = 20): Promise<RecentGame[]> {
+  const { data } = await supabase
+    .from("games")
+    .select("id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as RecentGame[];
 }
