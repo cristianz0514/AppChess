@@ -74,7 +74,7 @@ function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promi
       resolve(best);
     };
 
-    const timer = setTimeout(finish, 8000);
+    const timer = setTimeout(finish, 3000);
 
     engine.listener = (line: string) => {
       if (typeof line !== "string") return;

@@ -318,7 +318,14 @@ export async function generateInsights(userId: string): Promise<void> {
 
   const completion = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
-    messages: [{ role: "user", content: buildPrompt(snapshot) }],
+    messages: [
+      {
+        role: "system",
+        content:
+          "Eres un entrenador de ajedrez experto. DEBES responder ÚNICAMENTE en español. Nunca respondas en inglés ni en ningún otro idioma. Solo español.",
+      },
+      { role: "user", content: buildPrompt(snapshot) },
+    ],
     max_tokens: 1200,
     temperature: 0.7,
   });

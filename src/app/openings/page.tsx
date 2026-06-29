@@ -45,6 +45,17 @@ export default function OpeningsPage() {
     { id: "black", label: "Negras"  },
   ];
 
+  if (!data) {
+    return (
+      <AppLayout username="">
+        <div className="flex items-center justify-center h-64">
+          <div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
+            style={{ borderColor: "var(--bv-purple)", borderTopColor: "transparent" }} />
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout username={username}>
       <div className="space-y-4 max-w-lg mx-auto">

@@ -34,7 +34,7 @@ export async function analyzeGame(gameId: string, pgn: string): Promise<void> {
   }
 
   // Analyze ALL positions with a single Stockfish process
-  const evals = await analyzeAllFens(fens, 10);
+  const evals = await analyzeAllFens(fens, 6);
 
   // Stockfish reports `score cp` from the SIDE-TO-MOVE perspective (UCI standard).
   // After move i (0-indexed), the side to move is white when i is odd.
@@ -88,10 +88,8 @@ export async function analyzeGame(gameId: string, pgn: string): Promise<void> {
 
   if (moves.length === 0) return;
 
-  await supabase.from("moves").upsert(
-    moves.map((m) => ({ ...m })),
-    { ignoreDuplicates: false }
-  );
+  await supabase.from("moves").delete().eq("game_id", gameId);
+  await supabase.from("moves").insert(moves.map((m) => ({ ...m })));
 
   const analyzed = moves.filter((m) => m.centipawn_loss !== null);
   const blunders    = analyzed.filter((m) => m.classification === "blunder").length;

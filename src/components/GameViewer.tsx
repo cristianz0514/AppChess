@@ -83,17 +83,18 @@ const CLASS_EMOJI: Record<string, string> = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
-  const classMap = new Map<number, DbMove>();
-  for (const m of dbMoves) classMap.set(m.move_number, m);
-
   const master = new Chess();
   try { master.loadPgn(pgn); } catch { return []; }
   const history = master.history({ verbose: true });
 
+  // dbMoves is ordered by move_number ASC from the DB query.
+  // move_number in the DB is the chess notation number (1 for both white's and black's
+  // first moves), so using it as a map key loses one of the two plies.
+  // Instead, match by array position: dbMoves[i] corresponds to ply i.
   const game = new Chess();
   return history.map((h, i) => {
     game.move(h.san);
-    const db = classMap.get(i + 1);
+    const db = dbMoves[i];
     return {
       san: h.san,
       fen: game.fen(),
@@ -138,35 +139,30 @@ function evalScore(ev: number | null): string {
 
 function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
   const currentEval = idx >= 0 ? moves[idx].evaluation : null;
-
-  // Fallback heuristic when no engine data
-  const fallbackEval = (() => {
-    const blunders = moves.slice(0, Math.max(0, idx + 1)).filter(m => m.classification === "blunder").length;
-    const mistakes  = moves.slice(0, Math.max(0, idx + 1)).filter(m => m.classification === "mistake").length;
-    return -(blunders * 1.5 + mistakes * 0.7);
-  })();
-
-  const ev = currentEval ?? fallbackEval;
-  const whitePct = evalToWhitePct(ev);
-  const whiteWinning = ev >= 0;
-  const isMate = Math.abs(ev) >= 90;
-  const score = evalScore(ev);
-  const label = evalLabel(ev, whiteWinning);
   const hasRealData = currentEval !== null;
+
+  // Only use engine eval when real Stockfish data exists
+  const ev = currentEval ?? 0;
+  const whitePct = hasRealData ? evalToWhitePct(ev) : 50;
+  const whiteWinning = ev >= 0;
+  const isMate = hasRealData && Math.abs(ev) >= 90;
+  const label = hasRealData ? evalLabel(ev, whiteWinning) : "Sin análisis";
 
   return (
     <div className="flex flex-col items-center gap-1 self-stretch" style={{ width: 28 }}>
-      {/* Score chip */}
-      <div
-        className="text-[9px] font-bold font-mono px-1 py-0.5 rounded leading-none shrink-0"
-        style={{
-          background: whiteWinning ? "#f0f4ff" : "#0d1117",
-          color: whiteWinning ? "#0d1117" : "#f0f4ff",
-          boxShadow: isMate ? `0 0 8px ${whiteWinning ? "rgba(0,212,161,0.6)" : "rgba(255,87,87,0.6)"}` : "none",
-        }}
-      >
-        {score}
-      </div>
+      {/* Score chip — only shown when real data exists */}
+      {hasRealData && (
+        <div
+          className="text-[9px] font-bold font-mono px-1 py-0.5 rounded leading-none shrink-0"
+          style={{
+            background: whiteWinning ? "#f0f4ff" : "#0d1117",
+            color: whiteWinning ? "#0d1117" : "#f0f4ff",
+            boxShadow: isMate ? `0 0 8px ${whiteWinning ? "rgba(0,212,161,0.6)" : "rgba(255,87,87,0.6)"}` : "none",
+          }}
+        >
+          {evalScore(ev)}
+        </div>
+      )}
 
       {/* Bar */}
       <div
@@ -177,7 +173,7 @@ function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
         <div
           style={{
             flex: `${100 - whitePct} 0 0`,
-            background: "#0d1117",
+            background: hasRealData ? "#0d1117" : "var(--muted)",
             transition: "flex 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         />
@@ -189,16 +185,18 @@ function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
         <div
           style={{
             flex: `${whitePct} 0 0`,
-            background: isMate
-              ? (whiteWinning ? "var(--bv-green)" : "var(--bv-red)")
-              : "#e8edf5",
+            background: !hasRealData
+              ? "var(--muted)"
+              : isMate
+                ? (whiteWinning ? "var(--bv-green)" : "var(--bv-red)")
+                : "#e8edf5",
             transition: "flex 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
             boxShadow: isMate ? `inset 0 0 12px ${whiteWinning ? "rgba(0,212,161,0.4)" : "rgba(255,87,87,0.4)"}` : "none",
           }}
         />
 
-        {/* Advantage band — colored stripe when clearly winning */}
-        {Math.abs(ev) > 1.5 && !isMate && (
+        {/* Advantage band — only when real data and clearly winning */}
+        {hasRealData && Math.abs(ev) > 1.5 && !isMate && (
           <div
             style={{
               position: "absolute",
