@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
-import { getUserId } from "@/services/dashboardData";
+import { getUserId, getExampleGames } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { Sparkles } from "lucide-react";
@@ -20,13 +21,24 @@ const coachRecommends = [
 ];
 
 export default async function InsightsPage() {
-  const username = await getUsername();
-  const userId   = await getUserId(username);
+  const username  = await getUsername();
+  const userId    = await getUserId(username);
   if (!userId) return null;
 
-  const insights = await getInsights(userId);
+  const [insights, exampleGames] = await Promise.all([
+    getInsights(userId),
+    getExampleGames(userId),
+  ]);
+
   const featured = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
   const rest      = insights.filter((i) => i !== featured);
+
+  function gameLink(category: Insight["category"]) {
+    const id = exampleGames[category];
+    if (!id) return null;
+    const jumpBlunder = category === "tactical" || category === "recurring_blunder";
+    return `/blunders/${id}${jumpBlunder ? "?blunder=1" : ""}`;
+  }
 
   return (
     <AppLayout username={username}>
@@ -46,21 +58,22 @@ export default async function InsightsPage() {
         {/* Daily Insight — featured */}
         {featured ? (
           <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles size={13} style={{ color: "var(--bv-purple)" }} />
-                <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Daily Insight</p>
-              </div>
-              <div className="flex gap-1">
-                {(["opening", "tactical"] as Insight["category"][]).includes(featured.category) && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                    style={{ background: "oklch(0.77 0.17 177 / 0.15)", color: "var(--bv-green)" }}>
-                    {categoryLabel[featured.category]}
-                  </span>
-                )}
-              </div>
+            <div className="flex items-center gap-2">
+              <Sparkles size={13} style={{ color: "var(--bv-purple)" }} />
+              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Daily Insight</p>
+              <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium"
+                style={{ background: "oklch(0.77 0.17 177 / 0.15)", color: "var(--bv-green)" }}>
+                {categoryLabel[featured.category]}
+              </span>
             </div>
             <p className="text-sm leading-relaxed font-medium">{featured.message}</p>
+            {gameLink(featured.category) && (
+              <Link href={gameLink(featured.category)!}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-1.5 transition-colors"
+                style={{ background: "oklch(0.61 0.22 285 / 0.2)", color: "var(--bv-purple)" }}>
+                ♟ Ver partido de ejemplo
+              </Link>
+            )}
           </div>
         ) : (
           <InsightsCard insights={[]} username={username} />
@@ -75,6 +88,7 @@ export default async function InsightsPage() {
             <div className="divide-y divide-border">
               {rest.map((insight) => {
                 const isPositive = insight.severity === "low";
+                const link = gameLink(insight.category);
                 return (
                   <div key={insight.id} className="flex items-start gap-3 px-4 py-3">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-sm"
@@ -84,6 +98,13 @@ export default async function InsightsPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold">{categoryLabel[insight.category]}</p>
                       <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{insight.message}</p>
+                      {link && (
+                        <Link href={link}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold mt-1.5 transition-opacity hover:opacity-70"
+                          style={{ color: "var(--bv-purple)" }}>
+                          ♟ Ver partido →
+                        </Link>
+                      )}
                     </div>
                   </div>
                 );
@@ -92,7 +113,6 @@ export default async function InsightsPage() {
           </div>
         )}
 
-        {/* Refresh button when no insights */}
         {insights.length === 0 && <InsightsCard insights={[]} username={username} />}
 
         {/* Coach Recommends */}
@@ -117,7 +137,8 @@ export default async function InsightsPage() {
         </div>
 
         {/* CTA */}
-        <div className="rounded-2xl p-5 text-center space-y-3" style={{ background: "oklch(0.61 0.22 285 / 0.15)", border: "1px solid oklch(0.61 0.22 285 / 0.25)" }}>
+        <div className="rounded-2xl p-5 text-center space-y-3"
+          style={{ background: "oklch(0.61 0.22 285 / 0.15)", border: "1px solid oklch(0.61 0.22 285 / 0.25)" }}>
           <p className="text-sm font-bold">Mastery is a Journey.</p>
           <p className="text-xs text-muted-foreground">Keep analyzing your games to unlock deeper insights.</p>
         </div>

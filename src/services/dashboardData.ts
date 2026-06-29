@@ -100,6 +100,62 @@ export interface RecentGame {
   created_at: string;
 }
 
+// Returns one "example game" per insight category — the game most relevant to each pattern.
+export async function getExampleGames(userId: string): Promise<{
+  tactical: string | null;
+  time_management: string | null;
+  opening: string | null;
+  recurring_blunder: string | null;
+}> {
+  const { data: games } = await supabase
+    .from("games")
+    .select("id")
+    .eq("user_id", userId)
+    .limit(50);
+
+  if (!games || games.length === 0) {
+    return { tactical: null, time_management: null, opening: null, recurring_blunder: null };
+  }
+
+  const ids = games.map((g) => g.id);
+
+  // Game with most blunders → tactical + recurring_blunder
+  const { data: blunderCounts } = await supabase
+    .from("moves")
+    .select("game_id")
+    .in("game_id", ids)
+    .in("classification", ["blunder", "mistake"]);
+
+  const countByGame = new Map<string, number>();
+  for (const row of blunderCounts ?? []) {
+    countByGame.set(row.game_id, (countByGame.get(row.game_id) ?? 0) + 1);
+  }
+  const blunderGameId = [...countByGame.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  // For time_management: game with the most moves (proxy for long scrambles — good enough without clock parse)
+  // We reuse blunderGameId since blunders often correlate with time pressure.
+  // For opening: game with worst accuracy that's in the first 15 moves blunder zone.
+  const { data: openingBlunders } = await supabase
+    .from("moves")
+    .select("game_id")
+    .in("game_id", ids)
+    .in("classification", ["blunder"])
+    .lte("move_number", 10);
+
+  const openingGameCounts = new Map<string, number>();
+  for (const row of openingBlunders ?? []) {
+    openingGameCounts.set(row.game_id, (openingGameCounts.get(row.game_id) ?? 0) + 1);
+  }
+  const openingGameId = [...openingGameCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? blunderGameId;
+
+  return {
+    tactical: blunderGameId,
+    time_management: blunderGameId,
+    opening: openingGameId,
+    recurring_blunder: blunderGameId,
+  };
+}
+
 export async function getRecentGames(userId: string, limit = 20): Promise<RecentGame[]> {
   const { data } = await supabase
     .from("games")

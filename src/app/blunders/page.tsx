@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId, getDashboardStats, getRecentGames } from "@/services/dashboardData";
@@ -76,7 +77,8 @@ export default async function BlundersPage() {
                 const rating  = game.played_as === "white" ? game.white_rating : game.black_rating;
                 const opening = game.opening ?? "Unknown Opening";
                 return (
-                  <div key={game.id} className="flex items-center gap-3 px-4 py-3">
+                  <Link key={game.id} href={`/blunders/${game.id}`}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs"
                       style={{ background: badge.bg, color: badge.color }}>
                       {badge.label}
@@ -93,7 +95,8 @@ export default async function BlundersPage() {
                         <p className="text-[10px] text-muted-foreground">{game.accuracy}%</p>
                       )}
                     </div>
-                  </div>
+                    <span className="text-muted-foreground text-sm shrink-0">›</span>
+                  </Link>
                 );
               })}
             </div>
