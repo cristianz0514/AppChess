@@ -4,94 +4,304 @@ import type { Insight } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ─── Clock parsing ────────────────────────────────────────────────────────────
+
+// Returns remaining seconds for each half-move (ply) in the order they appear in PGN.
+// Chess.com encodes: 1. e4 { [%clk 0:10:00] } 1... e5 { [%clk 0:09:58] }
+function parsePgnClocks(pgn: string): number[] {
+  const times: number[] = [];
+  const re = /\[%clk\s+(\d+):(\d+):(\d+)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(pgn)) !== null) {
+    times.push(parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]));
+  }
+  return times;
+}
+
+// Detects a "time collapse": clock was fine (>60s) then fell below 30s, meaning
+// the player was in a scramble during those plies.
+function timePressurePlies(clocks: number[]): Set<number> {
+  const pressurePlies = new Set<number>();
+  for (let i = 0; i < clocks.length; i++) {
+    if (clocks[i] < 30) pressurePlies.add(i);
+  }
+  return pressurePlies;
+}
+
+// ─── Move pattern detection ───────────────────────────────────────────────────
+
+// Returns true if SAN move is a queen move (starts with Q, not Qx? capture notation edge case).
+const isQueenMove = (san: string) => san.startsWith("Q");
+
+// Returns true if SAN move is a piece development move (knight or bishop).
+const isDevelopmentMove = (san: string) =>
+  san.startsWith("N") || san.startsWith("B");
+
+// ─── Snapshot ─────────────────────────────────────────────────────────────────
+
+interface BlunderPhases {
+  opening: number;    // moves 1–10
+  middlegame: number; // moves 11–25
+  endgame: number;    // moves 26+
+}
+
 interface PlayerSnapshot {
   totalGames: number;
   winrate: number;
   avgAccuracy: number | null;
-  blunderRate: number;
-  mistakeRate: number;
+
+  // Opening habits
   topOpenings: { name: string; games: number; winrate: number }[];
   worstOpenings: { name: string; games: number; winrate: number }[];
-  earlyBlunders: number;
-  lateBlunders: number;
+  earlyQueenGames: number;        // games with a queen move before move 6
+  lowDevelopmentGames: number;    // games with <3 N/B moves in first 10 plies
+
+  // Time pressure
+  hasClockData: boolean;
+  timePressureGames: number;      // games where clock fell below 30s
+  timePressureBlunders: number;   // blunders that occurred during time pressure
+  totalBlundersInTimeGames: number;
+
+  // Tactical weaknesses
+  blundersByPhase: BlunderPhases;
+  severeBlunders: number;         // centipawn_loss > 300
+  totalBlunders: number;
+  totalMistakes: number;
+  peakBlunderMoveRange: string | null; // e.g. "moves 12–18"
 }
 
 async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
-  const [gamesRes, movesRes, openingsRes] = await Promise.all([
-    supabase
-      .from("games")
-      .select("result, accuracy")
-      .eq("user_id", userId),
+  // Fetch game IDs first so we can join cleanly.
+  const { data: gameRows } = await supabase
+    .from("games")
+    .select("id, result, accuracy, pgn, played_as")
+    .eq("user_id", userId);
+
+  if (!gameRows || gameRows.length === 0) return null;
+
+  const gameIds = gameRows.map((g) => g.id);
+
+  const [movesRes, openingsRes] = await Promise.all([
     supabase
       .from("moves")
-      .select("game_id, move_number, classification")
-      .in(
-        "game_id",
-        (
-          await supabase
-            .from("games")
-            .select("id")
-            .eq("user_id", userId)
-        ).data?.map((g) => g.id) ?? []
-      ),
+      .select("game_id, move_number, move, centipawn_loss, classification")
+      .in("game_id", gameIds),
     supabase
       .from("opening_stats")
       .select("opening_name, games_played, wins, losses, draws, winrate")
       .eq("user_id", userId)
       .gte("games_played", 2)
       .order("games_played", { ascending: false })
-      .limit(10),
+      .limit(12),
   ]);
 
-  const games = gamesRes.data ?? [];
   const moves = movesRes.data ?? [];
   const openings = openingsRes.data ?? [];
 
-  if (games.length === 0) return null;
+  // ── General stats ──────────────────────────────────────────────────────────
+  const wins = gameRows.filter((g) => g.result === "win").length;
+  const accuracies = gameRows
+    .map((g) => g.accuracy)
+    .filter((a): a is number => a !== null);
+  const avgAccuracy =
+    accuracies.length > 0
+      ? Math.round((accuracies.reduce((s, a) => s + a, 0) / accuracies.length) * 10) / 10
+      : null;
 
-  const wins = games.filter((g) => g.result === "win").length;
-  const accuracies = games.map((g) => g.accuracy).filter((a): a is number => a !== null);
-  const avgAccuracy = accuracies.length > 0
-    ? accuracies.reduce((s, a) => s + a, 0) / accuracies.length
-    : null;
+  // ── Opening patterns (from moves table) ───────────────────────────────────
+  // Group moves by game_id for per-game analysis.
+  const movesByGame = new Map<string, typeof moves>();
+  for (const m of moves) {
+    if (!movesByGame.has(m.game_id)) movesByGame.set(m.game_id, []);
+    movesByGame.get(m.game_id)!.push(m);
+  }
 
+  let earlyQueenGames = 0;
+  let lowDevelopmentGames = 0;
+
+  for (const [, gameMoves] of movesByGame) {
+    const early = gameMoves.filter((m) => m.move_number <= 5);
+    if (early.some((m) => m.move !== null && isQueenMove(m.move))) {
+      earlyQueenGames++;
+    }
+
+    const first10 = gameMoves.filter((m) => m.move_number <= 10);
+    const devCount = first10.filter((m) => m.move !== null && isDevelopmentMove(m.move)).length;
+    if (devCount < 3) lowDevelopmentGames++;
+  }
+
+  // ── Tactical weaknesses ───────────────────────────────────────────────────
   const analyzed = moves.filter((m) => m.classification !== null);
-  const blunders = analyzed.filter((m) => m.classification === "blunder").length;
-  const mistakes = analyzed.filter((m) => m.classification === "mistake").length;
-  const total = analyzed.length;
+  const blunders = analyzed.filter((m) => m.classification === "blunder");
+  const mistakes = analyzed.filter((m) => m.classification === "mistake");
 
-  const earlyBlunders = moves.filter(
-    (m) => m.move_number <= 10 && (m.classification === "blunder" || m.classification === "mistake")
-  ).length;
-  const lateBlunders = moves.filter(
-    (m) => m.move_number > 20 && (m.classification === "blunder" || m.classification === "mistake")
+  const blundersByPhase: BlunderPhases = {
+    opening:    blunders.filter((m) => m.move_number <= 10).length,
+    middlegame: blunders.filter((m) => m.move_number > 10 && m.move_number <= 25).length,
+    endgame:    blunders.filter((m) => m.move_number > 25).length,
+  };
+
+  const severeBlunders = analyzed.filter(
+    (m) => m.centipawn_loss !== null && m.centipawn_loss > 300
   ).length;
 
+  // Find the 8-move window with the most blunders+mistakes.
+  const errors = [...blunders, ...mistakes];
+  let peakBlunderMoveRange: string | null = null;
+  if (errors.length >= 3) {
+    let bestStart = 1;
+    let bestCount = 0;
+    for (let start = 1; start <= 30; start++) {
+      const count = errors.filter(
+        (e) => e.move_number >= start && e.move_number < start + 8
+      ).length;
+      if (count > bestCount) {
+        bestCount = count;
+        bestStart = start;
+      }
+    }
+    if (bestCount >= 2) {
+      peakBlunderMoveRange = `moves ${bestStart}–${bestStart + 7}`;
+    }
+  }
+
+  // ── Time pressure (from PGN clock annotations) ────────────────────────────
+  let timePressureGames = 0;
+  let timePressureBlunders = 0;
+  let totalBlundersInTimeGames = 0;
+  let hasClockData = false;
+
+  for (const game of gameRows) {
+    const clocks = parsePgnClocks(game.pgn ?? "");
+    if (clocks.length === 0) continue;
+    hasClockData = true;
+
+    const pressurePlies = timePressurePlies(clocks);
+    const inTimePressure = pressurePlies.size > 0;
+
+    if (!inTimePressure) continue;
+    timePressureGames++;
+
+    const gameBlunders = (movesByGame.get(game.id) ?? []).filter(
+      (m) => m.classification === "blunder" || m.classification === "mistake"
+    );
+    totalBlundersInTimeGames += gameBlunders.length;
+
+    // A move_number maps to ply index: white move N = ply (2N-2), black = ply (2N-1).
+    // We check the ply just before the move to see if the clock was low.
+    for (const m of gameBlunders) {
+      const ply = game.played_as === "white"
+        ? (m.move_number - 1) * 2
+        : (m.move_number - 1) * 2 + 1;
+      if (pressurePlies.has(ply) || pressurePlies.has(ply - 1)) {
+        timePressureBlunders++;
+      }
+    }
+  }
+
+  // ── Openings ranking ──────────────────────────────────────────────────────
   const sorted = [...openings].sort((a, b) => b.winrate - a.winrate);
 
   return {
-    totalGames: games.length,
-    winrate: Math.round((wins / games.length) * 100),
-    avgAccuracy: avgAccuracy !== null ? Math.round(avgAccuracy * 10) / 10 : null,
-    blunderRate: total > 0 ? Math.round((blunders / total) * 100) : 0,
-    mistakeRate: total > 0 ? Math.round((mistakes / total) * 100) : 0,
+    totalGames: gameRows.length,
+    winrate: Math.round((wins / gameRows.length) * 100),
+    avgAccuracy,
+
     topOpenings: sorted.slice(0, 3).map((o) => ({
       name: o.opening_name,
       games: o.games_played,
       winrate: o.winrate,
     })),
-    worstOpenings: sorted
-      .slice(-3)
-      .reverse()
-      .map((o) => ({
-        name: o.opening_name,
-        games: o.games_played,
-        winrate: o.winrate,
-      })),
-    earlyBlunders,
-    lateBlunders,
+    worstOpenings: sorted.slice(-3).reverse().map((o) => ({
+      name: o.opening_name,
+      games: o.games_played,
+      winrate: o.winrate,
+    })),
+    earlyQueenGames,
+    lowDevelopmentGames,
+
+    hasClockData,
+    timePressureGames,
+    timePressureBlunders,
+    totalBlundersInTimeGames,
+
+    blundersByPhase,
+    severeBlunders,
+    totalBlunders: blunders.length,
+    totalMistakes: mistakes.length,
+    peakBlunderMoveRange,
   };
 }
+
+// ─── Prompt ───────────────────────────────────────────────────────────────────
+
+function buildPrompt(s: PlayerSnapshot): string {
+  const pct = (n: number, total: number) =>
+    total > 0 ? `${Math.round((n / total) * 100)}%` : "0%";
+
+  const timePressureSection = s.hasClockData
+    ? `Time Pressure (from clock annotations):
+- Games where clock fell below 30s: ${s.timePressureGames} of ${s.totalGames}
+- Blunders/mistakes during time pressure: ${s.timePressureBlunders}
+- Total errors in those games: ${s.totalBlundersInTimeGames}
+- Time pressure error rate: ${pct(s.timePressureBlunders, s.totalBlundersInTimeGames)} of errors occurred under 30s`
+    : `Time Pressure: no clock data available for this player's games`;
+
+  return `You are an expert chess coach. A player has ${s.totalGames} recent blitz/rapid games in our database.
+Generate exactly 4 coaching insights covering these three areas. Each insight must be grounded in the specific numbers below.
+
+═══════════════════════════════════
+PLAYER DATA
+═══════════════════════════════════
+
+General:
+- Win rate: ${s.winrate}%
+- Avg accuracy: ${s.avgAccuracy !== null ? `${s.avgAccuracy}%` : "not yet calculated"}
+- Total blunders: ${s.totalBlunders} | Total mistakes: ${s.totalMistakes}
+
+Opening Habits:
+- Games with an early queen move (before move 6): ${s.earlyQueenGames} of ${s.totalGames}
+- Games with passive opening (fewer than 3 piece development moves in first 10): ${s.lowDevelopmentGames} of ${s.totalGames}
+- Best openings by win rate: ${s.topOpenings.map((o) => `${o.name} ${o.winrate}% (${o.games}g)`).join(", ")}
+- Worst openings by win rate: ${s.worstOpenings.map((o) => `${o.name} ${o.winrate}% (${o.games}g)`).join(", ")}
+
+${timePressureSection}
+
+Tactical Weaknesses:
+- Blunders by phase — opening (moves 1–10): ${s.blundersByPhase.opening}, middlegame (11–25): ${s.blundersByPhase.middlegame}, endgame (26+): ${s.blundersByPhase.endgame}
+- Severe blunders (>300 centipawns lost): ${s.severeBlunders}
+- Peak error zone: ${s.peakBlunderMoveRange ?? "spread evenly"}
+
+═══════════════════════════════════
+RULES — READ CAREFULLY
+═══════════════════════════════════
+
+✅ MUST:
+- Reference exact numbers from the data above in every insight.
+- Cover at least 2 of the 3 areas (opening habits, time pressure, tactical weaknesses).
+- Give ONE specific, actionable instruction per insight.
+- Sound personal — like a coach who studied this specific player's games.
+
+❌ NEVER:
+- Give advice that could apply to any chess player ("study tactics", "be more careful").
+- Repeat the same advice across two insights.
+- Mention categories or labels in the message text.
+- Use jargon without explaining it in plain language.
+
+FORMAT:
+Return a JSON array of exactly 4 objects:
+[
+  {
+    "category": "opening" | "tactical" | "time_management" | "recurring_blunder",
+    "message": "...(under 70 words, plain English, personal tone)...",
+    "severity": "low" | "medium" | "high"
+  }
+]
+
+JSON only — no explanation, no markdown, no preamble:`;
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 interface GeneratedInsight {
   category: Insight["category"];
@@ -103,46 +313,14 @@ export async function generateInsights(userId: string): Promise<void> {
   const snapshot = await buildSnapshot(userId);
   if (!snapshot) return;
 
-  const prompt = `You are a chess coach analyzing a blitz/rapid player's recent games. Generate exactly 4 specific coaching insights based on this data:
-
-Player Stats:
-- Total games analyzed: ${snapshot.totalGames}
-- Win rate: ${snapshot.winrate}%
-- Average accuracy: ${snapshot.avgAccuracy !== null ? `${snapshot.avgAccuracy}%` : "unknown"}
-- Blunder rate: ${snapshot.blunderRate}% of analyzed moves
-- Mistake rate: ${snapshot.mistakeRate}% of analyzed moves
-- Early game errors (moves 1-10): ${snapshot.earlyBlunders} blunders/mistakes
-- Late game errors (moves 21+): ${snapshot.lateBlunders} blunders/mistakes
-
-Best openings by win rate:
-${snapshot.topOpenings.map((o) => `  - ${o.name}: ${o.winrate}% win rate (${o.games} games)`).join("\n")}
-
-Worst openings by win rate:
-${snapshot.worstOpenings.map((o) => `  - ${o.name}: ${o.winrate}% win rate (${o.games} games)`).join("\n")}
-
-Rules:
-- Each insight MUST reference specific numbers from the data above.
-- Never give generic advice like "study tactics" without tying it to the actual numbers.
-- Be direct and actionable. One clear action per insight.
-- Keep each message under 60 words.
-- Use plain language, no jargon.
-
-Return a JSON array of exactly 4 objects with these fields:
-- category: one of "opening", "tactical", "time_management", "recurring_blunder"
-- message: the coaching insight text
-- severity: "low" (minor issue), "medium" (clear pattern), "high" (major weakness)
-
-JSON only, no explanation:`;
-
   const stream = await client.messages.stream({
     model: "claude-opus-4-8",
-    max_tokens: 1024,
+    max_tokens: 1200,
     thinking: { type: "adaptive" },
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: buildPrompt(snapshot) }],
   });
 
   const response = await stream.finalMessage();
-
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") return;
 
@@ -157,9 +335,7 @@ JSON only, no explanation:`;
 
   if (!Array.isArray(insights) || insights.length === 0) return;
 
-  // Delete old insights for this user before inserting fresh ones
   await supabase.from("insights").delete().eq("user_id", userId);
-
   await supabase.from("insights").insert(
     insights.map((ins) => ({
       user_id: userId,
