@@ -21,6 +21,13 @@ interface StockfishEngine {
 
 let enginePromise: Promise<StockfishEngine> | null = null;
 
+// Stockfish's emscripten glue assigns `fetch=null` to the global scope when it
+// loads (it uses fs, not fetch). On a long-lived Node server this nukes the
+// global fetch for the WHOLE process, breaking every later chess.com import
+// ("fetch is not a function"). Capture the native fetch now and restore it
+// after the engine initializes.
+const nativeFetch = globalThis.fetch;
+
 async function getEngine(): Promise<StockfishEngine> {
   if (!enginePromise) {
     enginePromise = (async () => {
@@ -31,6 +38,11 @@ async function getEngine(): Promise<StockfishEngine> {
       const initEngine = (mod.default ?? (mod as unknown)) as (path?: string) => Promise<StockfishEngine>;
 
       const engine = await initEngine("lite-single");
+
+      // Restore the global fetch that stockfish nulled out.
+      if (typeof globalThis.fetch !== "function" && typeof nativeFetch === "function") {
+        globalThis.fetch = nativeFetch;
+      }
 
       // Wait for a clean ready handshake before the first evaluation.
       await new Promise<void>((resolve) => {
