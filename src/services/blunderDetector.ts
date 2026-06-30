@@ -14,7 +14,11 @@ function classify(centipawnLoss: number): MoveClassification {
   return "blunder";
 }
 
-export async function analyzeGame(gameId: string, pgn: string): Promise<void> {
+export async function analyzeGame(
+  gameId: string,
+  pgn: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
   const chess = new Chess();
 
   try {
@@ -34,7 +38,7 @@ export async function analyzeGame(gameId: string, pgn: string): Promise<void> {
   }
 
   // Analyze ALL positions with a single Stockfish process
-  const evals = await analyzeAllFens(fens, 6);
+  const evals = await analyzeAllFens(fens, 6, onProgress);
 
   // Stockfish reports `score cp` from the SIDE-TO-MOVE perspective (UCI standard).
   // After move i (0-indexed), the side to move is white when i is odd.
