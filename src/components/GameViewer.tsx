@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
@@ -81,6 +81,38 @@ const CLASS_COLOR: Record<string, string> = {
 const CLASS_EMOJI: Record<string, string> = {
   blunder: "✕", mistake: "!", inaccuracy: "?", best: "✓", excellent: "✓", good: "✓",
 };
+
+// Coach-style narrative for a critical moment: a concise cause + a practical
+// takeaway. Rule-based (no latency/cost) but written like a blitz coach.
+function storyNarrative(
+  move: MoveInfo,
+  evalBefore: number | null,
+  evalAfter: number | null,
+): { cause: string; takeaway: string } {
+  const before = evalBefore ?? 0;
+  const after = evalAfter ?? 0;
+  const phase = move.moveNumber <= 10 ? "apertura" : move.moveNumber <= 25 ? "medio juego" : "final";
+
+  let cause: string;
+  if (before >= 2 && after < 1) {
+    cause = "Ibas ganando con claridad y esta jugada soltó casi toda la ventaja.";
+  } else if (before > 0.5 && after < -0.5) {
+    cause = "Aquí la partida se dio vuelta: pasaste de estar mejor a estar peor.";
+  } else if (after <= -2) {
+    cause = "Esta jugada te dejó en una posición claramente perdida.";
+  } else {
+    cause = "Cediste una parte importante de la evaluación con esta jugada.";
+  }
+
+  const takeaway =
+    phase === "apertura"
+      ? "En la apertura: desarrolla piezas y no muevas dos veces la misma sin razón."
+      : phase === "medio juego"
+        ? "Antes de atacar, revisa una vez más si dejas alguna pieza sin defensa."
+        : "En el final cada peón pesa — tómate el tiempo de calcular antes de mover.";
+
+  return { cause, takeaway };
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -436,6 +468,27 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
   }, [moves.length]);
 
+  // Swipe (mobile) + arrow keys (desktop) to replay moves like a reel.
+  const touchX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => { touchX.current = e.touches[0].clientX; };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchX.current;
+    touchX.current = null;
+    if (Math.abs(dx) < 40) return;
+    setIdx((cur) => Math.max(-1, Math.min(moves.length - 1, cur + (dx < 0 ? 1 : -1))));
+    setBestMoveArrow(null);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setIdx((c) => Math.max(-1, c - 1)); }
+      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moves.length]);
+
   const blunderCount = useMemo(() => moves.filter(m => m.classification === "blunder").length, [moves]);
   const mistakeCount = useMemo(() => moves.filter(m => m.classification === "mistake").length, [moves]);
 
@@ -532,10 +585,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {!inExplore && inStory && criticalMoments.length > 0 && (() => {
             const cm = criticalMoments[storyStep!];
             const dropped = (cm.evalBefore ?? 0) - (cm.evalAfter ?? 0);
-            const lead =
-              cm.move.classification === "blunder"
-                ? "un error grave que cambió el rumbo"
-                : "un error que cedió la iniciativa";
+            const { cause, takeaway } = storyNarrative(cm.move, cm.evalBefore, cm.evalAfter);
             return (
               <div className="rounded-2xl border p-4 space-y-3"
                 style={{ borderColor: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.07)" }}>
@@ -554,11 +604,24 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 <p className="text-base font-semibold leading-snug font-display">
                   Jugada {cm.move.moveNumber}{cm.move.color === "w" ? "." : "…"} {cm.move.san}
                 </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
+                    style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+                    {fmtEval(cm.evalBefore)}
+                  </span>
+                  <span className="text-muted-foreground text-xs">→</span>
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
+                    style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
+                    {fmtEval(cm.evalAfter)}
+                  </span>
+                  {dropped > 0 && (
+                    <span className="text-[11px] font-semibold" style={{ color: "var(--bv-red)" }}>−{dropped.toFixed(1)}</span>
+                  )}
+                </div>
+                <p className="text-xs text-foreground leading-relaxed">{cause}</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Tenías <span className="font-mono" style={{ color: "var(--foreground)" }}>{fmtEval(cm.evalBefore)}</span>{" "}
-                  y tras esta jugada la evaluación cayó a{" "}
-                  <span className="font-mono" style={{ color: "var(--bv-red)" }}>{fmtEval(cm.evalAfter)}</span>
-                  {dropped > 0 ? ` (−${dropped.toFixed(1)})` : ""} — {lead}.
+                  <span className="font-semibold" style={{ color: "var(--bv-purple)" }}>Para la próxima: </span>
+                  {takeaway}
                 </p>
 
                 <div className="flex items-center gap-2 pt-1">
@@ -635,7 +698,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {/* Board + eval bar (bar on top, board edge-to-edge) */}
           <div className="space-y-2 -mx-4">
             <div className="px-4"><EvalBar moves={moves} idx={inExplore ? -1 : idx} /></div>
-            <div className="relative">
+            <div className="relative"
+              onTouchStart={!inExplore ? onTouchStart : undefined}
+              onTouchEnd={!inExplore ? onTouchEnd : undefined}>
               {/* Explore mode banner */}
               {inExplore && (
                 <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
