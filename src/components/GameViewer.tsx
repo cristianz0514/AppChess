@@ -528,6 +528,34 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const [storyStep, setStoryStep] = useState<number | null>(null);
   const inStory = storyStep !== null;
 
+  // AI coach explanation per critical moment (cached by move index), with the
+  // rule-based narrative as the instant fallback while it loads / on failure.
+  const [aiExplain, setAiExplain] = useState<Record<number, string>>({});
+  const [explainLoading, setExplainLoading] = useState(false);
+
+  useEffect(() => {
+    if (storyStep === null || criticalMoments.length === 0) return;
+    const cm = criticalMoments[storyStep];
+    if (aiExplain[cm.idx] !== undefined) return; // already fetched
+    const fenBefore = cm.idx > 0 ? moves[cm.idx - 1].fen : new Chess().fen();
+    const phase = cm.move.moveNumber <= 10 ? "apertura" : cm.move.moveNumber <= 25 ? "medio juego" : "final";
+    let cancelled = false;
+    setExplainLoading(true);
+    fetch("/api/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fenBefore, san: cm.move.san, moveNumber: cm.move.moveNumber,
+        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d?.text) setAiExplain((prev) => ({ ...prev, [cm.idx]: d.text })); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setExplainLoading(false); });
+    return () => { cancelled = true; };
+  }, [storyStep, criticalMoments, moves, aiExplain]);
+
   function startStory() {
     if (criticalMoments.length === 0) return;
     setBestMoveArrow(null);
@@ -618,7 +646,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     <span className="text-[11px] font-semibold" style={{ color: "var(--bv-red)" }}>−{dropped.toFixed(1)}</span>
                   )}
                 </div>
-                <p className="text-xs text-foreground leading-relaxed">{cause}</p>
+                <p className="text-xs text-foreground leading-relaxed">
+                  {aiExplain[cm.idx] ?? cause}
+                  {explainLoading && aiExplain[cm.idx] === undefined && (
+                    <span className="ml-1 text-muted-foreground italic">· el coach está analizando…</span>
+                  )}
+                </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <span className="font-semibold" style={{ color: "var(--bv-purple)" }}>Para la próxima: </span>
                   {takeaway}
