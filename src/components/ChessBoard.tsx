@@ -104,7 +104,7 @@ export function ChessBoard({
   return (
     <div
       className="w-full aspect-square rounded-xl select-none relative overflow-hidden"
-      style={{ border: "2px solid var(--border)" }}
+      style={{ border: "2px solid var(--border)", containerType: "inline-size" }}
     >
       {/* Board grid */}
       <div
@@ -139,7 +139,7 @@ export function ChessBoard({
                   alignItems: "center",
                   justifyContent: "center",
                   position: "relative",
-                  fontSize: "clamp(18px, 5vw, 42px)",
+                  fontSize: "10.5cqi",
                   lineHeight: 1,
                   cursor: interactive ? "pointer" : "default",
                 }}
@@ -158,7 +158,7 @@ export function ChessBoard({
                 {colIdx === 0 && (
                   <span style={{
                     position: "absolute", top: 2, left: 3,
-                    fontSize: "clamp(7px, 1.2vw, 10px)",
+                    fontSize: "2.2cqi",
                     color: isDark ? "#c8d8e8" : "#1e3a5f",
                     fontWeight: 700, lineHeight: 1,
                   }}>
@@ -168,7 +168,7 @@ export function ChessBoard({
                 {rowIdx === 7 && (
                   <span style={{
                     position: "absolute", bottom: 2, right: 3,
-                    fontSize: "clamp(7px, 1.2vw, 10px)",
+                    fontSize: "2.2cqi",
                     color: isDark ? "#c8d8e8" : "#1e3a5f",
                     fontWeight: 700, lineHeight: 1,
                   }}>

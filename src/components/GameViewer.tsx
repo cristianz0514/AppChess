@@ -77,7 +77,7 @@ const CLASS_COLOR: Record<string, string> = {
 };
 
 const CLASS_EMOJI: Record<string, string> = {
-  blunder: "??", mistake: "?", inaccuracy: "?!", best: "!!", excellent: "!", good: "",
+  blunder: "💥", mistake: "⚠️", inaccuracy: "❓", best: "⭐", excellent: "✨", good: "✓",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -507,9 +507,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </span>
           )}
         </div>
-        <div className="flex gap-2 text-xs font-mono shrink-0">
-          {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>?? {blunderCount}</span>}
-          {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>? {mistakeCount}</span>}
+        <div className="flex gap-2 text-xs font-semibold shrink-0">
+          {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>💥 {blunderCount}</span>}
+          {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>⚠️ {mistakeCount}</span>}
         </div>
       </div>
 
