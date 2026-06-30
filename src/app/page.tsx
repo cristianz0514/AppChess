@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackGamesImported } from "@/lib/installTracking";
+import { Target, Activity, Crosshair, BookOpen, type LucideIcon } from "lucide-react";
 
 export default function Home() {
   const [username, setUsername] = useState("");
@@ -35,11 +36,11 @@ export default function Home() {
     }
   }
 
-  const features = [
-    { icon: "♟", title: "Detecta tus errores", desc: "Stockfish analiza cada jugada y clasifica errores graves, errores y imprecisiones." },
-    { icon: "📊", title: "Barra de evaluación", desc: "Ve cómo cambia la ventaja en cada movimiento de la partida." },
-    { icon: "🎯", title: "Practica tus errores", desc: "Reproduce las posiciones donde fallaste e intenta encontrar la jugada correcta." },
-    { icon: "📖", title: "Repertorio de aperturas", desc: "Descubre con qué aperturas ganas más y cuáles debes mejorar." },
+  const features: { Icon: LucideIcon; title: string; desc: string }[] = [
+    { Icon: Target,    title: "Detecta tus errores", desc: "Stockfish analiza cada jugada y clasifica errores graves, errores e imprecisiones." },
+    { Icon: Activity,  title: "Barra de evaluación", desc: "Ve cómo cambia la ventaja en cada movimiento de la partida." },
+    { Icon: Crosshair, title: "Practica tus errores", desc: "Reproduce las posiciones donde fallaste e intenta encontrar la jugada correcta." },
+    { Icon: BookOpen,  title: "Repertorio de aperturas", desc: "Descubre con qué aperturas ganas más y cuáles debes mejorar." },
   ];
 
   return (
@@ -105,7 +106,7 @@ export default function Home() {
           <div key={f.title}
             className="rounded-2xl p-4 border flex flex-col gap-2"
             style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-            <span className="text-2xl">{f.icon}</span>
+            <f.Icon size={22} style={{ color: "var(--bv-purple)" }} strokeWidth={1.75} />
             <p className="text-xs font-bold leading-snug">{f.title}</p>
             <p className="text-[11px] text-muted-foreground leading-relaxed">{f.desc}</p>
           </div>

@@ -10,6 +10,7 @@ import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
 import { OpeningWinrateChart } from "@/components/charts/OpeningWinrateChart";
 import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
+import { Trophy, TrendingDown, TrendingUp, Search, type LucideIcon } from "lucide-react";
 import type { Insight } from "@/types";
 
 interface Props {
@@ -24,10 +25,10 @@ const categoryLabel: Record<Insight["category"], string> = {
 };
 
 function HighlightCard({
-  label, emoji, game, accentColor, accentBg, stat, jumpBlunder,
+  label, Icon, game, accentColor, accentBg, stat, jumpBlunder,
 }: {
   label: string;
-  emoji: string;
+  Icon: LucideIcon;
   game: HighlightGame | null;
   accentColor: string;
   accentBg: string;
@@ -42,9 +43,9 @@ function HighlightCard({
     <Link href={href}
       className="flex items-center gap-3 p-3 rounded-2xl border transition-all active:scale-[0.98]"
       style={{ background: accentBg, borderColor: accentColor + "44" }}>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
         style={{ background: accentColor + "22" }}>
-        {emoji}
+        <Icon size={18} style={{ color: accentColor }} />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[10px] font-bold tracking-widest uppercase mb-0.5" style={{ color: accentColor }}>
@@ -150,7 +151,7 @@ export default async function DashboardPage({ searchParams }: Props) {
             <div className="space-y-2">
               <HighlightCard
                 label="Mejor Partida"
-                emoji="🏆"
+                Icon={Trophy}
                 game={highlights.best}
                 accentColor="var(--bv-green)"
                 accentBg="oklch(0.77 0.17 177 / 0.12)"
@@ -158,7 +159,7 @@ export default async function DashboardPage({ searchParams }: Props) {
               />
               <HighlightCard
                 label="Peor Partida"
-                emoji="📉"
+                Icon={TrendingDown}
                 game={highlights.worst}
                 accentColor="var(--bv-red)"
                 accentBg="oklch(0.63 0.23 25 / 0.12)"
@@ -166,7 +167,7 @@ export default async function DashboardPage({ searchParams }: Props) {
               />
               <HighlightCard
                 label="Más Debilidades"
-                emoji="🔍"
+                Icon={Search}
                 game={highlights.mostErrors}
                 accentColor="var(--bv-purple)"
                 accentBg="oklch(0.61 0.22 285 / 0.12)"
@@ -217,9 +218,9 @@ export default async function DashboardPage({ searchParams }: Props) {
           <div className="divide-y divide-border">
             <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center"
                   style={{ background: "oklch(0.77 0.17 177 / 0.15)" }}>
-                  📈
+                  <TrendingUp size={16} style={{ color: "var(--bv-green)" }} />
                 </div>
                 <div>
                   <p className="text-sm font-medium">Precisión</p>

@@ -5,7 +5,7 @@ import { getUserId, getExampleGames } from "@/services/dashboardData";
 import type { ExampleGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Clock, Castle, BookOpen, TrendingUp, AlertTriangle, type LucideIcon } from "lucide-react";
 import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
 
@@ -43,10 +43,10 @@ function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: 
   );
 }
 
-const coachRecommends = [
-  { icon: "⏱", title: "Disciplina con el reloj", desc: "Practica con partidas rápidas de 10 min." },
-  { icon: "♟", title: "Finales de peones",       desc: "Estudia posiciones de rey y peón vs rey." },
-  { icon: "📖", title: "Teoría de aperturas",    desc: "Repasa tus aperturas críticas." },
+const coachRecommends: { Icon: LucideIcon; title: string; desc: string }[] = [
+  { Icon: Clock,    title: "Disciplina con el reloj", desc: "Practica con partidas rápidas de 10 min." },
+  { Icon: Castle,   title: "Finales de peones",       desc: "Estudia posiciones de rey y peón vs rey." },
+  { Icon: BookOpen, title: "Teoría de aperturas",    desc: "Repasa tus aperturas críticas." },
 ];
 
 export default async function InsightsPage() {
@@ -112,9 +112,11 @@ export default async function InsightsPage() {
                 return (
                   <div key={insight.id} className="px-4 py-3 space-y-2">
                     <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-sm"
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
                         style={{ background: isPositive ? "oklch(0.77 0.17 177 / 0.12)" : "oklch(0.70 0.18 50 / 0.12)" }}>
-                        {isPositive ? "📈" : "⚠️"}
+                        {isPositive
+                          ? <TrendingUp size={16} style={{ color: "var(--bv-green)" }} />
+                          : <AlertTriangle size={16} style={{ color: "var(--bv-orange)" }} />}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold">{categoryLabel[insight.category]}</p>
@@ -143,8 +145,8 @@ export default async function InsightsPage() {
           <div className="divide-y divide-border">
             {coachRecommends.map((item) => (
               <div key={item.title} className="flex items-center gap-3 px-4 py-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-muted text-sm">
-                  {item.icon}
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-muted">
+                  <item.Icon size={16} className="text-muted-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{item.title}</p>

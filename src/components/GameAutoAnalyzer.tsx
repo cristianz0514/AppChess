@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Clock, AlertTriangle } from "lucide-react";
 
 interface Props {
   gameId: string;
@@ -77,7 +78,7 @@ export function GameAutoAnalyzer({ gameId }: Props) {
       style={{ background: "var(--card)", borderColor: "var(--border)" }}>
       {status === "busy" ? (
         <>
-          <div className="text-3xl">⏳</div>
+          <Clock size={32} style={{ color: "var(--bv-purple)" }} />
           <div>
             <p className="text-sm font-semibold">Motor ocupado</p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -119,7 +120,7 @@ export function GameAutoAnalyzer({ gameId }: Props) {
         </>
       ) : (
         <>
-          <p className="text-3xl">⚠️</p>
+          <AlertTriangle size={32} style={{ color: "var(--bv-red)" }} />
           <div>
             <p className="text-sm font-semibold">No se pudo analizar la partida</p>
             <p className="text-xs text-muted-foreground mt-1">Inténtalo de nuevo en un momento.</p>
