@@ -1,10 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Fraunces, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Body / UI — clean, highly legible grotesk for a text-dense product.
+const sans = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// Display / headings — refined variable serif for a premium, reflective feel.
+const heading = Fraunces({
+  variable: "--font-heading",
+  subsets: ["latin"],
+  display: "swap",
+  axes: ["opsz"],
 });
 
 const geistMono = Geist_Mono({
@@ -13,7 +23,7 @@ const geistMono = Geist_Mono({
 });
 
 export const viewport: Viewport = {
-  themeColor: "#0B0D0F",
+  themeColor: "#FBFBFD",
 };
 
 export const metadata: Metadata = {
@@ -30,7 +40,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      className={`${sans.variable} ${heading.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         {children}
