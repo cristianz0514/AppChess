@@ -7,7 +7,6 @@ import type { HighlightGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
-import { OpeningWinrateChart } from "@/components/charts/OpeningWinrateChart";
 import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
 import { Trophy, TrendingDown, TrendingUp, Search, type LucideIcon } from "lucide-react";
@@ -276,8 +275,6 @@ export default async function DashboardPage({ searchParams }: Props) {
                 </div>
               )}
             </div>
-
-            <OpeningWinrateChart openings={openings} />
           </div>
         )}
 

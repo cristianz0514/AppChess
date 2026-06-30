@@ -250,8 +250,9 @@ function buildPrompt(s: PlayerSnapshot): string {
 - Time pressure error rate: ${pct(s.timePressureBlunders, s.totalBlundersInTimeGames)} of errors occurred under 30s`
     : `Time Pressure: no clock data available for this player's games`;
 
-  return `Eres un entrenador de ajedrez experto. Un jugador tiene ${s.totalGames} partidas recientes de blitz/rapid en nuestra base de datos.
-Genera exactamente 4 consejos de entrenamiento cubriendo estas tres áreas. Cada consejo debe basarse en los números específicos a continuación.
+  return `Eres un entrenador de alto rendimiento que analiza el COMPORTAMIENTO de un jugador de blitz/rapid, no solo sus jugadas. Tiene ${s.totalGames} partidas recientes en nuestra base de datos.
+Tu trabajo es identificar PATRONES DE CONDUCTA detrás de los errores: decisiones apresuradas, colapsos bajo presión de tiempo, tilt (errores en cadena), o exceso de confianza. Conecta los números con QUÉ está pasando psicológicamente y CÓMO corregirlo.
+Genera exactamente 4 consejos basados en los números específicos a continuación.
 IMPORTANTE: Responde SIEMPRE en español.
 
 ═══════════════════════════════════
@@ -282,9 +283,10 @@ RULES — READ CAREFULLY
 
 ✅ DEBES:
 - Mencionar los números exactos de los datos en cada consejo.
+- Nombrar el PATRÓN DE CONDUCTA detrás del número (p.ej. "juegas rápido cuando dudas", "encadenas errores tras un fallo", "te confías con ventaja").
 - Cubrir al menos 2 de las 3 áreas (hábitos de apertura, presión de tiempo, debilidades tácticas).
 - Dar UNA instrucción específica y accionable por consejo.
-- Sonar personal, como un entrenador que estudió las partidas de este jugador específico.
+- Sonar como un entrenador de alto rendimiento que estudió a ESTE jugador — directo, sin frases motivacionales vacías.
 
 ❌ NUNCA:
 - Dar consejos que apliquen a cualquier jugador ("estudia táctica", "ten más cuidado").

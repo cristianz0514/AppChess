@@ -474,27 +474,54 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const blunderCount = useMemo(() => moves.filter(m => m.classification === "blunder").length, [moves]);
   const mistakeCount = useMemo(() => moves.filter(m => m.classification === "mistake").length, [moves]);
 
-  // ── Critical moment: YOUR move that swung the game most against you ──────────
-  // Uses the move with the largest centipawn loss among the player's own moves.
+  // ── Critical moments: YOUR moves that swung the game most against you ───────
   const playerColor = playedAs === "white" ? "w" : "b";
-  const criticalMoment = useMemo(() => {
-    let best: { idx: number; loss: number } | null = null;
+  const toMine = useCallback(
+    (e: number | null) => (e === null ? null : playerColor === "w" ? e : -e),
+    [playerColor],
+  );
+
+  const criticalMoments = useMemo(() => {
+    const candidates: { idx: number; loss: number }[] = [];
     moves.forEach((m, i) => {
       if (m.color !== playerColor) return;
       const loss = m.centipawnLoss ?? 0;
-      if (loss >= 150 && (!best || loss > best.loss)) best = { idx: i, loss };
+      if (loss >= 150) candidates.push({ idx: i, loss });
     });
-    if (!best) return null;
-    const i = (best as { idx: number; loss: number }).idx;
-    const toMine = (e: number | null) =>
-      e === null ? null : (playerColor === "w" ? e : -e);
-    const evalBefore = toMine(i > 0 ? moves[i - 1].evaluation : 0);
-    const evalAfter = toMine(moves[i].evaluation);
-    return { idx: i, move: moves[i], evalBefore, evalAfter };
-  }, [moves, playerColor]);
+    // Take the 3 worst, then present them in chronological order.
+    return candidates
+      .sort((a, b) => b.loss - a.loss)
+      .slice(0, 3)
+      .sort((a, b) => a.idx - b.idx)
+      .map(({ idx: i }) => ({
+        idx: i,
+        move: moves[i],
+        evalBefore: toMine(i > 0 ? moves[i - 1].evaluation : 0),
+        evalAfter: toMine(moves[i].evaluation),
+      }));
+  }, [moves, playerColor, toMine]);
+
+  const criticalMoment = criticalMoments.length > 0 ? criticalMoments[0] : null;
 
   const fmtEval = (e: number | null) =>
     e === null ? "—" : Math.abs(e) >= 9999 ? (e > 0 ? "#" : "-#") : (e > 0 ? "+" : "") + e.toFixed(1);
+
+  // ── Story Mode: guided walk through the critical moments ────────────────────
+  const [storyStep, setStoryStep] = useState<number | null>(null);
+  const inStory = storyStep !== null;
+
+  function startStory() {
+    if (criticalMoments.length === 0) return;
+    setBestMoveArrow(null);
+    setStoryStep(0);
+    go(criticalMoments[0].idx);
+  }
+  function exitStory() { setStoryStep(null); }
+  function storyGo(step: number) {
+    const clamped = Math.max(0, Math.min(criticalMoments.length - 1, step));
+    setStoryStep(clamped);
+    go(criticalMoments[clamped].idx);
+  }
 
   if (moves.length === 0) {
     return (
@@ -536,38 +563,108 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       {/* ── Tab: Analizar ────────────────────────────────────── */}
       {tab === "analizar" && (
         <>
-          {/* Critical moment — the move that changed the game */}
-          {!inExplore && criticalMoment && (
-            <button
-              onClick={() => go(criticalMoment.idx)}
-              className="w-full text-left rounded-2xl border p-4 transition-all active:scale-[0.99]"
+          {/* Story Mode — guided narrative through the critical moments */}
+          {!inExplore && inStory && criticalMoments.length > 0 && (() => {
+            const cm = criticalMoments[storyStep!];
+            const dropped = (cm.evalBefore ?? 0) - (cm.evalAfter ?? 0);
+            const lead =
+              cm.move.classification === "blunder"
+                ? "un error grave que cambió el rumbo"
+                : "un error que cedió la iniciativa";
+            return (
+              <div className="rounded-2xl border p-4 space-y-3"
+                style={{ borderColor: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.07)" }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Zap size={15} style={{ color: "var(--bv-purple)" }} />
+                    <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+                      Momento {storyStep! + 1} de {criticalMoments.length}
+                    </span>
+                  </div>
+                  <button onClick={exitStory} className="text-[11px] text-muted-foreground underline underline-offset-2">
+                    Salir
+                  </button>
+                </div>
+
+                <p className="text-base font-semibold leading-snug font-display">
+                  Jugada {cm.move.moveNumber}{cm.move.color === "w" ? "." : "…"} {cm.move.san}
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Tenías <span className="font-mono" style={{ color: "var(--foreground)" }}>{fmtEval(cm.evalBefore)}</span>{" "}
+                  y tras esta jugada la evaluación cayó a{" "}
+                  <span className="font-mono" style={{ color: "var(--bv-red)" }}>{fmtEval(cm.evalAfter)}</span>
+                  {dropped > 0 ? ` (−${dropped.toFixed(1)})` : ""} — {lead}.
+                </p>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => storyGo(storyStep! - 1)} disabled={storyStep === 0}
+                    className="flex-1 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-30 hover:bg-muted/40"
+                    style={{ borderColor: "var(--border)" }}>
+                    ← Anterior
+                  </button>
+                  <button onClick={() => fetchBestMove(cm.idx)}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                    style={{ background: "var(--bv-green)" }}>
+                    {loadingBestMove ? "…" : "Mejor jugada"}
+                  </button>
+                  {storyStep! < criticalMoments.length - 1 ? (
+                    <button onClick={() => storyGo(storyStep! + 1)}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                      style={{ background: "var(--bv-purple)" }}>
+                      Siguiente →
+                    </button>
+                  ) : (
+                    <button onClick={exitStory}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                      style={{ background: "var(--bv-purple)" }}>
+                      Terminar
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Critical moment summary card (when not in story) */}
+          {!inExplore && !inStory && criticalMoment && (
+            <div className="rounded-2xl border p-4"
               style={{
                 borderColor: idx === criticalMoment.idx ? "var(--bv-purple)" : "var(--border)",
                 background: "oklch(0.61 0.22 285 / 0.07)",
               }}>
-              <div className="flex items-center gap-2 mb-2">
-                <Zap size={15} style={{ color: "var(--bv-purple)" }} />
-                <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
-                  Momento Crítico
-                </span>
-              </div>
-              <p className="text-sm font-semibold leading-snug">
-                La partida cambió en la jugada {criticalMoment.move.moveNumber}
-                {criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
-              </p>
-              <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
-                  style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-                  {fmtEval(criticalMoment.evalBefore)}
-                </span>
-                <span className="text-muted-foreground text-xs">→</span>
-                <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
-                  style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
-                  {fmtEval(criticalMoment.evalAfter)}
-                </span>
-                <span className="text-[11px] text-muted-foreground ml-auto">Ver en el tablero →</span>
-              </div>
-            </button>
+              <button onClick={() => go(criticalMoment.idx)} className="w-full text-left active:scale-[0.99] transition-transform">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap size={15} style={{ color: "var(--bv-purple)" }} />
+                  <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+                    Momento Crítico
+                  </span>
+                </div>
+                <p className="text-sm font-semibold leading-snug">
+                  La partida cambió en la jugada {criticalMoment.move.moveNumber}
+                  {criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
+                    style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+                    {fmtEval(criticalMoment.evalBefore)}
+                  </span>
+                  <span className="text-muted-foreground text-xs">→</span>
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
+                    style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
+                    {fmtEval(criticalMoment.evalAfter)}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground ml-auto">Ver en el tablero →</span>
+                </div>
+              </button>
+              {criticalMoments.length >= 2 && (
+                <button onClick={startStory}
+                  className="mt-3 w-full py-2 rounded-xl text-xs font-bold text-white"
+                  style={{ background: "var(--bv-purple)" }}>
+                  Ver la historia: {criticalMoments.length} momentos clave →
+                </button>
+              )}
+            </div>
           )}
 
           {/* Board + eval bar */}
