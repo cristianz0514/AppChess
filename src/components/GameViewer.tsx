@@ -508,8 +508,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           )}
         </div>
         <div className="flex gap-2 text-xs font-mono shrink-0">
-          {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>??{blunderCount}</span>}
-          {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>?{mistakeCount}</span>}
+          {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>?? {blunderCount}</span>}
+          {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>? {mistakeCount}</span>}
         </div>
       </div>
 
