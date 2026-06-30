@@ -19,8 +19,8 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex flex-col w-56 shrink-0 border-r border-border bg-card h-screen sticky top-0">
       <div className="px-4 py-5 border-b border-border">
-        <span className="font-semibold text-sm tracking-tight">AnaliChess IA</span>
-        <span className="text-primary text-sm"> AI</span>
+        <span className="font-semibold text-sm tracking-tight">AnaliChess</span>
+        <span className="text-primary text-sm"> IA</span>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-0.5">
         {navItems.map(({ href, label, icon: Icon }) => (

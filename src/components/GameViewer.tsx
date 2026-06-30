@@ -248,7 +248,6 @@ function MoveTable({ moves, idx, onGo, compact }: {
     if (!m) return <div className="flex-1" />;
     const isActive = flatIdx === idx;
     const col = m.classification ? CLASS_COLOR[m.classification] : undefined;
-    const emoji = m.classification ? CLASS_EMOJI[m.classification] ?? "" : "";
     const isError = m.classification === "blunder" || m.classification === "mistake";
     return (
       <div
@@ -261,7 +260,6 @@ function MoveTable({ moves, idx, onGo, compact }: {
         }}
         onClick={() => onGo(flatIdx)}
       >
-        {emoji && <span className="text-[10px]">{emoji}</span>}
         <span>{m.san}</span>
       </div>
     );
@@ -552,6 +550,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 arrows={!inExplore && bestMoveArrow ? [bestMoveArrow] : []}
                 interactive={inExplore}
                 onMove={inExplore ? handleExploreMove : undefined}
+                lastMoveBadge={!inExplore && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
+                  ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
+                  : null}
               />
             </div>
           </div>

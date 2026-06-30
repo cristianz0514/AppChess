@@ -2,12 +2,13 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getUnanalyzedGameIds } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getUnanalyzedGameIds, getEloHistory } from "@/services/dashboardData";
 import type { HighlightGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
 import { OpeningWinrateChart } from "@/components/charts/OpeningWinrateChart";
+import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
 
@@ -70,12 +71,13 @@ export default async function DashboardPage({ searchParams }: Props) {
   const userId = await getUserId(username);
   if (!userId) redirect("/");
 
-  const [stats, openings, insights, highlights, pendingIds] = await Promise.all([
+  const [stats, openings, insights, highlights, pendingIds, eloHistory] = await Promise.all([
     getDashboardStats(userId),
     getTopOpenings(userId),
     getInsights(userId),
     getHighlightGames(userId),
     getUnanalyzedGameIds(userId),
+    getEloHistory(userId),
   ]);
   const pendingCount = pendingIds.length;
 
@@ -200,6 +202,9 @@ export default async function DashboardPage({ searchParams }: Props) {
           <InsightsCard insights={[]} username={username} />
         )}
 
+        {/* ── ELO Evolution ───────────────────────────────────── */}
+        <EloEvolutionChart history={eloHistory} />
+
         {/* ── Recent Performance ──────────────────────────────── */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <p className="px-4 pt-4 pb-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
@@ -219,21 +224,6 @@ export default async function DashboardPage({ searchParams }: Props) {
               </div>
               <p className="text-sm font-bold" style={{ color: "var(--bv-green)" }}>
                 {stats.avgAccuracy ? `${stats.avgAccuracy}%` : "—"}
-              </p>
-            </div>
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
-                  style={{ background: "oklch(0.63 0.23 25 / 0.15)" }}>
-                  🎯
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Tasa de Victoria</p>
-                  <p className="text-xs text-muted-foreground">{stats.wins}V · {stats.losses}D · {stats.draws}T</p>
-                </div>
-              </div>
-              <p className="text-sm font-bold" style={{ color: stats.winrate >= 50 ? "var(--bv-green)" : "var(--bv-red)" }}>
-                {stats.winrate}%
               </p>
             </div>
           </div>

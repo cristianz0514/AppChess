@@ -334,6 +334,34 @@ export async function getUnanalyzedGameIds(userId: string, limit = 200): Promise
   return allIds.filter((id) => !analyzed.has(id));
 }
 
+export interface EloPoint {
+  index: number;        // game number in chronological order (1-based)
+  date: string;         // ISO date of the game
+  elo: number;          // player's rating in that game
+  opponentElo: number;  // opponent's rating in that game
+}
+
+// Returns the player's ELO across games, oldest → newest, for an evolution chart.
+export const getEloHistory = cache(async function(userId: string, limit = 2000): Promise<EloPoint[]> {
+  const { data } = await supabase
+    .from("games")
+    .select("white_rating, black_rating, played_as, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (!data || data.length === 0) return [];
+
+  return data
+    .map((g, i) => {
+      const isWhite = g.played_as === "white";
+      const elo = isWhite ? g.white_rating : g.black_rating;
+      const opponentElo = isWhite ? g.black_rating : g.white_rating;
+      return { index: i + 1, date: g.created_at, elo, opponentElo };
+    })
+    .filter((p) => typeof p.elo === "number" && p.elo > 0);
+});
+
 export async function getRecentGames(userId: string, limit = 20): Promise<RecentGame[]> {
   const { data } = await supabase
     .from("games")

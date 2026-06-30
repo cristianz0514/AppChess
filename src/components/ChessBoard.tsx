@@ -47,6 +47,8 @@ interface Props {
   arrows?: Arrow[];
   interactive?: boolean;
   onMove?: (from: string, to: string) => void;
+  // Badge (emoji) shown over the destination square of the last move, chess.com style.
+  lastMoveBadge?: { emoji: string; color: string } | null;
 }
 
 export function ChessBoard({
@@ -56,6 +58,7 @@ export function ChessBoard({
   arrows = [],
   interactive = false,
   onMove,
+  lastMoveBadge,
 }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const board = parseFen(fen);
@@ -225,6 +228,35 @@ export function ChessBoard({
           })}
         </svg>
       )}
+
+      {/* Last-move classification badge (chess.com style) on the destination square */}
+      {lastMoveBadge && lastMove && (() => {
+        const { x, y } = sqToXYPct(lastMove.to, orientation);
+        return (
+          <div
+            style={{
+              position: "absolute",
+              left: `${x + 4.2}%`,
+              top: `${y - 4.6}%`,
+              transform: "translate(-50%, -50%)",
+              width: "6.2cqi",
+              height: "6.2cqi",
+              borderRadius: "9999px",
+              background: lastMoveBadge.color,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "3.6cqi",
+              lineHeight: 1,
+              boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              pointerEvents: "none",
+              zIndex: 2,
+            }}
+          >
+            {lastMoveBadge.emoji}
+          </div>
+        );
+      })()}
     </div>
   );
 }
