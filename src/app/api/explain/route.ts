@@ -1,18 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
+import { supabase } from "@/lib/supabase";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Concise, coach-style explanation of a single critical moment.
 // Kept short and high-level on purpose — it reasons from the position + the
 // evaluation swing, not deep tactics, so it stays fast and avoids hallucination.
+//
+// Explanations are cached on the moves row (column `explanation`). The DB code
+// degrades gracefully: if the column doesn't exist yet, we simply skip caching
+// and still return a freshly generated explanation.
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body?.san || !body?.fenBefore) {
     return NextResponse.json({ error: "missing data" }, { status: 400 });
   }
 
-  const { fenBefore, san, moveNumber, evalBefore, evalAfter, phase } = body;
+  const { fenBefore, san, moveNumber, evalBefore, evalAfter, phase, gameId } = body;
+
+  // 1. Try the cache first.
+  if (gameId) {
+    try {
+      const { data } = await supabase
+        .from("moves")
+        .select("explanation")
+        .eq("game_id", gameId)
+        .eq("move_number", moveNumber)
+        .eq("move", san)
+        .limit(1)
+        .maybeSingle();
+      if (data?.explanation) return NextResponse.json({ text: data.explanation, cached: true });
+    } catch { /* column may not exist yet — ignore and generate */ }
+  }
 
   const prompt = `Eres un entrenador de ajedrez blitz de alto rendimiento. Explica en español, en MÁXIMO 2 frases cortas, por qué esta jugada fue un error y qué debió considerar el jugador.
 
@@ -37,6 +57,19 @@ Reglas:
     });
     const text = res.choices[0]?.message?.content?.trim() ?? "";
     if (!text) return NextResponse.json({ error: "no text" }, { status: 502 });
+
+    // 3. Persist to the cache (best-effort).
+    if (gameId) {
+      try {
+        await supabase
+          .from("moves")
+          .update({ explanation: text })
+          .eq("game_id", gameId)
+          .eq("move_number", moveNumber)
+          .eq("move", san);
+      } catch { /* column may not exist yet — ignore */ }
+    }
+
     return NextResponse.json({ text });
   } catch {
     return NextResponse.json({ error: "coach unavailable" }, { status: 500 });

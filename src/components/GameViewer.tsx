@@ -346,9 +346,10 @@ interface Props {
   gameResult?: Game["result"];
   opening?: string;
   accuracy?: number | null;
+  gameId?: string;
 }
 
-export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy }: Props) {
+export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, gameId }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
   const [tab, setTab] = useState<Tab>("analizar");
 
@@ -546,7 +547,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         fenBefore, san: cm.move.san, moveNumber: cm.move.moveNumber,
-        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase,
+        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase, gameId,
       }),
     })
       .then((r) => (r.ok ? r.json() : null))

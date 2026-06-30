@@ -72,6 +72,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             gameResult={game.result as Game["result"]}
             opening={translateOpening(game.opening)}
             accuracy={game.accuracy}
+            gameId={id}
           />
         )}
       </main>
