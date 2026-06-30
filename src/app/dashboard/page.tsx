@@ -9,7 +9,7 @@ import { InsightsCard } from "@/components/InsightsCard";
 import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
 import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
-import { Trophy, TrendingDown, TrendingUp, Search, type LucideIcon } from "lucide-react";
+import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, type LucideIcon } from "lucide-react";
 import type { Insight } from "@/types";
 
 interface Props {
@@ -95,6 +95,35 @@ export default async function DashboardPage({ searchParams }: Props) {
         {/* ── Engine analysis prompt (only when games are pending) ── */}
         {pendingCount > 0 && (
           <AnalyzeAllButton username={username} />
+        )}
+
+        {/* ── HERO: the dominant experience — revisit where you collapsed ── */}
+        {highlights.mostErrors && highlights.mostErrors.errorCount > 0 && (
+          <Link
+            href={`/blunders/${highlights.mostErrors.id}?story=1`}
+            className="block rounded-3xl p-5 border transition-all active:scale-[0.99]"
+            style={{
+              borderColor: "var(--bv-purple)",
+              background: "linear-gradient(135deg, oklch(0.61 0.22 285 / 0.12), oklch(0.63 0.23 25 / 0.06))",
+            }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Zap size={14} style={{ color: "var(--bv-purple)" }} />
+              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+                Dónde se te escapó la partida
+              </span>
+            </div>
+            <p className="text-xl font-display font-bold leading-tight">
+              {translateOpening(highlights.mostErrors.opening)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              {highlights.mostErrors.errorCount} momentos donde la evaluación se volteó. Revívelos uno por uno.
+            </p>
+            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-white font-bold text-sm"
+              style={{ background: "var(--bv-purple)" }}>
+              <Play size={15} fill="#fff" /> Revivir el momento
+            </div>
+          </Link>
         )}
 
         {/* ── Rating row ──────────────────────────────────────── */}

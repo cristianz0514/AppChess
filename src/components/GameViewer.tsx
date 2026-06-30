@@ -347,9 +347,10 @@ interface Props {
   opening?: string;
   accuracy?: number | null;
   gameId?: string;
+  autoStory?: boolean;
 }
 
-export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, gameId }: Props) {
+export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, gameId, autoStory }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
   const [tab, setTab] = useState<Tab>("analizar");
 
@@ -564,6 +565,18 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     go(criticalMoments[0].idx);
   }
   function exitStory() { setStoryStep(null); }
+
+  // Auto-start Story Mode when arrived via "Revivir" (guided, cinematic entry).
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStory && !autoStarted.current && criticalMoments.length > 0) {
+      autoStarted.current = true;
+      setBestMoveArrow(null);
+      setStoryStep(0);
+      go(criticalMoments[0].idx);
+    }
+  }, [autoStory, criticalMoments, go]);
+
   function storyGo(step: number) {
     const clamped = Math.max(0, Math.min(criticalMoments.length - 1, step));
     setStoryStep(clamped);
@@ -643,7 +656,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
                     {fmtEval(cm.evalAfter)}
                   </span>
-                  {dropped > 0 && (
+                  {dropped > 0 && Math.abs(cm.evalBefore ?? 0) < 90 && Math.abs(cm.evalAfter ?? 0) < 90 && (
                     <span className="text-[11px] font-semibold" style={{ color: "var(--bv-red)" }}>−{dropped.toFixed(1)}</span>
                   )}
                 </div>

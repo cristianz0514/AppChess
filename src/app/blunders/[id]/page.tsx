@@ -11,12 +11,12 @@ import type { Game } from "@/types";
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ blunder?: string }>;
+  searchParams: Promise<{ blunder?: string; story?: string }>;
 }
 
 export default async function GameDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const { blunder } = await searchParams;
+  const { blunder, story } = await searchParams;
   await getUsername();
 
   const { data: game } = await supabase
@@ -73,6 +73,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             opening={translateOpening(game.opening)}
             accuracy={game.accuracy}
             gameId={id}
+            autoStory={story === "1"}
           />
         )}
       </main>

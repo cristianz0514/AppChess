@@ -295,11 +295,13 @@ RULES — READ CAREFULLY
 - Usar jerga sin explicarla en lenguaje sencillo.
 
 FORMATO DE RESPUESTA:
-Devuelve un array JSON de exactamente 4 objetos. Los mensajes deben estar en español, máximo 70 palabras, tono personal como un entrenador:
+Devuelve un array JSON de exactamente 4 objetos. CADA mensaje: español, MÁXIMO 22 palabras, una sola frase, directo y conductual — como un coach que te dice la verdad rápido. Incluye el número clave pero sin sonar a reporte.
+Bien: "Te apresuras cuando bajas de 30s: 6 de tus 8 errores graves pasaron ahí."
+Mal: "Tu precisión táctica disminuye un 12% bajo presión de tiempo."
 [
   {
     "category": "opening" | "tactical" | "time_management" | "recurring_blunder",
-    "message": "...(máximo 70 palabras, en español, tono personal de entrenador)...",
+    "message": "...(MÁXIMO 22 palabras, una frase, en español, directo y conductual)...",
     "severity": "low" | "medium" | "high"
   }
 ]
