@@ -41,13 +41,13 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   }>;
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "oklch(0.115 0.025 265)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
 
       {/* Top App Bar */}
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 border-b"
-        style={{ background: "oklch(0.115 0.025 265)", borderColor: "oklch(0.25 0.04 265)" }}>
+        style={{ background: "var(--background)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-3">
-          <Link href="/blunders" className="p-2 -ml-2 rounded-full transition-colors hover:bg-white/10">
+          <Link href="/blunders" className="p-2 -ml-2 rounded-full transition-colors hover:bg-muted">
             <ChevronLeft size={20} />
           </Link>
           <span className="font-bold text-base tracking-tight" style={{ color: "var(--bv-purple)" }}>

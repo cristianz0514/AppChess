@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -474,6 +474,28 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const blunderCount = useMemo(() => moves.filter(m => m.classification === "blunder").length, [moves]);
   const mistakeCount = useMemo(() => moves.filter(m => m.classification === "mistake").length, [moves]);
 
+  // ── Critical moment: YOUR move that swung the game most against you ──────────
+  // Uses the move with the largest centipawn loss among the player's own moves.
+  const playerColor = playedAs === "white" ? "w" : "b";
+  const criticalMoment = useMemo(() => {
+    let best: { idx: number; loss: number } | null = null;
+    moves.forEach((m, i) => {
+      if (m.color !== playerColor) return;
+      const loss = m.centipawnLoss ?? 0;
+      if (loss >= 150 && (!best || loss > best.loss)) best = { idx: i, loss };
+    });
+    if (!best) return null;
+    const i = (best as { idx: number; loss: number }).idx;
+    const toMine = (e: number | null) =>
+      e === null ? null : (playerColor === "w" ? e : -e);
+    const evalBefore = toMine(i > 0 ? moves[i - 1].evaluation : 0);
+    const evalAfter = toMine(moves[i].evaluation);
+    return { idx: i, move: moves[i], evalBefore, evalAfter };
+  }, [moves, playerColor]);
+
+  const fmtEval = (e: number | null) =>
+    e === null ? "—" : Math.abs(e) >= 9999 ? (e > 0 ? "#" : "-#") : (e > 0 ? "+" : "") + e.toFixed(1);
+
   if (moves.length === 0) {
     return (
       <div className="rounded-2xl border p-8 text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
@@ -514,6 +536,40 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       {/* ── Tab: Analizar ────────────────────────────────────── */}
       {tab === "analizar" && (
         <>
+          {/* Critical moment — the move that changed the game */}
+          {!inExplore && criticalMoment && (
+            <button
+              onClick={() => go(criticalMoment.idx)}
+              className="w-full text-left rounded-2xl border p-4 transition-all active:scale-[0.99]"
+              style={{
+                borderColor: idx === criticalMoment.idx ? "var(--bv-purple)" : "var(--border)",
+                background: "oklch(0.61 0.22 285 / 0.07)",
+              }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Zap size={15} style={{ color: "var(--bv-purple)" }} />
+                <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+                  Momento Crítico
+                </span>
+              </div>
+              <p className="text-sm font-semibold leading-snug">
+                La partida cambió en la jugada {criticalMoment.move.moveNumber}
+                {criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
+                  style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+                  {fmtEval(criticalMoment.evalBefore)}
+                </span>
+                <span className="text-muted-foreground text-xs">→</span>
+                <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
+                  style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
+                  {fmtEval(criticalMoment.evalAfter)}
+                </span>
+                <span className="text-[11px] text-muted-foreground ml-auto">Ver en el tablero →</span>
+              </div>
+            </button>
+          )}
+
           {/* Board + eval bar */}
           <div className="flex gap-2 items-stretch">
             <EvalBar moves={moves} idx={inExplore ? -1 : idx} />
