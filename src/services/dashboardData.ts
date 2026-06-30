@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { supabase } from "@/lib/supabase";
+import { endedByAbandonment } from "./pgnParser";
 import type { DashboardStats, OpeningStat, Game } from "@/types";
 
 export const getUserId = cache(async function(username: string): Promise<string | null> {
@@ -333,6 +334,80 @@ export async function getUnanalyzedGameIds(userId: string, limit = 200): Promise
   const analyzed = new Set((analyzedRows ?? []).map((r) => r.game_id));
   return allIds.filter((id) => !analyzed.has(id));
 }
+
+export interface ResultStats {
+  wins: number;
+  losses: number;
+  draws: number;
+  winrate: number;       // % over counted games
+  excluded: number;      // games dropped (abandonment in a roughly-equal position)
+  counted: number;
+}
+
+// Win/loss/draw counts that IGNORE games decided by a disconnection/abandonment
+// unless the result was actually backed by the position. The rule is directional:
+//   • a WIN counts only if you had a real advantage (myEval ≥ +2 pawns)
+//   • a LOSS counts only if you were really worse (myEval ≤ −2 pawns)
+// Anything else that ended by abandonment (roughly equal, or — crucially — a win
+// you got while you were actually losing because the rival just left) is excluded.
+// Games without analysis (no final eval) keep their original result.
+export const getResultStats = cache(async function(userId: string): Promise<ResultStats> {
+  const { data: games } = await supabase
+    .from("games")
+    .select("id, result, played_as, pgn")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
+  if (!games || games.length === 0) {
+    return { wins: 0, losses: 0, draws: 0, winrate: 0, excluded: 0, counted: 0 };
+  }
+
+  // Only abandonment games need an eval check — fetch their final eval only.
+  const abandonIds = games
+    .filter((g) => endedByAbandonment(g.pgn) && (g.result === "win" || g.result === "loss"))
+    .map((g) => g.id);
+
+  const finalEval = new Map<string, { mv: number; eval: number }>();
+  if (abandonIds.length > 0) {
+    const { data: moveRows } = await supabase
+      .from("moves")
+      .select("game_id, move_number, evaluation")
+      .in("game_id", abandonIds)
+      .not("evaluation", "is", null);
+
+    for (const r of moveRows ?? []) {
+      const cur = finalEval.get(r.game_id);
+      if (!cur || r.move_number > cur.mv) finalEval.set(r.game_id, { mv: r.move_number, eval: r.evaluation as number });
+    }
+  }
+
+  let wins = 0, losses = 0, draws = 0, excluded = 0;
+  const THRESHOLD = 2; // pawns of advantage that make the result "earned"
+
+  for (const g of games) {
+    if (endedByAbandonment(g.pgn) && (g.result === "win" || g.result === "loss")) {
+      const fin = finalEval.get(g.id);
+      if (fin) {
+        // eval is white-perspective; convert to "my" perspective.
+        const myEval = g.played_as === "white" ? fin.eval : -fin.eval;
+        const earned =
+          (g.result === "win"  && myEval >=  THRESHOLD) ||
+          (g.result === "loss" && myEval <= -THRESHOLD);
+        if (!earned) { excluded++; continue; }
+      }
+    }
+    if (g.result === "win") wins++;
+    else if (g.result === "loss") losses++;
+    else draws++;
+  }
+
+  const counted = wins + losses + draws;
+  return {
+    wins, losses, draws, excluded, counted,
+    winrate: counted > 0 ? Math.round((wins / counted) * 100 * 10) / 10 : 0,
+  };
+});
 
 export interface EloPoint {
   index: number;        // game number in chronological order (1-based)

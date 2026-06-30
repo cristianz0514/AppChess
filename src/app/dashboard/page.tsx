@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getUnanalyzedGameIds, getEloHistory } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getUnanalyzedGameIds, getEloHistory, getResultStats } from "@/services/dashboardData";
 import type { HighlightGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
@@ -71,13 +71,14 @@ export default async function DashboardPage({ searchParams }: Props) {
   const userId = await getUserId(username);
   if (!userId) redirect("/");
 
-  const [stats, openings, insights, highlights, pendingIds, eloHistory] = await Promise.all([
+  const [stats, openings, insights, highlights, pendingIds, eloHistory, resultStats] = await Promise.all([
     getDashboardStats(userId),
     getTopOpenings(userId),
     getInsights(userId),
     getHighlightGames(userId),
     getUnanalyzedGameIds(userId),
     getEloHistory(userId),
+    getResultStats(userId),
   ]);
   const pendingCount = pendingIds.length;
 
@@ -115,11 +116,14 @@ export default async function DashboardPage({ searchParams }: Props) {
               Resultados
             </p>
             <p className="text-2xl font-bold tracking-tight">
-              <span style={{ color: "var(--bv-green)" }}>{stats.wins}V</span>
+              <span style={{ color: "var(--bv-green)" }}>{resultStats.wins}V</span>
               {" – "}
-              <span style={{ color: "var(--bv-red)" }}>{stats.losses}D</span>
+              <span style={{ color: "var(--bv-red)" }}>{resultStats.losses}D</span>
             </p>
-            <p className="text-xs text-muted-foreground">{stats.winrate}% victorias</p>
+            <p className="text-xs text-muted-foreground">
+              {resultStats.winrate}% victorias
+              {resultStats.excluded > 0 && ` · ${resultStats.excluded} excl.`}
+            </p>
           </div>
         </div>
 
@@ -127,8 +131,8 @@ export default async function DashboardPage({ searchParams }: Props) {
         <div className="grid grid-cols-3 gap-2">
           {[
             { label: "Precisión", value: stats.avgAccuracy ? `${stats.avgAccuracy}%` : "—", color: "var(--bv-green)" },
-            { label: "Tablas",    value: stats.draws,    color: "var(--bv-orange)" },
-            { label: "Victorias", value: `${stats.winrate}%`, color: "var(--bv-green)" },
+            { label: "Tablas",    value: resultStats.draws,    color: "var(--bv-orange)" },
+            { label: "Victorias", value: `${resultStats.winrate}%`, color: "var(--bv-green)" },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-card border border-border rounded-xl p-3 text-center">
               <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{label}</p>

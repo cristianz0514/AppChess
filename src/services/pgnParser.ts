@@ -47,6 +47,16 @@ export function parseGames(
     .filter((g): g is ParsedGame => g !== null);
 }
 
+// True when the game ended because a player abandoned / disconnected, rather than
+// a real over-the-board finish (checkmate, resignation, time, agreement, …).
+// chess.com writes this into the PGN [Termination "…"] header, e.g.
+// "Player won - game abandoned" / "won by abandonment".
+export function endedByAbandonment(pgn: string): boolean {
+  const headers = parsePgnHeaders(pgn);
+  const termination = (headers["Termination"] ?? "").toLowerCase();
+  return /abandon/.test(termination);
+}
+
 function parsePgnHeaders(pgn: string): Record<string, string> {
   const headers: Record<string, string> = {};
   const headerRegex = /\[(\w+)\s+"([^"]*)"\]/g;

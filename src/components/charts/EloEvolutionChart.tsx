@@ -27,7 +27,7 @@ export function EloEvolutionChart({ history }: Props) {
   const first = history[0].elo;
   const last = history[history.length - 1].elo;
   const delta = last - first;
-  const peak = max;
+  const avg = Math.round(elos.reduce((s, e) => s + e, 0) / elos.length);
 
   const accent = delta >= 0 ? "var(--bv-green)" : "var(--bv-red)";
 
@@ -39,7 +39,7 @@ export function EloEvolutionChart({ history }: Props) {
             Evolución de ELO
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {history.length} partidas · pico {peak}
+            {history.length} partidas
           </p>
         </div>
         <div className="text-right">
@@ -48,6 +48,20 @@ export function EloEvolutionChart({ history }: Props) {
             {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)} pts
           </p>
         </div>
+      </div>
+
+      {/* Min / Avg / Max */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: "Mínimo",   value: min, color: "var(--bv-red)" },
+          { label: "Promedio", value: avg, color: "var(--foreground)" },
+          { label: "Máximo",   value: max, color: "var(--bv-green)" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="rounded-xl border border-border bg-background/40 px-3 py-2 text-center">
+            <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">{label}</p>
+            <p className="text-lg font-bold tabular-nums" style={{ color }}>{value}</p>
+          </div>
+        ))}
       </div>
 
       <ResponsiveContainer width="100%" height={180}>
