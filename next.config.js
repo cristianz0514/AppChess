@@ -2,16 +2,14 @@ const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
+  // Disable PWA in all environments until service worker compatibility is confirmed
+  disable: true,
   buildExcludes: [/middleware-manifest\.json$/],
 })
 
 module.exports = withPWA({
   reactStrictMode: true,
-  // Keep stockfish external so its dynamic require()/wasm loading isn't bundled by webpack.
   serverExternalPackages: ['stockfish'],
-  // Force-include ONLY the lite-single engine (~7MB) in the analyze function bundle,
-  // and exclude the 100MB+ full engines so the serverless function stays under limits.
   outputFileTracingIncludes: {
     '/api/analyze': [
       './node_modules/stockfish/index.js',
