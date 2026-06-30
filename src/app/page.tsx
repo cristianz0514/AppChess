@@ -50,7 +50,7 @@ export default function Home() {
         <div className="mb-4 text-5xl select-none">♔</div>
 
         <h1 className="text-3xl font-bold tracking-tight leading-tight mb-2">
-          BlunderVision <span style={{ color: "var(--bv-purple)" }}>AI</span>
+          AnaliChess <span style={{ color: "var(--bv-purple)" }}>IA</span>
         </h1>
 
         <p className="text-sm text-muted-foreground max-w-xs leading-relaxed mb-8">

@@ -11,7 +11,7 @@ export function ShareGameButton() {
     const url = typeof window !== "undefined" ? window.location.href : "";
     try {
       if (navigator.share) {
-        await navigator.share({ title: "BlunderVision AI", url });
+        await navigator.share({ title: "AnaliChess IA", url });
         return;
       }
     } catch { /* user cancelled or unsupported — fall through to clipboard */ }

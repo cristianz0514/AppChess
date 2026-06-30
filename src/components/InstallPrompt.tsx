@@ -65,13 +65,13 @@ export function InstallPrompt() {
     <div
       className="fixed bottom-[5.5rem] md:bottom-6 left-3 right-3 md:left-auto md:right-6 md:w-76 z-50 animate-in slide-in-from-bottom-4 duration-300"
       role="dialog"
-      aria-label="Instalar BlunderVision"
+      aria-label="Instalar AnaliChess IA"
     >
       <div className="bg-card border border-border rounded-2xl p-4 shadow-2xl">
 
         <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-sm font-semibold leading-snug">Instalar BlunderVision</p>
+            <p className="text-sm font-semibold leading-snug">Instalar AnaliChess IA</p>
             <p className="text-xs text-muted-foreground mt-0.5">Acceso rápido, en cualquier momento</p>
           </div>
           <button

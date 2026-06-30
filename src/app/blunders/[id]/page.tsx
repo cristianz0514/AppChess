@@ -50,7 +50,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             <ChevronLeft size={20} />
           </Link>
           <span className="font-bold text-base tracking-tight" style={{ color: "var(--bv-purple)" }}>
-            BlunderVision AI
+            AnaliChess IA
           </span>
         </div>
         <div className="flex items-center gap-1">

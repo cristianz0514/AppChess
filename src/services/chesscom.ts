@@ -1,7 +1,7 @@
 const BASE_URL = "https://api.chess.com/pub";
 
 const HEADERS = {
-  "User-Agent": "BlunderVision/1.0 contact@blundervision.app",
+  "User-Agent": "AnaliChess/1.0",
 };
 
 export interface ChessComGame {

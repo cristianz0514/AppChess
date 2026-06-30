@@ -89,7 +89,7 @@ export default async function StatsPage() {
         )}
 
         <div className="text-center py-2">
-          <p className="text-xs text-muted-foreground">BlunderVision AI · Datos sincronizados desde Chess.com</p>
+          <p className="text-xs text-muted-foreground">AnaliChess IA · Datos sincronizados desde Chess.com</p>
         </div>
 
       </div>

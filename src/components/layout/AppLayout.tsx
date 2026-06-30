@@ -25,7 +25,7 @@ export function AppLayout({ children, username }: Props) {
           >
             {initials}
           </div>
-          <span className="text-sm font-bold tracking-tight">BlunderVision</span>
+          <span className="text-sm font-bold tracking-tight">AnaliChess IA</span>
           <div className="w-8 h-8 flex items-center justify-center rounded-full bg-muted text-muted-foreground">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />

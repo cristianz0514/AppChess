@@ -17,7 +17,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "BlunderVision AI",
+  title: "AnaliChess IA",
   description: "Análisis de ajedrez con IA",
   manifest: "/manifest.json",
 };
