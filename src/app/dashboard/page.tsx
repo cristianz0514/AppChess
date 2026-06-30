@@ -8,6 +8,7 @@ import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
 import { OpeningWinrateChart } from "@/components/charts/OpeningWinrateChart";
+import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
 
 interface Props {
@@ -48,7 +49,7 @@ function HighlightCard({
         <p className="text-[10px] font-bold tracking-widest uppercase mb-0.5" style={{ color: accentColor }}>
           {label}
         </p>
-        <p className="text-sm font-semibold truncate leading-tight">{game.opening}</p>
+        <p className="text-sm font-semibold truncate leading-tight">{translateOpening(game.opening)}</p>
         <p className="text-[10px] text-muted-foreground mt-0.5">{stat}</p>
       </div>
       <div className="text-right shrink-0 space-y-1">
@@ -257,7 +258,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                   </p>
                   {strongOpenings.map((o) => (
                     <div key={o.id}>
-                      <p className="text-xs font-semibold truncate">{o.opening_name}</p>
+                      <p className="text-xs font-semibold truncate">{translateOpening(o.opening_name)}</p>
                       <p className="text-[10px] text-muted-foreground">{o.winrate}% · {o.games_played}p</p>
                     </div>
                   ))}
@@ -273,7 +274,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                   </p>
                   {weakOpenings.map((o) => (
                     <div key={o.id}>
-                      <p className="text-xs font-semibold truncate">{o.opening_name}</p>
+                      <p className="text-xs font-semibold truncate">{translateOpening(o.opening_name)}</p>
                       <p className="text-[10px] text-muted-foreground">{o.winrate}% · {o.games_played}p</p>
                     </div>
                   ))}

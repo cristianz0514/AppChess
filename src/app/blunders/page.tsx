@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId, getDashboardStats, getRecentGames, getGamesByOpening } from "@/services/dashboardData";
+import { translateOpening } from "@/lib/translateOpening";
 
 function resultBadge(result: string) {
   if (result === "win")  return { label: "V", bg: "oklch(0.77 0.17 177 / 0.18)", color: "var(--bv-green)" };
@@ -48,7 +49,7 @@ export default async function BlundersPage({ searchParams }: Props) {
             <div className="flex items-center gap-2 mt-2">
               <span className="text-xs px-2 py-1 rounded-full border font-medium truncate max-w-[260px]"
                 style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.1)" }}>
-                {opening}
+                {translateOpening(opening)}
               </span>
               <Link href="/blunders" className="text-xs text-muted-foreground underline underline-offset-2">
                 Ver todas
@@ -100,7 +101,7 @@ export default async function BlundersPage({ searchParams }: Props) {
                       {badge.label}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{opening}</p>
+                      <p className="text-sm font-medium truncate">{translateOpening(opening)}</p>
                       <p className="text-[10px] text-muted-foreground capitalize">
                         {game.played_as === "white" ? "Blancas" : "Negras"} · {game.time_control} · {formatDate(game.created_at)}
                       </p>

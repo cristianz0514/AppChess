@@ -10,6 +10,7 @@ import {
   Cell,
 } from "recharts";
 import type { OpeningStat } from "@/types";
+import { translateOpening } from "@/lib/translateOpening";
 
 interface Props {
   openings: OpeningStat[];
@@ -19,10 +20,13 @@ export function OpeningWinrateChart({ openings }: Props) {
   const data = openings
     .filter((o) => o.games_played >= 2)
     .slice(0, 8)
-    .map((o) => ({
-      name: o.opening_name.length > 18 ? o.opening_name.slice(0, 18) + "…" : o.opening_name,
-      winrate: o.winrate,
-    }));
+    .map((o) => {
+      const es = translateOpening(o.opening_name);
+      return {
+        name: es.length > 18 ? es.slice(0, 18) + "…" : es,
+        winrate: o.winrate,
+      };
+    });
 
   if (data.length === 0) return null;
 

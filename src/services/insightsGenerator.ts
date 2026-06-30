@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import { supabase } from "@/lib/supabase";
+import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -210,12 +211,12 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     avgAccuracy,
 
     topOpenings: sorted.slice(0, 3).map((o) => ({
-      name: o.opening_name,
+      name: translateOpening(o.opening_name),
       games: o.games_played,
       winrate: o.winrate,
     })),
     worstOpenings: sorted.slice(-3).reverse().map((o) => ({
-      name: o.opening_name,
+      name: translateOpening(o.opening_name),
       games: o.games_played,
       winrate: o.winrate,
     })),

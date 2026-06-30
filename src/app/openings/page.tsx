@@ -3,6 +3,7 @@
 import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { translateOpening } from "@/lib/translateOpening";
 import type { OpeningWithGames } from "@/services/dashboardData";
 
 type ColorFilter = "both" | "white" | "black";
@@ -150,7 +151,7 @@ export default function OpeningsPage() {
                       <Link key={o.opening_name}
                         href={`/blunders?opening=${encodeURIComponent(o.opening_name)}`}
                         className="block space-y-0.5 hover:opacity-75 transition-opacity">
-                        <p className="text-xs font-semibold truncate">{o.opening_name}</p>
+                        <p className="text-xs font-semibold truncate">{translateOpening(o.opening_name)}</p>
                         <p className="text-[10px] text-muted-foreground">{o.winrate}% · {o.games_played}p →</p>
                       </Link>
                     ))}
@@ -164,7 +165,7 @@ export default function OpeningsPage() {
                       <Link key={o.opening_name}
                         href={`/blunders?opening=${encodeURIComponent(o.opening_name)}`}
                         className="block space-y-0.5 hover:opacity-75 transition-opacity">
-                        <p className="text-xs font-semibold truncate">{o.opening_name}</p>
+                        <p className="text-xs font-semibold truncate">{translateOpening(o.opening_name)}</p>
                         <p className="text-[10px] text-muted-foreground">{o.winrate}% · {o.games_played}p →</p>
                       </Link>
                     ))}
@@ -191,7 +192,7 @@ export default function OpeningsPage() {
                         className="flex items-center justify-between px-4 py-3 gap-2 hover:bg-muted/40 transition-colors"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">{o.opening_name}</p>
+                          <p className="text-sm font-medium truncate">{translateOpening(o.opening_name)}</p>
                           <p className="text-[10px] text-muted-foreground">{o.games_played} partidas · {o.wins}V {o.losses}D {o.draws}T</p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">

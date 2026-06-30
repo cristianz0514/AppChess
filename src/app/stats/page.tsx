@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId, getDashboardStats, getTopOpenings, getColorStats } from "@/services/dashboardData";
+import { translateOpening } from "@/lib/translateOpening";
 
 export default async function StatsPage() {
   const username = await getUsername();
@@ -81,7 +82,7 @@ export default async function StatsPage() {
             <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
               Mejor Apertura
             </p>
-            <p className="text-sm font-bold">{bestOpening.opening_name}</p>
+            <p className="text-sm font-bold">{translateOpening(bestOpening.opening_name)}</p>
             <p className="text-xs text-muted-foreground">
               {bestOpening.winrate}% de victorias · {bestOpening.games_played} partidas
             </p>

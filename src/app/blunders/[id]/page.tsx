@@ -6,6 +6,7 @@ import { GameViewer } from "@/components/GameViewer";
 import { GameAutoAnalyzer } from "@/components/GameAutoAnalyzer";
 import { ShareGameButton } from "@/components/ShareGameButton";
 import { ChevronLeft } from "lucide-react";
+import { translateOpening } from "@/lib/translateOpening";
 import type { Game } from "@/types";
 
 interface Props {
@@ -69,7 +70,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             dbMoves={dbMoves}
             jumpToBlunder={blunder === "1"}
             gameResult={game.result as Game["result"]}
-            opening={game.opening ?? "Apertura Desconocida"}
+            opening={translateOpening(game.opening)}
             accuracy={game.accuracy}
           />
         )}

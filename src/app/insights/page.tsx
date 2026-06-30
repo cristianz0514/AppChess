@@ -6,6 +6,7 @@ import type { ExampleGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { Sparkles } from "lucide-react";
+import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
 
 const categoryLabel: Record<Insight["category"], string> = {
@@ -33,7 +34,7 @@ function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: 
           <span className="text-[10px] font-bold w-4 text-center" style={{ color: resultColor[g.result] ?? "var(--foreground)" }}>
             {resultLabel[g.result] ?? "—"}
           </span>
-          <span className="text-xs flex-1 truncate">{g.opening}</span>
+          <span className="text-xs flex-1 truncate">{translateOpening(g.opening)}</span>
           <span className="text-[10px] text-muted-foreground shrink-0">{g.errorCount} error{g.errorCount !== 1 ? "es" : ""}</span>
           <span className="text-muted-foreground text-xs">›</span>
         </Link>
