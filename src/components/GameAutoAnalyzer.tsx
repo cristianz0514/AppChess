@@ -131,7 +131,7 @@ export function GameAutoAnalyzer({ gameId }: Props) {
             Reintentar
           </button>
         </>
-      ) : null}
+      )}
     </div>
   );
 }
