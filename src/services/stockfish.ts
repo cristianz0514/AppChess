@@ -55,6 +55,10 @@ async function getEngine(): Promise<StockfishEngine> {
 // Serialize all engine access: there is a single engine instance shared across
 // concurrent requests, so evaluations must not interleave.
 let chain: Promise<unknown> = Promise.resolve();
+let engineBusy = false;
+
+export function isEngineBusy(): boolean { return engineBusy; }
+
 function runExclusive<T>(task: () => Promise<T>): Promise<T> {
   const result = chain.then(task, task);
   chain = result.catch(() => {});
@@ -135,14 +139,19 @@ export async function analyzeAllFens(
   const engine = await getEngine();
   const results: (EvalResult | null)[] = [];
 
-  for (let i = 0; i < fens.length; i++) {
-    try {
-      const r = await runExclusive(() => evaluateOne(engine, fens[i], depth));
-      results.push(r);
-    } catch {
-      results.push(null);
+  engineBusy = true;
+  try {
+    for (let i = 0; i < fens.length; i++) {
+      try {
+        const r = await runExclusive(() => evaluateOne(engine, fens[i], depth));
+        results.push(r);
+      } catch {
+        results.push(null);
+      }
+      onProgress?.(i + 1, fens.length);
     }
-    onProgress?.(i + 1, fens.length);
+  } finally {
+    engineBusy = false;
   }
 
   return results;
