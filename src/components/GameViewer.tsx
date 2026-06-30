@@ -632,9 +632,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </div>
           )}
 
-          {/* Board + eval bar (bar on top, board full width) */}
-          <div className="space-y-2">
-            <EvalBar moves={moves} idx={inExplore ? -1 : idx} />
+          {/* Board + eval bar (bar on top, board edge-to-edge) */}
+          <div className="space-y-2 -mx-4">
+            <div className="px-4"><EvalBar moves={moves} idx={inExplore ? -1 : idx} /></div>
             <div className="relative">
               {/* Explore mode banner */}
               {inExplore && (
@@ -761,8 +761,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       {tab === "jugadas" && (
         <div className="space-y-3">
           {/* Mini board for reference */}
-          <div className="space-y-2">
-            <EvalBar moves={moves} idx={idx} />
+          <div className="space-y-2 -mx-4">
+            <div className="px-4"><EvalBar moves={moves} idx={idx} /></div>
             <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
           </div>
           <div className="flex items-center gap-2">
@@ -905,8 +905,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           )}
 
           {/* Practice board */}
-          <div className="space-y-2">
-            <EvalBar moves={moves} idx={Math.max(-1, practiceBlunderIdx! - 1)} />
+          <div className="space-y-2 -mx-4">
+            <div className="px-4"><EvalBar moves={moves} idx={Math.max(-1, practiceBlunderIdx! - 1)} /></div>
             <ChessBoard
               fen={practiceResult && practiceMovePlayed
                 ? (() => {
