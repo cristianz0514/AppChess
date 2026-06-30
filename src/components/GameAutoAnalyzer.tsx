@@ -16,7 +16,7 @@ export function GameAutoAnalyzer({ gameId }: Props) {
 
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const run = useRef<() => void>();
+  const run = useRef<(() => void) | undefined>(undefined);
 
   run.current = async () => {
     try {
