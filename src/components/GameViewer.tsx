@@ -76,8 +76,10 @@ const CLASS_COLOR: Record<string, string> = {
   good:       "var(--bv-green)",
 };
 
+// Simple monochrome glyphs (rendered white on a flat colored disc) — kept minimal
+// so the board doesn't feel busy.
 const CLASS_EMOJI: Record<string, string> = {
-  blunder: "💥", mistake: "⚠️", inaccuracy: "❓", best: "⭐", excellent: "✨", good: "✓",
+  blunder: "✕", mistake: "!", inaccuracy: "?", best: "✓", excellent: "✓", good: "✓",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -137,11 +139,12 @@ function evalScore(ev: number | null): string {
   return sign + Math.abs(ev).toFixed(1);
 }
 
+// Horizontal eval bar — sits ABOVE the board so the board can use the full width.
+// White advantage fills from the left; the score sits on the winning side.
 function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
   const currentEval = idx >= 0 ? moves[idx].evaluation : null;
   const hasRealData = currentEval !== null;
 
-  // Only use engine eval when real Stockfish data exists
   const ev = currentEval ?? 0;
   const whitePct = hasRealData ? evalToWhitePct(ev) : 50;
   const whiteWinning = ev >= 0;
@@ -149,84 +152,46 @@ function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
   const label = hasRealData ? evalLabel(ev, whiteWinning) : "Sin análisis";
 
   return (
-    <div className="flex flex-col items-center gap-1 self-stretch" style={{ width: 28 }}>
-      {/* Score chip — only shown when real data exists */}
-      {hasRealData && (
-        <div
-          className="text-[9px] font-bold font-mono px-1 py-0.5 rounded leading-none shrink-0"
-          style={{
-            background: whiteWinning ? "#f0f4ff" : "#0d1117",
-            color: whiteWinning ? "#0d1117" : "#f0f4ff",
-            boxShadow: isMate ? `0 0 8px ${whiteWinning ? "rgba(0,212,161,0.6)" : "rgba(255,87,87,0.6)"}` : "none",
-          }}
-        >
-          {evalScore(ev)}
-        </div>
-      )}
-
-      {/* Bar */}
+    <div className="w-full flex items-center gap-2">
       <div
-        className="flex-1 w-full rounded-lg overflow-hidden flex flex-col relative border"
-        style={{ borderColor: "var(--border)" }}
+        className="relative flex-1 h-6 rounded-lg overflow-hidden border"
+        style={{
+          borderColor: "var(--border)",
+          background: hasRealData ? "#0d1117" : "var(--muted)",
+        }}
       >
-        {/* Black section (top) */}
+        {/* White fill from the left */}
         <div
           style={{
-            flex: `${100 - whitePct} 0 0`,
-            background: hasRealData ? "#0d1117" : "var(--muted)",
-            transition: "flex 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
-          }}
-        />
-
-        {/* Divider line */}
-        <div style={{ height: 2, background: "var(--border)", flexShrink: 0 }} />
-
-        {/* White section (bottom) */}
-        <div
-          style={{
-            flex: `${whitePct} 0 0`,
+            position: "absolute", left: 0, top: 0, bottom: 0,
+            width: `${whitePct}%`,
             background: !hasRealData
               ? "var(--muted)"
               : isMate
-                ? (whiteWinning ? "var(--bv-green)" : "var(--bv-red)")
+                ? (whiteWinning ? "var(--bv-green)" : "#e8edf5")
                 : "#e8edf5",
-            transition: "flex 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
-            boxShadow: isMate ? `inset 0 0 12px ${whiteWinning ? "rgba(0,212,161,0.4)" : "rgba(255,87,87,0.4)"}` : "none",
+            transition: "width 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         />
-
-        {/* Advantage band — only when real data and clearly winning */}
-        {hasRealData && Math.abs(ev) > 1.5 && !isMate && (
-          <div
+        {/* Center tick */}
+        <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: "var(--border)", opacity: 0.6 }} />
+        {/* Score on the winning side */}
+        {hasRealData && (
+          <span
+            className="absolute top-1/2 -translate-y-1/2 text-[10px] font-bold font-mono tabular-nums"
             style={{
-              position: "absolute",
-              bottom: whiteWinning ? 0 : "auto",
-              top: whiteWinning ? "auto" : 0,
-              left: 0, right: 0,
-              height: `${Math.min(30, Math.abs(ev) * 3)}%`,
-              background: whiteWinning
-                ? "linear-gradient(to top, rgba(0,212,161,0.35), transparent)"
-                : "linear-gradient(to bottom, rgba(155,109,255,0.35), transparent)",
-              transition: "height 0.55s ease",
-            }}
-          />
+              [whiteWinning ? "left" : "right"]: 8,
+              color: whiteWinning ? "#0d1117" : "#f0f4ff",
+            } as React.CSSProperties}
+          >
+            {evalScore(ev)}
+          </span>
         )}
       </div>
-
-      {/* Label */}
-      <p
-        className="text-[7px] font-semibold text-center leading-tight"
-        style={{
-          writingMode: "vertical-lr",
-          transform: "rotate(180deg)",
-          color: "var(--muted-foreground)",
-          maxHeight: 60,
-          overflow: "hidden",
-          opacity: hasRealData ? 1 : 0.5,
-        }}
-      >
+      <span className="text-[10px] font-medium shrink-0 w-20 text-right"
+        style={{ color: "var(--muted-foreground)", opacity: hasRealData ? 1 : 0.5 }}>
         {label}
-      </p>
+      </span>
     </div>
   );
 }
@@ -667,10 +632,10 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </div>
           )}
 
-          {/* Board + eval bar */}
-          <div className="flex gap-2 items-stretch">
+          {/* Board + eval bar (bar on top, board full width) */}
+          <div className="space-y-2">
             <EvalBar moves={moves} idx={inExplore ? -1 : idx} />
-            <div className="flex-1 min-w-0 relative">
+            <div className="relative">
               {/* Explore mode banner */}
               {inExplore && (
                 <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
@@ -796,11 +761,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       {tab === "jugadas" && (
         <div className="space-y-3">
           {/* Mini board for reference */}
-          <div className="flex gap-2 items-stretch">
+          <div className="space-y-2">
             <EvalBar moves={moves} idx={idx} />
-            <div className="flex-1 min-w-0">
-              <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
-            </div>
+            <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => go(-1)} disabled={idx <= -1}
@@ -942,24 +905,22 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           )}
 
           {/* Practice board */}
-          <div className="flex gap-2 items-stretch">
+          <div className="space-y-2">
             <EvalBar moves={moves} idx={Math.max(-1, practiceBlunderIdx! - 1)} />
-            <div className="flex-1 min-w-0">
-              <ChessBoard
-                fen={practiceResult && practiceMovePlayed
-                  ? (() => {
-                      const g = new Chess(practiceFen);
-                      try { g.move({ from: practiceMovePlayed.from, to: practiceMovePlayed.to, promotion: "q" }); } catch {}
-                      return g.fen();
-                    })()
-                  : practiceFen
-                }
-                orientation={playedAs}
-                arrows={practiceResult ? userArrows : practiceArrows}
-                interactive={!practiceResult}
-                onMove={handlePracticeMove}
-              />
-            </div>
+            <ChessBoard
+              fen={practiceResult && practiceMovePlayed
+                ? (() => {
+                    const g = new Chess(practiceFen);
+                    try { g.move({ from: practiceMovePlayed.from, to: practiceMovePlayed.to, promotion: "q" }); } catch {}
+                    return g.fen();
+                  })()
+                : practiceFen
+              }
+              orientation={playedAs}
+              arrows={practiceResult ? userArrows : practiceArrows}
+              interactive={!practiceResult}
+              onMove={handlePracticeMove}
+            />
           </div>
 
           {/* Result feedback */}
