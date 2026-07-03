@@ -833,22 +833,31 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     Momento Crítico
                   </span>
                 </div>
-                <p className="text-sm font-semibold leading-snug">
-                  La partida cambió en la jugada {criticalMoment.move.moveNumber}
-                  {criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
-                </p>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
-                    style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-                    {fmtEval(criticalMoment.evalBefore)}
-                  </span>
-                  <span className="text-muted-foreground text-xs">→</span>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
-                    style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
-                    {fmtEval(criticalMoment.evalAfter)}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground ml-auto">Ver en el tablero →</span>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-2xl font-display font-bold leading-[1.1]">
+                    Esta jugada <span style={{ color: "var(--bv-purple)" }}>cambió</span> la partida.
+                  </p>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold font-mono leading-tight">
+                      {criticalMoment.move.moveNumber}{criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
+                    </p>
+                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-1">Swing</p>
+                    <div className="flex items-center gap-1 justify-end mt-0.5">
+                      <span className="text-[11px] font-mono px-1.5 py-0.5 rounded tabular-nums"
+                        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+                        {fmtEval(criticalMoment.evalBefore)}
+                      </span>
+                      <span className="text-muted-foreground text-[11px]">→</span>
+                      <span className="text-[11px] font-mono px-1.5 py-0.5 rounded tabular-nums font-bold"
+                        style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
+                        {fmtEval(criticalMoment.evalAfter)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {storyNarrative(criticalMoment.move, criticalMoment.evalBefore, criticalMoment.evalAfter).cause}
+                </p>
               </button>
               {criticalMoments.length >= 2 && (
                 <button onClick={startStory}

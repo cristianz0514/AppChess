@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 
+// Use the FILLED glyphs for both colors so pieces read on a LIGHT board;
+// colour + outline distinguish white from black.
 const PIECE_UNICODE: Record<string, string> = {
-  K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
+  K: "♚", Q: "♛", R: "♜", B: "♝", N: "♞", P: "♟",
   k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟",
 };
 
@@ -128,9 +130,10 @@ export function ChessBoard({
             const isSelected = selected === sq;
             const isWhitePiece = piece !== null && piece === piece.toUpperCase();
 
-            let bg = isDark ? "#2d4a6e" : "#8ea8c3";
-            if (isHighlighted) bg = isDark ? "rgba(155,109,255,0.55)" : "rgba(155,109,255,0.40)";
-            if (isSelected) bg = "rgba(255,210,0,0.55)";
+            // Light board — white + soft lavender, purple highlight (matches design).
+            let bg = isDark ? "#dcd6f2" : "#faf9ff";
+            if (isHighlighted) bg = isDark ? "rgba(155,109,255,0.42)" : "rgba(155,109,255,0.28)";
+            if (isSelected) bg = "rgba(255,196,0,0.5)";
 
             return (
               <div
@@ -149,10 +152,12 @@ export function ChessBoard({
               >
                 {piece && (
                   <span style={{
-                    color: isWhitePiece ? "#f0f4ff" : "#0d1117",
+                    color: isWhitePiece ? "#ffffff" : "#26222e",
+                    // White pieces get a dark outline so they read on white squares;
+                    // black pieces get a soft drop shadow for depth.
                     textShadow: isWhitePiece
-                      ? "0 1px 4px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5)"
-                      : "0 0 3px rgba(255,255,255,0.6), 0 1px 2px rgba(255,255,255,0.4)",
+                      ? "-1px -1px 0 #4a4658, 1px -1px 0 #4a4658, -1px 1px 0 #4a4658, 1px 1px 0 #4a4658, 0 2px 3px rgba(0,0,0,0.25)"
+                      : "0 1px 2px rgba(0,0,0,0.25)",
                     userSelect: "none",
                   }}>
                     {PIECE_UNICODE[piece] ?? piece}
@@ -162,7 +167,7 @@ export function ChessBoard({
                   <span style={{
                     position: "absolute", top: 2, left: 3,
                     fontSize: "2.2cqi",
-                    color: isDark ? "#c8d8e8" : "#1e3a5f",
+                    color: isDark ? "#8b82ad" : "#c9c2e0",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {orientation === "white" ? 8 - rowIdx : rowIdx + 1}
@@ -172,7 +177,7 @@ export function ChessBoard({
                   <span style={{
                     position: "absolute", bottom: 2, right: 3,
                     fontSize: "2.2cqi",
-                    color: isDark ? "#c8d8e8" : "#1e3a5f",
+                    color: isDark ? "#8b82ad" : "#c9c2e0",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {String.fromCharCode(97 + (orientation === "white" ? colIdx : 7 - colIdx))}
