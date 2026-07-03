@@ -1,9 +1,6 @@
-import Groq from "groq-sdk";
 import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
 
@@ -236,77 +233,108 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   };
 }
 
-// ─── Prompt ───────────────────────────────────────────────────────────────────
+// ─── Facts (deterministic, no LLM) ──────────────────────────────────────────
+//
+// Instead of paraphrasing stats through an LLM (which can only reword numbers
+// and risks confidently-wrong chess advice), we surface the behavioral facts
+// DIRECTLY from the player's data — always correct, sharp, and actionable.
 
-function buildPrompt(s: PlayerSnapshot): string {
-  const pct = (n: number, total: number) =>
-    total > 0 ? `${Math.round((n / total) * 100)}%` : "0%";
+interface Fact extends GeneratedInsight {
+  weight: number; // higher = more prominent; used to pick and order the top few
+}
 
-  const timePressureSection = s.hasClockData
-    ? `Time Pressure (from clock annotations):
-- Games where clock fell below 30s: ${s.timePressureGames} of ${s.totalGames}
-- Blunders/mistakes during time pressure: ${s.timePressureBlunders}
-- Total errors in those games: ${s.totalBlundersInTimeGames}
-- Time pressure error rate: ${pct(s.timePressureBlunders, s.totalBlundersInTimeGames)} of errors occurred under 30s`
-    : `Time Pressure: no clock data available for this player's games`;
+function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
+  const facts: Fact[] = [];
+  const phaseEs = { opening: "la apertura", middlegame: "el medio juego", endgame: "el final" } as const;
 
-  return `Eres un entrenador de alto rendimiento que analiza el COMPORTAMIENTO de un jugador de blitz/rapid, no solo sus jugadas. Tiene ${s.totalGames} partidas recientes en nuestra base de datos.
-Tu trabajo es identificar PATRONES DE CONDUCTA detrás de los errores: decisiones apresuradas, colapsos bajo presión de tiempo, tilt (errores en cadena), o exceso de confianza. Conecta los números con QUÉ está pasando psicológicamente y CÓMO corregirlo.
-Genera exactamente 4 consejos basados en los números específicos a continuación.
-IMPORTANTE: Responde SIEMPRE en español.
-
-═══════════════════════════════════
-PLAYER DATA
-═══════════════════════════════════
-
-General:
-- Win rate: ${s.winrate}%
-- Avg accuracy: ${s.avgAccuracy !== null ? `${s.avgAccuracy}%` : "not yet calculated"}
-- Total blunders: ${s.totalBlunders} | Total mistakes: ${s.totalMistakes}
-
-Opening Habits:
-- Games with an early queen move (before move 6): ${s.earlyQueenGames} of ${s.totalGames}
-- Games with passive opening (fewer than 3 piece development moves in first 10): ${s.lowDevelopmentGames} of ${s.totalGames}
-- Best openings by win rate: ${s.topOpenings.map((o) => `${o.name} ${o.winrate}% (${o.games}g)`).join(", ")}
-- Worst openings by win rate: ${s.worstOpenings.map((o) => `${o.name} ${o.winrate}% (${o.games}g)`).join(", ")}
-
-${timePressureSection}
-
-Tactical Weaknesses:
-- Blunders by phase — opening (moves 1–10): ${s.blundersByPhase.opening}, middlegame (11–25): ${s.blundersByPhase.middlegame}, endgame (26+): ${s.blundersByPhase.endgame}
-- Severe blunders (>300 centipawns lost): ${s.severeBlunders}
-- Peak error zone: ${s.peakBlunderMoveRange ?? "spread evenly"}
-
-═══════════════════════════════════
-RULES — READ CAREFULLY
-═══════════════════════════════════
-
-✅ DEBES:
-- Mencionar los números exactos de los datos en cada consejo.
-- Nombrar el PATRÓN DE CONDUCTA detrás del número (p.ej. "juegas rápido cuando dudas", "encadenas errores tras un fallo", "te confías con ventaja").
-- Cubrir al menos 2 de las 3 áreas (hábitos de apertura, presión de tiempo, debilidades tácticas).
-- Dar UNA instrucción específica y accionable por consejo.
-- Sonar como un entrenador de alto rendimiento que estudió a ESTE jugador — directo, sin frases motivacionales vacías.
-
-❌ NUNCA:
-- Dar consejos que apliquen a cualquier jugador ("estudia táctica", "ten más cuidado").
-- Repetir el mismo consejo en dos insights diferentes.
-- Mencionar categorías o etiquetas en el texto del mensaje.
-- Usar jerga sin explicarla en lenguaje sencillo.
-
-FORMATO DE RESPUESTA:
-Devuelve un array JSON de exactamente 4 objetos. CADA mensaje: español, MÁXIMO 22 palabras, una sola frase, directo y conductual — como un coach que te dice la verdad rápido. Incluye el número clave pero sin sonar a reporte.
-Bien: "Te apresuras cuando bajas de 30s: 6 de tus 8 errores graves pasaron ahí."
-Mal: "Tu precisión táctica disminuye un 12% bajo presión de tiempo."
-[
-  {
-    "category": "opening" | "tactical" | "time_management" | "recurring_blunder",
-    "message": "...(MÁXIMO 22 palabras, una frase, en español, directo y conductual)...",
-    "severity": "low" | "medium" | "high"
+  // 1. Time pressure — the clearest behavioral pattern when clock data exists.
+  if (s.hasClockData && s.totalBlundersInTimeGames >= 3) {
+    const share = Math.round((s.timePressureBlunders / s.totalBlundersInTimeGames) * 100);
+    if (share >= 30) {
+      facts.push({
+        category: "time_management",
+        message: `El ${share}% de tus errores (${s.timePressureBlunders} de ${s.totalBlundersInTimeGames}) llegan con menos de 30s en el reloj. Juega la apertura más rápido para guardar tiempo.`,
+        severity: share >= 50 ? "high" : "medium",
+        weight: 100 + share,
+      });
+    }
   }
-]
 
-Solo JSON — sin explicaciones, sin markdown, sin texto adicional:`;
+  // 2. Peak error window — where in the game your mistakes cluster.
+  if (s.peakBlunderMoveRange) {
+    const range = s.peakBlunderMoveRange.replace("moves", "las jugadas");
+    facts.push({
+      category: "tactical",
+      message: `Tu zona de mayor error es ${range}: es donde más se te escapan las partidas. Revísalas con calma.`,
+      severity: "medium",
+      weight: 70,
+    });
+  }
+
+  // 3. Dominant phase for blunders (skip if it duplicates the peak window idea).
+  const phases = Object.entries(s.blundersByPhase) as [keyof BlunderPhases, number][];
+  const topPhase = phases.sort((a, b) => b[1] - a[1])[0];
+  if (topPhase && topPhase[1] >= 3 && !s.peakBlunderMoveRange) {
+    facts.push({
+      category: "recurring_blunder",
+      message: `${topPhase[1]} de tus errores graves ocurren en ${phaseEs[topPhase[0]]}. Es tu fase más floja.`,
+      severity: "medium",
+      weight: 60 + topPhase[1],
+    });
+  }
+
+  // 4. Weakest opening (needs a real sample).
+  const worst = s.worstOpenings.find((o) => o.games >= 3 && o.winrate < 45);
+  if (worst) {
+    facts.push({
+      category: "opening",
+      message: `Con ${worst.name} solo ganas ${worst.winrate}% (${worst.games} partidas) — es tu apertura más floja. Estúdiala o cámbiala.`,
+      severity: worst.winrate < 30 ? "high" : "medium",
+      weight: 65 + (45 - worst.winrate),
+    });
+  }
+
+  // 5. Early-queen habit.
+  if (s.earlyQueenGames >= Math.max(4, s.totalGames * 0.15)) {
+    facts.push({
+      category: "opening",
+      message: `Sacas la dama antes de la jugada 6 en ${s.earlyQueenGames} partidas: la expones a ataques que te hacen perder tiempo.`,
+      severity: "low",
+      weight: 40 + s.earlyQueenGames,
+    });
+  }
+
+  // 6. Passive development.
+  if (s.lowDevelopmentGames >= Math.max(4, s.totalGames * 0.2)) {
+    facts.push({
+      category: "opening",
+      message: `En ${s.lowDevelopmentGames} partidas desarrollaste menos de 3 piezas en las primeras 10 jugadas. Prioriza sacar caballos y alfiles.`,
+      severity: "low",
+      weight: 38 + s.lowDevelopmentGames,
+    });
+  }
+
+  // 7. Severe blunders fallback (if we still have few facts).
+  if (s.severeBlunders >= 3) {
+    facts.push({
+      category: "tactical",
+      message: `${s.severeBlunders} veces regalaste más de 3 puntos de ventaja en una sola jugada. Antes de mover, revisa capturas y jaques del rival.`,
+      severity: s.severeBlunders >= 10 ? "high" : "medium",
+      weight: 50 + s.severeBlunders,
+    });
+  }
+
+  // Pick the strongest, keep category variety, cap at 4.
+  facts.sort((a, b) => b.weight - a.weight);
+  const chosen: Fact[] = [];
+  const seenCat = new Set<string>();
+  for (const f of facts) {
+    if (chosen.length >= 4) break;
+    if (seenCat.has(f.category) && chosen.length >= 2) continue; // allow variety first
+    chosen.push(f);
+    seenCat.add(f.category);
+  }
+  return chosen.map(({ weight: _w, ...rest }) => rest);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -321,31 +349,10 @@ export async function generateInsights(userId: string): Promise<void> {
   const snapshot = await buildSnapshot(userId);
   if (!snapshot) return;
 
-  const completion = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    messages: [
-      {
-        role: "system",
-        content:
-          "Eres un entrenador de ajedrez experto. DEBES responder ÚNICAMENTE en español. Nunca respondas en inglés ni en ningún otro idioma. Solo español.",
-      },
-      { role: "user", content: buildPrompt(snapshot) },
-    ],
-    max_tokens: 1200,
-    temperature: 0.7,
-  });
-  const text = completion.choices[0]?.message?.content ?? "";
-
-  let insights: GeneratedInsight[];
-  try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return;
-    insights = JSON.parse(jsonMatch[0]);
-  } catch {
-    return;
-  }
-
-  if (!Array.isArray(insights) || insights.length === 0) return;
+  // Facts are computed directly from the player's data — deterministic, always
+  // correct, and free (no LLM). See computeFacts for the rationale.
+  const insights = computeFacts(snapshot);
+  if (insights.length === 0) return;
 
   await supabase.from("insights").delete().eq("user_id", userId);
   await supabase.from("insights").insert(

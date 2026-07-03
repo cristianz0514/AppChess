@@ -5,7 +5,7 @@ import { getUserId, getExampleGames } from "@/services/dashboardData";
 import type { ExampleGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
-import { Sparkles, Clock, Castle, BookOpen, TrendingUp, AlertTriangle, type LucideIcon } from "lucide-react";
+import { Sparkles, TrendingUp, AlertTriangle } from "lucide-react";
 import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
 
@@ -42,12 +42,6 @@ function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: 
     </div>
   );
 }
-
-const coachRecommends: { Icon: LucideIcon; title: string; desc: string }[] = [
-  { Icon: Clock,    title: "Disciplina con el reloj", desc: "Practica con partidas rápidas de 10 min." },
-  { Icon: Castle,   title: "Finales de peones",       desc: "Estudia posiciones de rey y peón vs rey." },
-  { Icon: BookOpen, title: "Teoría de aperturas",    desc: "Repasa tus aperturas críticas." },
-];
 
 export default async function InsightsPage() {
   const username  = await getUsername();
@@ -136,27 +130,6 @@ export default async function InsightsPage() {
         )}
 
         {insights.length === 0 && <InsightsCard insights={[]} username={username} />}
-
-        {/* Coach recomienda */}
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <p className="px-4 pt-4 pb-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-            Coach Recomienda
-          </p>
-          <div className="divide-y divide-border">
-            {coachRecommends.map((item) => (
-              <div key={item.title} className="flex items-center gap-3 px-4 py-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-muted">
-                  <item.Icon size={16} className="text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{item.title}</p>
-                  <p className="text-xs text-muted-foreground">{item.desc}</p>
-                </div>
-                <span className="text-muted-foreground text-sm">›</span>
-              </div>
-            ))}
-          </div>
-        </div>
 
         {/* CTA */}
         <div className="rounded-2xl p-5 text-center space-y-2"

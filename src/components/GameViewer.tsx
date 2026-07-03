@@ -530,33 +530,47 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const [storyStep, setStoryStep] = useState<number | null>(null);
   const inStory = storyStep !== null;
 
-  // AI coach explanation per critical moment (cached by move index), with the
-  // rule-based narrative as the instant fallback while it loads / on failure.
-  const [aiExplain, setAiExplain] = useState<Record<number, string>>({});
-  const [explainLoading, setExplainLoading] = useState(false);
+  // Engine's best move for each critical moment (Stockfish, objective) — shown
+  // as concrete SAN + a green arrow, grounding the "why" in real calculation
+  // instead of an LLM guessing. Cached by move index.
+  const [storyBest, setStoryBest] = useState<Record<number, string | null>>({});
+  const [bestLoading, setBestLoading] = useState(false);
 
   useEffect(() => {
     if (storyStep === null || criticalMoments.length === 0) return;
     const cm = criticalMoments[storyStep];
-    if (aiExplain[cm.idx] !== undefined) return; // already fetched
     const fenBefore = cm.idx > 0 ? moves[cm.idx - 1].fen : new Chess().fen();
-    const phase = cm.move.moveNumber <= 10 ? "apertura" : cm.move.moveNumber <= 25 ? "medio juego" : "final";
+    if (storyBest[cm.idx] !== undefined) {
+      // Re-draw the cached arrow.
+      const cached = storyBest[cm.idx];
+      if (cached) {
+        try {
+          const mv = new Chess(fenBefore).move(cached);
+          if (mv) setBestMoveArrow({ from: mv.from, to: mv.to, color: "green" });
+        } catch {}
+      }
+      return;
+    }
     let cancelled = false;
-    setExplainLoading(true);
-    fetch("/api/explain", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fenBefore, san: cm.move.san, moveNumber: cm.move.moveNumber,
-        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase, gameId,
-      }),
-    })
+    setBestLoading(true);
+    setBestMoveArrow(null);
+    fetch(`/api/bestmove?fen=${encodeURIComponent(fenBefore)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled && d?.text) setAiExplain((prev) => ({ ...prev, [cm.idx]: d.text })); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setExplainLoading(false); });
+      .then((d) => {
+        if (cancelled) return;
+        let san: string | null = null;
+        if (d?.from && d?.to) {
+          try {
+            const mv = new Chess(fenBefore).move({ from: d.from, to: d.to, promotion: "q" });
+            if (mv) { san = mv.san; setBestMoveArrow({ from: d.from, to: d.to, color: "green" }); }
+          } catch {}
+        }
+        setStoryBest((prev) => ({ ...prev, [cm.idx]: san }));
+      })
+      .catch(() => { if (!cancelled) setStoryBest((prev) => ({ ...prev, [cm.idx]: null })); })
+      .finally(() => { if (!cancelled) setBestLoading(false); });
     return () => { cancelled = true; };
-  }, [storyStep, criticalMoments, moves, aiExplain]);
+  }, [storyStep, criticalMoments, moves]);
 
   function startStory() {
     if (criticalMoments.length === 0) return;
@@ -660,12 +674,19 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     <span className="text-[11px] font-semibold" style={{ color: "var(--bv-red)" }}>−{dropped.toFixed(1)}</span>
                   )}
                 </div>
-                <p className="text-xs text-foreground leading-relaxed">
-                  {aiExplain[cm.idx] ?? cause}
-                  {explainLoading && aiExplain[cm.idx] === undefined && (
-                    <span className="ml-1 text-muted-foreground italic">· el coach está analizando…</span>
-                  )}
-                </p>
+                <p className="text-xs text-foreground leading-relaxed">{cause}</p>
+
+                {/* Engine's objective verdict — the move that was actually best */}
+                {storyBest[cm.idx] ? (
+                  <p className="text-xs leading-relaxed">
+                    <span className="font-semibold" style={{ color: "var(--bv-green)" }}>La mejor jugada era </span>
+                    <span className="font-mono font-bold">{storyBest[cm.idx]}</span>
+                    <span className="text-muted-foreground"> — mírala en la flecha verde del tablero.</span>
+                  </p>
+                ) : bestLoading ? (
+                  <p className="text-xs text-muted-foreground italic">Stockfish está calculando la mejor jugada…</p>
+                ) : null}
+
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <span className="font-semibold" style={{ color: "var(--bv-purple)" }}>Para la próxima: </span>
                   {takeaway}
@@ -677,11 +698,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     className="flex-1 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-30 hover:bg-muted/40"
                     style={{ borderColor: "var(--border)" }}>
                     ← Anterior
-                  </button>
-                  <button onClick={() => fetchBestMove(cm.idx)}
-                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
-                    style={{ background: "var(--bv-green)" }}>
-                    {loadingBestMove ? "…" : "Mejor jugada"}
                   </button>
                   {storyStep! < criticalMoments.length - 1 ? (
                     <button onClick={() => storyGo(storyStep! + 1)}
