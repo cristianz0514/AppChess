@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Gauge, XCircle } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -346,11 +346,12 @@ interface Props {
   gameResult?: Game["result"];
   opening?: string;
   accuracy?: number | null;
+  avgAccuracy?: number | null;
   gameId?: string;
   autoStory?: boolean;
 }
 
-export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, gameId, autoStory }: Props) {
+export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, avgAccuracy, gameId, autoStory }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
   const [tab, setTab] = useState<Tab>("analizar");
 
@@ -522,6 +523,25 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   }, [moves, playerColor, toMine]);
 
   const criticalMoment = criticalMoments.length > 0 ? criticalMoments[0] : null;
+
+  // Engine's best move at the #1 critical moment — shown in the summary footer.
+  const [footerBest, setFooterBest] = useState<string | null>(null);
+  useEffect(() => {
+    if (!criticalMoment) return;
+    const fenBefore = criticalMoment.idx > 0 ? moves[criticalMoment.idx - 1].fen : new Chess().fen();
+    let cancelled = false;
+    fetch(`/api/bestmove?fen=${encodeURIComponent(fenBefore)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d?.from) return;
+        try {
+          const mv = new Chess(fenBefore).move({ from: d.from, to: d.to, promotion: "q" });
+          if (mv) setFooterBest(mv.san);
+        } catch {}
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [criticalMoment, moves]);
 
   const fmtEval = (e: number | null) =>
     e === null ? "—" : Math.abs(e) >= 9999 ? (e > 0 ? "#" : "-#") : (e > 0 ? "+" : "") + e.toFixed(1);
@@ -867,21 +887,43 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {/* Compact move list */}
           <MoveTable moves={moves} idx={idx} onGo={go} compact />
 
-          {/* Stats row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">PRECISIÓN</p>
-              <p className="text-2xl font-bold" style={{ color: "var(--bv-purple)" }}>
-                {accuracy ? `${accuracy}%` : "—"}
-              </p>
-            </div>
-            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">ERRORES</p>
-              <p className="text-2xl font-bold" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
-                {blunderCount + mistakeCount}
-              </p>
-            </div>
-          </div>
+          {/* Summary footer — engine best at the turning point, accuracy vs your
+              average, and total errors. Objective, game-level facts. */}
+          {(() => {
+            const accDelta = accuracy != null && avgAccuracy != null ? Math.round((accuracy - avgAccuracy) * 10) / 10 : null;
+            return (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl p-3 border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Star size={12} style={{ color: "var(--bv-green)" }} />
+                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Mejor jugada</p>
+                  </div>
+                  <p className="text-base font-bold font-mono leading-tight">{footerBest ?? "—"}</p>
+                </div>
+                <div className="rounded-xl p-3 border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Gauge size={12} style={{ color: "var(--bv-purple)" }} />
+                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Precisión</p>
+                  </div>
+                  <p className="text-base font-bold leading-tight">{accuracy != null ? `${accuracy}%` : "—"}</p>
+                  {accDelta != null && (
+                    <p className="text-[10px] font-semibold" style={{ color: accDelta >= 0 ? "var(--bv-green)" : "var(--bv-red)" }}>
+                      {accDelta >= 0 ? "+" : ""}{accDelta}% vs tu promedio
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-xl p-3 border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <XCircle size={12} style={{ color: "var(--bv-red)" }} />
+                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Errores</p>
+                  </div>
+                  <p className="text-base font-bold leading-tight" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
+                    {blunderCount + mistakeCount}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
 

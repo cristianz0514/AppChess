@@ -7,6 +7,7 @@ import { GameAutoAnalyzer } from "@/components/GameAutoAnalyzer";
 import { ShareGameButton } from "@/components/ShareGameButton";
 import { ChevronLeft } from "lucide-react";
 import { translateOpening } from "@/lib/translateOpening";
+import { getDashboardStats } from "@/services/dashboardData";
 import type { Game } from "@/types";
 
 interface Props {
@@ -26,6 +27,10 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
     .single();
 
   if (!game) notFound();
+
+  // Player's average accuracy, for the "vs tu promedio" comparison.
+  const stats = await getDashboardStats(game.user_id).catch(() => null);
+  const avgAccuracy = stats?.avgAccuracy ?? null;
 
   const { data: moves } = await supabase
     .from("moves")
@@ -72,6 +77,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             gameResult={game.result as Game["result"]}
             opening={translateOpening(game.opening)}
             accuracy={game.accuracy}
+            avgAccuracy={avgAccuracy}
             gameId={id}
             autoStory={story === "1"}
           />

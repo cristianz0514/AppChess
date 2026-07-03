@@ -117,7 +117,12 @@ export default async function DashboardPage({ searchParams }: Props) {
               {translateOpening(highlights.mostErrors.opening)}
             </p>
             <p className="text-xs text-muted-foreground mt-1.5">
-              {highlights.mostErrors.errorCount} momentos donde la evaluación se volteó. Revívelos uno por uno.
+              {highlights.mostErrors.result === "loss"
+                ? `La perdiste con ${highlights.mostErrors.errorCount} errores`
+                : highlights.mostErrors.result === "draw"
+                  ? `Terminó en tablas, pero cometiste ${highlights.mostErrors.errorCount} errores`
+                  : `La ganaste, pero con ${highlights.mostErrors.errorCount} errores`}
+              . Te llevo por los momentos que la decidieron.
             </p>
             <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-white font-bold text-sm"
               style={{ background: "var(--bv-purple)" }}>
