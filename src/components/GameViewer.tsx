@@ -633,6 +633,36 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     return () => { cancelled = true; };
   }, [currentSlide, moves, storyBest]);
 
+  // Coach comment (LLaMA) GROUNDED in the engine's best move — fetched once the
+  // best move is known for the current moment. Cached per move index.
+  const [aiComment, setAiComment] = useState<Record<number, string>>({});
+  const [aiLoading, setAiLoading] = useState(false);
+
+  useEffect(() => {
+    if (!currentSlide || currentSlide.type !== "moment") return;
+    const cm = currentSlide.cm;
+    const best = storyBest[cm.idx];
+    if (best === undefined) return;              // wait for the engine best move
+    if (aiComment[cm.idx] !== undefined) return; // already fetched
+    const fenBefore = cm.idx > 0 ? moves[cm.idx - 1].fen : new Chess().fen();
+    const phase = cm.move.moveNumber <= 10 ? "apertura" : cm.move.moveNumber <= 25 ? "medio juego" : "final";
+    let cancelled = false;
+    setAiLoading(true);
+    fetch("/api/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fenBefore, san: cm.move.san, bestMove: best, moveNumber: cm.move.moveNumber,
+        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase, gameId,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d?.text) setAiComment((prev) => ({ ...prev, [cm.idx]: d.text })); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setAiLoading(false); });
+    return () => { cancelled = true; };
+  }, [currentSlide, storyBest, aiComment, moves, gameId]);
+
   function startStory() {
     if (storySlides.length === 0) return;
     setBestMoveArrow(null);
@@ -771,6 +801,19 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     ) : bestLoading ? (
                       <p className="text-xs text-muted-foreground italic">Stockfish está calculando la mejor jugada…</p>
                     ) : null}
+
+                    {/* Coach comment grounded in the engine's verdict */}
+                    {(aiComment[cm.idx] || aiLoading) && (
+                      <div className="rounded-xl p-2.5 flex gap-2" style={{ background: "oklch(0.61 0.22 285 / 0.08)" }}>
+                        <Brain size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
+                        {aiComment[cm.idx] ? (
+                          <p className="text-xs leading-relaxed text-foreground">{aiComment[cm.idx]}</p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">El coach está redactando…</p>
+                        )}
+                      </div>
+                    )}
+
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       <span className="font-semibold" style={{ color: "var(--bv-purple)" }}>Para la próxima: </span>
                       {takeaway}

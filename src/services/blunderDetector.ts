@@ -38,7 +38,7 @@ export async function analyzeGame(
   }
 
   // Analyze ALL positions with a single Stockfish process
-  const evals = await analyzeAllFens(fens, 6, onProgress);
+  const evals = await analyzeAllFens(fens, 10, onProgress);
 
   // Stockfish reports `score cp` from the SIDE-TO-MOVE perspective (UCI standard).
   // After move i (0-indexed), the side to move is white when i is odd.

@@ -130,7 +130,7 @@ export async function getExampleGames(userId: string): Promise<ExampleGamesMap> 
     .select("id, opening, result")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(50);
 
   if (!games || games.length === 0) return emptyMap();
 
@@ -200,7 +200,7 @@ export const getHighlightGames = cache(async function(userId: string): Promise<H
     .select("id, opening, result, accuracy, played_as")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(50);
 
   if (!games || games.length === 0) return { best: null, worst: null, mostErrors: null };
 
@@ -315,7 +315,7 @@ export async function getGamesByOpening(
 }
 
 // Returns IDs of the user's games that have no analyzed moves yet (most recent first).
-export async function getUnanalyzedGameIds(userId: string, limit = 200): Promise<string[]> {
+export async function getUnanalyzedGameIds(userId: string, limit = 50): Promise<string[]> {
   const { data: games } = await supabase
     .from("games")
     .select("id")
@@ -357,7 +357,7 @@ export const getResultStats = cache(async function(userId: string): Promise<Resu
     .select("id, result, played_as, pgn")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(2000);
+    .limit(50);
 
   if (!games || games.length === 0) {
     return { wins: 0, losses: 0, draws: 0, winrate: 0, excluded: 0, counted: 0 };
@@ -417,7 +417,7 @@ export interface EloPoint {
 }
 
 // Returns the player's ELO across games, oldest → newest, for an evolution chart.
-export const getEloHistory = cache(async function(userId: string, limit = 2000): Promise<EloPoint[]> {
+export const getEloHistory = cache(async function(userId: string, limit = 500): Promise<EloPoint[]> {
   const { data } = await supabase
     .from("games")
     .select("white_rating, black_rating, played_as, created_at")

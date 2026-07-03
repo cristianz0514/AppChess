@@ -16,7 +16,7 @@ export interface ChessComGame {
 
 export async function fetchRecentGames(
   username: string,
-  maxGames = 200
+  maxGames = 50
 ): Promise<ChessComGame[]> {
   const now = new Date();
   const months: { year: number; month: number }[] = [];

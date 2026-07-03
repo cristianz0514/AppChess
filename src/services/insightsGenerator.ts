@@ -75,7 +75,7 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     .select("id, result, accuracy, pgn, played_as")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(50);
 
   if (!gameRows || gameRows.length === 0) return null;
 
