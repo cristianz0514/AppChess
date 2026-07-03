@@ -578,7 +578,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     const finalEval = toMine(moves[moves.length - 1].evaluation);
     return [
       { type: "intro", peak, boardIdx: Math.max(-1, firstIdx - 1) },
-      ...criticalMoments.map((cm) => ({ type: "moment" as const, cm, boardIdx: cm.idx })),
+      // Board sits BEFORE the move so the "played" (red) and "best" (green)
+      // arrows both point from the real position the player faced.
+      ...criticalMoments.map((cm) => ({ type: "moment" as const, cm, boardIdx: Math.max(-1, cm.idx - 1) })),
       {
         type: "outro",
         recovered,
@@ -592,6 +594,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const [storyStep, setStoryStep] = useState<number | null>(null);
   const inStory = storyStep !== null;
   const currentSlide = inStory ? storySlides[storyStep!] : null;
+  const storyMomentSlide = currentSlide?.type === "moment" ? currentSlide : null;
 
   // Engine's best move per critical moment (Stockfish, objective) — SAN + green
   // arrow, grounding the "why" in real calculation. Cached by move index.
@@ -794,9 +797,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     <p className="text-xs text-foreground leading-relaxed">{cause}</p>
                     {storyBest[cm.idx] ? (
                       <p className="text-xs leading-relaxed">
-                        <span className="font-semibold" style={{ color: "var(--bv-green)" }}>La mejor jugada era </span>
-                        <span className="font-mono font-bold">{storyBest[cm.idx]}</span>
-                        <span className="text-muted-foreground"> — mírala en la flecha verde del tablero.</span>
+                        <span className="text-muted-foreground">Tu jugada </span>
+                        <span className="font-mono font-bold" style={{ color: "var(--bv-red)" }}>{cm.move.san}</span>
+                        <span className="text-muted-foreground"> (flecha roja). La mejor era </span>
+                        <span className="font-mono font-bold" style={{ color: "var(--bv-green)" }}>{storyBest[cm.idx]}</span>
+                        <span className="text-muted-foreground"> (flecha verde).</span>
                       </p>
                     ) : bestLoading ? (
                       <p className="text-xs text-muted-foreground italic">Stockfish está calculando la mejor jugada…</p>
@@ -946,11 +951,20 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               <ChessBoard
                 fen={inExplore ? currentExploreFen! : currentFen}
                 orientation={playedAs}
-                lastMove={inExplore ? exploreLastMove : lastMove}
-                arrows={!inExplore && bestMoveArrow ? [bestMoveArrow] : []}
+                lastMove={inExplore ? exploreLastMove : storyMomentSlide ? null : lastMove}
+                arrows={
+                  inExplore
+                    ? []
+                    : storyMomentSlide
+                      ? [
+                          { from: storyMomentSlide.cm.move.from, to: storyMomentSlide.cm.move.to, color: "red" },
+                          ...(bestMoveArrow ? [bestMoveArrow] : []),
+                        ]
+                      : bestMoveArrow ? [bestMoveArrow] : []
+                }
                 interactive={inExplore}
                 onMove={inExplore ? handleExploreMove : undefined}
-                lastMoveBadge={!inExplore && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
+                lastMoveBadge={!inExplore && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
                   ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
                   : null}
               />

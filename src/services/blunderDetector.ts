@@ -1,9 +1,18 @@
 import { Chess } from "chess.js";
-import { analyzeAllFens } from "./stockfish";
+import { analyzeAllFens, evaluatePosition } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
+
+// Two-pass analysis:
+//  Pass 1 — a fast shallow sweep over EVERY position to find where the errors are.
+//  Pass 2 — a DEEP re-evaluation of only those few error positions (and the move
+//           before), so the important moments get strong analysis without paying
+//           the deep cost on all ~70 positions. Concentrates CPU where it matters.
+const SHALLOW_DEPTH = 8;
+const DEEP_DEPTH = 16;
+const MAX_DEEP_MOVES = 8; // cap how many error positions we deepen
 
 function classify(centipawnLoss: number): MoveClassification {
   if (centipawnLoss < 10) return "best";
@@ -13,6 +22,9 @@ function classify(centipawnLoss: number): MoveClassification {
   if (centipawnLoss < 200) return "mistake";
   return "blunder";
 }
+
+// Converts a side-to-move score (pawns) at ply i to white's perspective.
+const toWhite = (score: number, i: number) => (i % 2 === 1 ? score : -score);
 
 export async function analyzeGame(
   gameId: string,
@@ -37,59 +49,51 @@ export async function analyzeGame(
     fens.push(chess.fen());
   }
 
-  // Analyze ALL positions with a single Stockfish process
-  const evals = await analyzeAllFens(fens, 10, onProgress);
+  // ── Pass 1: shallow sweep over every position ──────────────────────────────
+  const evals = await analyzeAllFens(fens, SHALLOW_DEPTH, onProgress);
 
   // Stockfish reports `score cp` from the SIDE-TO-MOVE perspective (UCI standard).
-  // After move i (0-indexed), the side to move is white when i is odd.
-  // Convert every raw score to WHITE's perspective (positive = white better) so the
-  // stored `evaluation` is consistent and the eval bar reads it directly.
-  const whiteEval: (number | null)[] = evals.map((r, i) => {
-    if (!r) return null;
-    const whiteToMove = i % 2 === 1; // after an even-index move, black is to move
-    return whiteToMove ? r.score : -r.score;
-  });
+  // Convert to WHITE's perspective so the stored eval is consistent everywhere.
+  const whiteEval: (number | null)[] = evals.map((r, i) => (r ? toWhite(r.score, i) : null));
 
-  const moves: Omit<Move, "id">[] = [];
-
-  for (let i = 0; i < history.length; i++) {
-    const move = history[i];
-    const cur = whiteEval[i];
-
-    if (cur === null) {
-      moves.push({
-        game_id: gameId,
-        move_number: Math.floor(i / 2) + 1,
-        move: move.san,
-        evaluation: null,
-        centipawn_loss: null,
-        classification: null,
-      });
-      continue;
-    }
-
-    // Eval before this move, in white's perspective (0 ≈ equal for the very first move).
-    const prev = i === 0 ? 0 : whiteEval[i - 1];
-    const whiteJustMoved = i % 2 === 0;
-
-    let centipawnLoss = 0;
-    if (prev !== null) {
-      // Loss is measured from the moving player's perspective: white wants whiteEval
-      // to rise, black wants it to fall. A drop in the mover's favour = a mistake.
-      const drop = whiteJustMoved ? prev - cur : cur - prev;
-      centipawnLoss = Math.min(2000, Math.max(0, Math.round(drop * 100)));
-    }
-
-    moves.push({
-      game_id: gameId,
-      move_number: Math.floor(i / 2) + 1,
-      move: move.san,
-      evaluation: cur,
-      centipawn_loss: centipawnLoss,
-      classification: classify(centipawnLoss),
+  // Builds the moves array (loss + classification) from the current whiteEval.
+  const buildMoves = (): Omit<Move, "id">[] =>
+    history.map((move, i) => {
+      const cur = whiteEval[i];
+      if (cur === null) {
+        return { game_id: gameId, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: null, centipawn_loss: null, classification: null };
+      }
+      const prev = i === 0 ? 0 : whiteEval[i - 1];
+      const whiteJustMoved = i % 2 === 0;
+      let centipawnLoss = 0;
+      if (prev !== null) {
+        const drop = whiteJustMoved ? prev - cur : cur - prev;
+        centipawnLoss = Math.min(2000, Math.max(0, Math.round(drop * 100)));
+      }
+      return { game_id: gameId, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(centipawnLoss) };
     });
+
+  // ── Pass 2: deepen only the worst positions ────────────────────────────────
+  const prelim = buildMoves();
+  const errorIdx = prelim
+    .map((m, i) => ({ i, loss: m.centipawn_loss ?? 0, cls: m.classification }))
+    .filter((m) => m.cls === "blunder" || m.cls === "mistake")
+    .sort((a, b) => b.loss - a.loss)
+    .slice(0, MAX_DEEP_MOVES)
+    .map((m) => m.i);
+
+  // Re-evaluate each error position AND the one before it (the loss needs both).
+  const deepIdx = new Set<number>();
+  for (const i of errorIdx) { deepIdx.add(i); if (i > 0) deepIdx.add(i - 1); }
+
+  for (const i of deepIdx) {
+    try {
+      const r = await evaluatePosition(fens[i], DEEP_DEPTH);
+      whiteEval[i] = toWhite(r.score, i);
+    } catch { /* keep the shallow value */ }
   }
 
+  const moves = buildMoves();
   if (moves.length === 0) return;
 
   await supabase.from("moves").delete().eq("game_id", gameId);
