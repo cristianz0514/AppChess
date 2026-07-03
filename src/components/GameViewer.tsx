@@ -30,6 +30,20 @@ interface MoveInfo {
 
 type Tab = "analizar" | "jugadas" | "consejos";
 
+interface CriticalMoment {
+  idx: number;
+  move: MoveInfo;
+  evalBefore: number | null;
+  evalAfter: number | null;
+}
+
+// Story Mode is an emotional arc: intro ("you were winning") → each turning
+// point → outro ("your eval never recovered"). All computed from eval data.
+type StorySlide =
+  | { type: "intro"; peak: number; boardIdx: number }
+  | { type: "moment"; cm: CriticalMoment; boardIdx: number }
+  | { type: "outro"; recovered: boolean; finalEval: number | null; lastMoveNumber: number; boardIdx: number };
+
 // ── Practice mode evaluator ───────────────────────────────────────────────────
 
 interface PracticeResult {
@@ -546,22 +560,49 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const fmtEval = (e: number | null) =>
     e === null ? "—" : Math.abs(e) >= 9999 ? (e > 0 ? "#" : "-#") : (e > 0 ? "+" : "") + e.toFixed(1);
 
-  // ── Story Mode: guided walk through the critical moments ────────────────────
+  // ── Story Mode: guided EMOTIONAL arc through the game ───────────────────────
+  const storySlides = useMemo<StorySlide[]>(() => {
+    if (criticalMoments.length === 0) return [];
+    const firstIdx = criticalMoments[0].idx;
+    let peak = 0;
+    for (let i = 0; i < firstIdx; i++) {
+      const e = toMine(moves[i].evaluation);
+      if (e != null && e > peak) peak = e;
+    }
+    const lastIdx = criticalMoments[criticalMoments.length - 1].idx;
+    let recovered = false;
+    for (let i = lastIdx + 1; i < moves.length; i++) {
+      const e = toMine(moves[i].evaluation);
+      if (e != null && e >= 0.5) { recovered = true; break; }
+    }
+    const finalEval = toMine(moves[moves.length - 1].evaluation);
+    return [
+      { type: "intro", peak, boardIdx: Math.max(-1, firstIdx - 1) },
+      ...criticalMoments.map((cm) => ({ type: "moment" as const, cm, boardIdx: cm.idx })),
+      {
+        type: "outro",
+        recovered,
+        finalEval,
+        lastMoveNumber: criticalMoments[criticalMoments.length - 1].move.moveNumber,
+        boardIdx: moves.length - 1,
+      },
+    ];
+  }, [criticalMoments, moves, toMine]);
+
   const [storyStep, setStoryStep] = useState<number | null>(null);
   const inStory = storyStep !== null;
+  const currentSlide = inStory ? storySlides[storyStep!] : null;
 
-  // Engine's best move for each critical moment (Stockfish, objective) — shown
-  // as concrete SAN + a green arrow, grounding the "why" in real calculation
-  // instead of an LLM guessing. Cached by move index.
+  // Engine's best move per critical moment (Stockfish, objective) — SAN + green
+  // arrow, grounding the "why" in real calculation. Cached by move index.
   const [storyBest, setStoryBest] = useState<Record<number, string | null>>({});
   const [bestLoading, setBestLoading] = useState(false);
 
   useEffect(() => {
-    if (storyStep === null || criticalMoments.length === 0) return;
-    const cm = criticalMoments[storyStep];
+    if (!currentSlide || currentSlide.type !== "moment") return;
+    const cm = currentSlide.cm;
     const fenBefore = cm.idx > 0 ? moves[cm.idx - 1].fen : new Chess().fen();
     if (storyBest[cm.idx] !== undefined) {
-      // Re-draw the cached arrow.
       const cached = storyBest[cm.idx];
       if (cached) {
         try {
@@ -590,31 +631,32 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       .catch(() => { if (!cancelled) setStoryBest((prev) => ({ ...prev, [cm.idx]: null })); })
       .finally(() => { if (!cancelled) setBestLoading(false); });
     return () => { cancelled = true; };
-  }, [storyStep, criticalMoments, moves]);
+  }, [currentSlide, moves, storyBest]);
 
   function startStory() {
-    if (criticalMoments.length === 0) return;
+    if (storySlides.length === 0) return;
     setBestMoveArrow(null);
     setStoryStep(0);
-    go(criticalMoments[0].idx);
+    go(storySlides[0].boardIdx);
   }
-  function exitStory() { setStoryStep(null); }
+  function exitStory() { setStoryStep(null); setBestMoveArrow(null); }
 
   // Auto-start Story Mode when arrived via "Revivir" (guided, cinematic entry).
   const autoStarted = useRef(false);
   useEffect(() => {
-    if (autoStory && !autoStarted.current && criticalMoments.length > 0) {
+    if (autoStory && !autoStarted.current && storySlides.length > 0) {
       autoStarted.current = true;
       setBestMoveArrow(null);
       setStoryStep(0);
-      go(criticalMoments[0].idx);
+      go(storySlides[0].boardIdx);
     }
-  }, [autoStory, criticalMoments, go]);
+  }, [autoStory, storySlides, go]);
 
   function storyGo(step: number) {
-    const clamped = Math.max(0, Math.min(criticalMoments.length - 1, step));
+    const clamped = Math.max(0, Math.min(storySlides.length - 1, step));
     setStoryStep(clamped);
-    go(criticalMoments[clamped].idx);
+    setBestMoveArrow(null);
+    go(storySlides[clamped].boardIdx);
   }
 
   if (moves.length === 0) {
@@ -657,85 +699,125 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       {/* ── Tab: Analizar ────────────────────────────────────── */}
       {tab === "analizar" && (
         <>
-          {/* Story Mode — guided narrative through the critical moments */}
-          {!inExplore && inStory && criticalMoments.length > 0 && (() => {
-            const cm = criticalMoments[storyStep!];
-            const dropped = (cm.evalBefore ?? 0) - (cm.evalAfter ?? 0);
-            const { cause, takeaway } = storyNarrative(cm.move, cm.evalBefore, cm.evalAfter);
-            return (
-              <div className="rounded-2xl border p-4 space-y-3"
-                style={{ borderColor: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.07)" }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Zap size={15} style={{ color: "var(--bv-purple)" }} />
-                    <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
-                      Momento {storyStep! + 1} de {criticalMoments.length}
-                    </span>
-                  </div>
-                  <button onClick={exitStory} className="text-[11px] text-muted-foreground underline underline-offset-2">
-                    Salir
-                  </button>
-                </div>
-
-                <p className="text-base font-semibold leading-snug font-display">
-                  Jugada {cm.move.moveNumber}{cm.move.color === "w" ? "." : "…"} {cm.move.san}
-                </p>
+          {/* Story Mode — guided emotional arc (intro → moments → outro) */}
+          {!inExplore && inStory && currentSlide && (
+            <div className="rounded-2xl border p-4 space-y-3"
+              style={{ borderColor: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.07)" }}>
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
-                    style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-                    {fmtEval(cm.evalBefore)}
+                  <Zap size={15} style={{ color: "var(--bv-purple)" }} />
+                  <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+                    {currentSlide.type === "intro"
+                      ? "El comienzo"
+                      : currentSlide.type === "outro"
+                        ? "El desenlace"
+                        : `Momento ${storyStep!} de ${criticalMoments.length}`}
                   </span>
-                  <span className="text-muted-foreground text-xs">→</span>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
-                    style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
-                    {fmtEval(cm.evalAfter)}
-                  </span>
-                  {dropped > 0 && Math.abs(cm.evalBefore ?? 0) < 90 && Math.abs(cm.evalAfter ?? 0) < 90 && (
-                    <span className="text-[11px] font-semibold" style={{ color: "var(--bv-red)" }}>−{dropped.toFixed(1)}</span>
-                  )}
                 </div>
-                <p className="text-xs text-foreground leading-relaxed">{cause}</p>
-
-                {/* Engine's objective verdict — the move that was actually best */}
-                {storyBest[cm.idx] ? (
-                  <p className="text-xs leading-relaxed">
-                    <span className="font-semibold" style={{ color: "var(--bv-green)" }}>La mejor jugada era </span>
-                    <span className="font-mono font-bold">{storyBest[cm.idx]}</span>
-                    <span className="text-muted-foreground"> — mírala en la flecha verde del tablero.</span>
-                  </p>
-                ) : bestLoading ? (
-                  <p className="text-xs text-muted-foreground italic">Stockfish está calculando la mejor jugada…</p>
-                ) : null}
-
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  <span className="font-semibold" style={{ color: "var(--bv-purple)" }}>Para la próxima: </span>
-                  {takeaway}
-                </p>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={() => storyGo(storyStep! - 1)} disabled={storyStep === 0}
-                    className="flex-1 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-30 hover:bg-muted/40"
-                    style={{ borderColor: "var(--border)" }}>
-                    ← Anterior
-                  </button>
-                  {storyStep! < criticalMoments.length - 1 ? (
-                    <button onClick={() => storyGo(storyStep! + 1)}
-                      className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
-                      style={{ background: "var(--bv-purple)" }}>
-                      Siguiente →
-                    </button>
-                  ) : (
-                    <button onClick={exitStory}
-                      className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
-                      style={{ background: "var(--bv-purple)" }}>
-                      Terminar
-                    </button>
-                  )}
-                </div>
+                <button onClick={exitStory} className="text-[11px] text-muted-foreground underline underline-offset-2">
+                  Salir
+                </button>
               </div>
-            );
-          })()}
+
+              {/* INTRO */}
+              {currentSlide.type === "intro" && (
+                <>
+                  <p className="text-lg font-bold leading-snug font-display">
+                    {currentSlide.peak >= 2
+                      ? "Ibas ganando cómodo."
+                      : currentSlide.peak >= 0.7
+                        ? "Tenías una ligera ventaja."
+                        : "La partida estaba pareja."}
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {currentSlide.peak >= 0.7
+                      ? `Llegaste a estar +${currentSlide.peak.toFixed(1)}. Veamos cómo se te escapó.`
+                      : "Hasta que llegaron los momentos que la decidieron. Vamos uno por uno."}
+                  </p>
+                </>
+              )}
+
+              {/* MOMENT */}
+              {currentSlide.type === "moment" && (() => {
+                const cm = currentSlide.cm;
+                const dropped = (cm.evalBefore ?? 0) - (cm.evalAfter ?? 0);
+                const { cause, takeaway } = storyNarrative(cm.move, cm.evalBefore, cm.evalAfter);
+                return (
+                  <>
+                    <p className="text-base font-semibold leading-snug font-display">
+                      Jugada {cm.move.moveNumber}{cm.move.color === "w" ? "." : "…"} {cm.move.san}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
+                        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+                        {fmtEval(cm.evalBefore)}
+                      </span>
+                      <span className="text-muted-foreground text-xs">→</span>
+                      <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
+                        style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
+                        {fmtEval(cm.evalAfter)}
+                      </span>
+                      {dropped > 0 && Math.abs(cm.evalBefore ?? 0) < 90 && Math.abs(cm.evalAfter ?? 0) < 90 && (
+                        <span className="text-[11px] font-semibold" style={{ color: "var(--bv-red)" }}>−{dropped.toFixed(1)}</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-foreground leading-relaxed">{cause}</p>
+                    {storyBest[cm.idx] ? (
+                      <p className="text-xs leading-relaxed">
+                        <span className="font-semibold" style={{ color: "var(--bv-green)" }}>La mejor jugada era </span>
+                        <span className="font-mono font-bold">{storyBest[cm.idx]}</span>
+                        <span className="text-muted-foreground"> — mírala en la flecha verde del tablero.</span>
+                      </p>
+                    ) : bestLoading ? (
+                      <p className="text-xs text-muted-foreground italic">Stockfish está calculando la mejor jugada…</p>
+                    ) : null}
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      <span className="font-semibold" style={{ color: "var(--bv-purple)" }}>Para la próxima: </span>
+                      {takeaway}
+                    </p>
+                  </>
+                );
+              })()}
+
+              {/* OUTRO */}
+              {currentSlide.type === "outro" && (
+                <>
+                  <p className="text-lg font-bold leading-snug font-display">
+                    {currentSlide.recovered
+                      ? "Lograste recuperarte."
+                      : "Tu evaluación nunca se recuperó."}
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {currentSlide.recovered
+                      ? `Después de la jugada ${currentSlide.lastMoveNumber} volviste a ponerte por delante. La lección: reconoce el momento de peligro antes de que sea tarde.`
+                      : `Desde la jugada ${currentSlide.lastMoveNumber} no volviste a tomar la ventaja. Trabaja en no dejar que un error arrastre toda la partida.`}
+                  </p>
+                </>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={() => storyGo(storyStep! - 1)} disabled={storyStep === 0}
+                  className="flex-1 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-30 hover:bg-muted/40"
+                  style={{ borderColor: "var(--border)" }}>
+                  ← Anterior
+                </button>
+                {storyStep! < storySlides.length - 1 ? (
+                  <button onClick={() => storyGo(storyStep! + 1)}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                    style={{ background: "var(--bv-purple)" }}>
+                    Siguiente →
+                  </button>
+                ) : (
+                  <button onClick={exitStory}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                    style={{ background: "var(--bv-purple)" }}>
+                    Terminar
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Critical moment summary card (when not in story) */}
           {!inExplore && !inStory && criticalMoment && (
