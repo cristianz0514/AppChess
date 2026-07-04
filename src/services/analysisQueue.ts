@@ -52,6 +52,8 @@ export async function startBatch(userId: string): Promise<{ started: boolean; to
         try { await analyzeGame(game.id, game.pgn); } catch { /* skip failing game */ }
       }
       state.done++;
+      // Breathe between games so the single-CPU server keeps serving requests.
+      await new Promise((r) => setTimeout(r, 1200));
     }
     try { await generateInsights(userId); } catch { /* non-fatal */ }
     state.running = false;

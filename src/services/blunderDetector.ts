@@ -11,8 +11,8 @@ export type MoveClassification = Move["classification"];
 //           before), so the important moments get strong analysis without paying
 //           the deep cost on all ~70 positions. Concentrates CPU where it matters.
 const SHALLOW_DEPTH = 8;
-const DEEP_DEPTH = 16;
-const MAX_DEEP_MOVES = 8; // cap how many error positions we deepen
+const DEEP_DEPTH = 12;      // deep enough to be reliable, short enough not to freeze the free-tier CPU
+const MAX_DEEP_MOVES = 6;   // cap how many error positions we deepen
 
 function classify(centipawnLoss: number): MoveClassification {
   if (centipawnLoss < 10) return "best";

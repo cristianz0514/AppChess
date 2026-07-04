@@ -90,7 +90,7 @@ function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promi
       resolve(best);
     };
 
-    const timer = setTimeout(finish, 4500);
+    const timer = setTimeout(finish, 2500);
 
     engine.listener = (line: string) => {
       if (typeof line !== "string") return;
@@ -120,7 +120,7 @@ export async function evaluatePosition(fen: string, depth = 10): Promise<EvalRes
 }
 
 // Returns the best move for a position as { from, to } squares.
-export async function getBestMove(fen: string, depth = 14): Promise<{ from: string; to: string } | null> {
+export async function getBestMove(fen: string, depth = 12): Promise<{ from: string; to: string } | null> {
   const engine = await getEngine();
   return runExclusive(() => new Promise<{ from: string; to: string } | null>((resolve) => {
     let settled = false;
@@ -132,7 +132,7 @@ export async function getBestMove(fen: string, depth = 14): Promise<{ from: stri
       if (!uciMove || uciMove === "(none)") { resolve(null); return; }
       resolve({ from: uciMove.slice(0, 2), to: uciMove.slice(2, 4) });
     };
-    const timer = setTimeout(() => finish(null), 7000);
+    const timer = setTimeout(() => finish(null), 4000);
     engine.listener = (line: string) => {
       if (line.startsWith("bestmove")) finish(line.split(" ")[1] ?? null);
     };
@@ -161,6 +161,9 @@ export async function analyzeAllFens(
         results.push(null);
       }
       onProgress?.(i + 1, fens.length);
+      // Yield to the event loop between searches so the server stays responsive
+      // (single-CPU free tier — otherwise sustained analysis blocks HTTP → 502).
+      await new Promise((r) => setTimeout(r, 15));
     }
   } finally {
     engineBusy = false;
