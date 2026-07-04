@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Brain, Swords, User, Plus } from "lucide-react";
+import { LayoutDashboard, Brain, Swords, BarChart3, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Inicio",     icon: LayoutDashboard },
-  { href: "/blunders",  label: "Partidas",   icon: Swords },
+  { href: "/dashboard", label: "Inicio",       icon: LayoutDashboard },
+  { href: "/blunders",  label: "Partidas",     icon: Swords },
   null,
-  { href: "/insights",  label: "Coach IA",   icon: Brain },
-  { href: "/stats",     label: "Perfil",     icon: User },
+  { href: "/insights",  label: "Coach IA",     icon: Brain },
+  { href: "/stats",     label: "Estadísticas", icon: BarChart3 },
 ];
 
 export function BottomNav() {

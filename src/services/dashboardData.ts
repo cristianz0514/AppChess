@@ -230,16 +230,24 @@ export const getHighlightGames = cache(async function(userId: string): Promise<H
     };
   }
 
-  // Best: highest accuracy among games with accuracy data; fallback: fewest errors
   const withAccuracy = games.filter((g) => g.accuracy !== null);
-  const best = withAccuracy.length > 0
-    ? toHighlight(withAccuracy.reduce((a, b) => (b.accuracy! > a.accuracy! ? b : a)))
-    : toHighlight(games.reduce((a, b) => ((errorCount.get(b.id) ?? 0) < (errorCount.get(a.id) ?? 0) ? b : a)));
 
-  // Worst: lowest accuracy; fallback: most errors
-  const worst = withAccuracy.length > 0
-    ? toHighlight(withAccuracy.reduce((a, b) => (b.accuracy! < a.accuracy! ? b : a)))
-    : toHighlight(games.reduce((a, b) => ((errorCount.get(b.id) ?? 0) > (errorCount.get(a.id) ?? 0) ? b : a)));
+  // Best = your highest-accuracy WIN (a "best game" shouldn't be a loss).
+  // Fall back to best-accuracy overall only if there are no analyzed wins.
+  const winsAcc = withAccuracy.filter((g) => g.result === "win");
+  const best = winsAcc.length > 0
+    ? toHighlight(winsAcc.reduce((a, b) => (b.accuracy! > a.accuracy! ? b : a)))
+    : withAccuracy.length > 0
+      ? toHighlight(withAccuracy.reduce((a, b) => (b.accuracy! > a.accuracy! ? b : a)))
+      : null;
+
+  // Worst = your lowest-accuracy LOSS. Fall back to worst-accuracy overall.
+  const lossesAcc = withAccuracy.filter((g) => g.result === "loss");
+  const worst = lossesAcc.length > 0
+    ? toHighlight(lossesAcc.reduce((a, b) => (b.accuracy! < a.accuracy! ? b : a)))
+    : withAccuracy.length > 0
+      ? toHighlight(withAccuracy.reduce((a, b) => (b.accuracy! < a.accuracy! ? b : a)))
+      : null;
 
   // Most errors (blunders + mistakes combined)
   const mostErrors = toHighlight(

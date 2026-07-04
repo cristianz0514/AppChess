@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Cpu } from "lucide-react";
 
@@ -8,65 +8,70 @@ interface Props {
   username: string;
 }
 
-// Orchestrates batch Stockfish analysis from the client: fetches the list of
-// unanalyzed games, then analyzes them one at a time while showing progress.
-// The deep analysis takes a while per game, so the user can cancel at any time
-// and the work already done is kept.
+interface BatchStatus {
+  running: boolean;
+  total: number;
+  done: number;
+}
+
+// The heavy analysis runs on the SERVER (see analysisQueue). This component only
+// kicks it off and polls for progress, so the user can leave the page and the
+// work keeps going — and if they come back, it resumes showing progress.
 export function AnalyzeAllButton({ username }: Props) {
   const router = useRouter();
-  const [state, setState] = useState<"idle" | "running" | "done" | "error" | "cancelled">("idle");
-  const [done, setDone] = useState(0);
-  const [total, setTotal] = useState(0);
-  const cancelled = useRef(false);
+  const [status, setStatus] = useState<BatchStatus | null>(null);
+  const [error, setError] = useState(false);
+  const lastDone = useRef(0);
 
-  async function run() {
-    cancelled.current = false;
-    setState("running");
-    setDone(0);
+  const poll = useCallback(async () => {
     try {
-      const res = await fetch(`/api/analyze/pending?username=${encodeURIComponent(username)}`);
-      if (!res.ok) throw new Error("pending fetch failed");
-      const { pending } = (await res.json()) as { pending: string[] };
+      const res = await fetch("/api/analyze/batch", { cache: "no-store" });
+      if (!res.ok) return;
+      const s = (await res.json()) as BatchStatus;
+      setStatus(s);
+      // Refresh dashboard data as games complete.
+      if (s.done !== lastDone.current) { lastDone.current = s.done; router.refresh(); }
+    } catch { /* keep polling */ }
+  }, [router]);
 
-      setTotal(pending.length);
-      if (pending.length === 0) {
-        setState("done");
-        router.refresh();
-        return;
-      }
+  // On mount, check whether a batch is already running (resume display).
+  useEffect(() => { poll(); }, [poll]);
 
-      for (let i = 0; i < pending.length; i++) {
-        if (cancelled.current) { setState("cancelled"); router.refresh(); return; }
-        try {
-          await fetch("/api/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ gameId: pending[i] }),
-          });
-        } catch {
-          // skip a failing game and keep going
-        }
-        setDone(i + 1);
-        // Refresh stats periodically so the user sees progress reflected
-        if ((i + 1) % 3 === 0) router.refresh();
-      }
+  // Poll while running.
+  useEffect(() => {
+    if (!status?.running) return;
+    const id = setInterval(poll, 3000);
+    return () => clearInterval(id);
+  }, [status?.running, poll]);
 
-      // Regenerate AI insights now that moves are populated
-      try {
-        await fetch("/api/insights", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username }),
-        });
-      } catch { /* non-fatal */ }
-
-      setState("done");
-      router.refresh();
-    } catch {
-      setState("error");
-    }
+  async function start() {
+    setError(false);
+    try {
+      const res = await fetch("/api/analyze/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      if (!res.ok) throw new Error();
+      const s = (await res.json()) as BatchStatus;
+      setStatus(s);
+    } catch { setError(true); }
   }
 
+  async function stop() {
+    try {
+      await fetch("/api/analyze/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      });
+    } catch { /* ignore */ }
+    poll();
+  }
+
+  const running = status?.running ?? false;
+  const total = status?.total ?? 0;
+  const done = status?.done ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const remaining = Math.max(0, total - done);
 
@@ -80,41 +85,26 @@ export function AnalyzeAllButton({ username }: Props) {
         </p>
       </div>
 
-      {state === "running" ? (
+      {running ? (
         <div className="space-y-2">
-          <p className="text-sm font-semibold">Analizando partidas… {done}/{total}</p>
+          <p className="text-sm font-semibold">Analizando en segundo plano… {done}/{total}</p>
           <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
             <div className="h-full rounded-full transition-all"
               style={{ width: `${pct}%`, background: "var(--bv-purple)" }} />
           </div>
           <p className="text-[10px] text-muted-foreground">
-            El análisis profundo tarda ~1-2 min por partida ({remaining} restantes). Puedes salir cuando quieras: lo analizado se guarda, y cada partida también se analiza sola al abrirla.
+            Puedes salir de esta pantalla: el análisis continúa solo ({remaining} restantes). El análisis profundo tarda ~1-2 min por partida.
           </p>
-          <button onClick={() => { cancelled.current = true; }}
+          <button onClick={stop}
             className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40"
             style={{ borderColor: "var(--border)" }}>
             Detener
           </button>
         </div>
-      ) : state === "done" ? (
-        <p className="text-sm text-muted-foreground">
-          ✅ Análisis completo. Tus estadísticas y consejos están actualizados.
-        </p>
-      ) : state === "cancelled" ? (
+      ) : error ? (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Detuviste el análisis. Se guardaron {done} de {total} partidas.
-          </p>
-          <button onClick={run}
-            className="w-full py-2 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
-            style={{ background: "var(--bv-purple)", color: "#fff" }}>
-            Continuar análisis
-          </button>
-        </div>
-      ) : state === "error" ? (
-        <div className="space-y-2">
-          <p className="text-sm" style={{ color: "var(--bv-red)" }}>Ocurrió un error durante el análisis.</p>
-          <button onClick={run} className="text-xs font-bold px-3 py-1.5 rounded-xl"
+          <p className="text-sm" style={{ color: "var(--bv-red)" }}>No se pudo iniciar el análisis.</p>
+          <button onClick={start} className="text-xs font-bold px-3 py-1.5 rounded-xl"
             style={{ background: "var(--bv-purple)", color: "#fff" }}>
             Reintentar
           </button>
@@ -122,9 +112,9 @@ export function AnalyzeAllButton({ username }: Props) {
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            Evalúa tus partidas con Stockfish para obtener precisión, detección de errores y consejos personalizados.
+            Evalúa tus partidas con Stockfish para obtener precisión, detección de errores y consejos personalizados. Corre en segundo plano — puedes seguir usando la app.
           </p>
-          <button onClick={run}
+          <button onClick={start}
             className="w-full py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
             style={{ background: "var(--bv-purple)", color: "#fff" }}>
             Analizar mis partidas

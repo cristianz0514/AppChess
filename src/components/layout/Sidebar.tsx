@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, Swords, Lightbulb, Settings } from "lucide-react";
+import { LayoutDashboard, BookOpen, Swords, Lightbulb, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Inicio",     icon: LayoutDashboard },
-  { href: "/openings",  label: "Aperturas",  icon: BookOpen },
-  { href: "/blunders",  label: "Partidas",   icon: Swords },
-  { href: "/insights",  label: "Coach IA",   icon: Lightbulb },
-  { href: "/stats",     label: "Perfil",     icon: Settings },
+  { href: "/dashboard", label: "Inicio",       icon: LayoutDashboard },
+  { href: "/openings",  label: "Aperturas",    icon: BookOpen },
+  { href: "/blunders",  label: "Partidas",     icon: Swords },
+  { href: "/insights",  label: "Coach IA",     icon: Lightbulb },
+  { href: "/stats",     label: "Estadísticas", icon: BarChart3 },
 ];
 
 export function Sidebar() {

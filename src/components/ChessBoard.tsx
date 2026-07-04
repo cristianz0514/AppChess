@@ -130,10 +130,12 @@ export function ChessBoard({
             const isSelected = selected === sq;
             const isWhitePiece = piece !== null && piece === piece.toUpperCase();
 
-            // Light board — white + soft lavender, purple highlight (matches design).
+            // Light board — white + soft lavender, purple last-move highlight.
             let bg = isDark ? "#dcd6f2" : "#faf9ff";
             if (isHighlighted) bg = isDark ? "rgba(109,74,237,0.34)" : "rgba(109,74,237,0.20)";
-            if (isSelected) bg = "rgba(224,133,43,0.4)";
+            // Selected piece: a bright amber that clearly stands out from the
+            // white/lavender board (never blends in).
+            if (isSelected) bg = "#ffd23f";
 
             return (
               <div
@@ -148,6 +150,7 @@ export function ChessBoard({
                   fontSize: "10.5cqi",
                   lineHeight: 1,
                   cursor: interactive ? "pointer" : "default",
+                  boxShadow: isSelected ? "inset 0 0 0 0.7cqi rgba(200,140,0,0.95)" : undefined,
                 }}
               >
                 {piece && (
