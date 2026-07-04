@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Gauge, XCircle, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Search } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -488,6 +488,16 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   // ── Critical moments: YOUR moves that swung the game most against you ───────
   const playerColor = playedAs === "white" ? "w" : "b";
+
+  // Classification breakdown of YOUR moves (chess.com-style review summary).
+  const classSummary = useMemo(() => {
+    const counts: Record<string, number> = { best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
+    for (const m of moves) {
+      if (m.color !== playerColor) continue;
+      if (m.classification && counts[m.classification] !== undefined) counts[m.classification]++;
+    }
+    return counts;
+  }, [moves, playerColor]);
   const toMine = useCallback(
     (e: number | null) => (e === null ? null : playerColor === "w" ? e : -e),
     [playerColor],
@@ -1034,40 +1044,54 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {/* Compact move list */}
           <MoveTable moves={moves} idx={idx} onGo={go} compact />
 
-          {/* Summary footer — engine best at the turning point, accuracy vs your
-              average, and total errors. Objective, game-level facts. */}
+          {/* Review summary — accuracy + your move breakdown (chess.com style) */}
           {(() => {
             const accDelta = accuracy != null && avgAccuracy != null ? Math.round((accuracy - avgAccuracy) * 10) / 10 : null;
+            const rows: { key: string; label: string }[] = [
+              { key: "best", label: "Mejor" },
+              { key: "excellent", label: "Excelente" },
+              { key: "good", label: "Bien" },
+              { key: "inaccuracy", label: "Imprecisión" },
+              { key: "mistake", label: "Error" },
+              { key: "blunder", label: "Error grave" },
+            ];
             return (
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl p-3 border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Star size={12} style={{ color: "var(--bv-green)" }} />
-                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Mejor jugada</p>
+              <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+                <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
+                  <div>
+                    <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Resumen · Tú</p>
+                    {accDelta != null && (
+                      <p className="text-[11px] font-semibold" style={{ color: accDelta >= 0 ? "var(--bv-green)" : "var(--bv-red)" }}>
+                        {accDelta >= 0 ? "+" : ""}{accDelta}% vs tu promedio
+                      </p>
+                    )}
                   </div>
-                  <p className="text-base font-bold font-mono leading-tight">{footerBest ?? "—"}</p>
-                </div>
-                <div className="rounded-xl p-3 border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Gauge size={12} style={{ color: "var(--bv-purple)" }} />
+                  <div className="text-right">
+                    <p className="text-2xl font-bold font-display" style={{ color: "var(--bv-green)" }}>
+                      {accuracy != null ? `${accuracy}%` : "—"}
+                    </p>
                     <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Precisión</p>
                   </div>
-                  <p className="text-base font-bold leading-tight">{accuracy != null ? `${accuracy}%` : "—"}</p>
-                  {accDelta != null && (
-                    <p className="text-[10px] font-semibold" style={{ color: accDelta >= 0 ? "var(--bv-green)" : "var(--bv-red)" }}>
-                      {accDelta >= 0 ? "+" : ""}{accDelta}% vs tu promedio
-                    </p>
-                  )}
                 </div>
-                <div className="rounded-xl p-3 border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <XCircle size={12} style={{ color: "var(--bv-red)" }} />
-                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Errores</p>
+                <div className="divide-y divide-border">
+                  {rows.map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-3 px-4 py-2">
+                      <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                        style={{ background: CLASS_COLOR[key] ?? "var(--muted-foreground)" }}>
+                        {CLASS_EMOJI[key]}
+                      </span>
+                      <span className="text-sm flex-1">{label}</span>
+                      <span className="text-sm font-bold tabular-nums">{classSummary[key] ?? 0}</span>
+                    </div>
+                  ))}
+                </div>
+                {footerBest && (
+                  <div className="px-4 py-2.5 border-t flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+                    <Star size={13} style={{ color: "var(--bv-green)" }} />
+                    <span className="text-xs text-muted-foreground">Mejor jugada del momento clave:</span>
+                    <span className="text-xs font-bold font-mono">{footerBest}</span>
                   </div>
-                  <p className="text-base font-bold leading-tight" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
-                    {blunderCount + mistakeCount}
-                  </p>
-                </div>
+                )}
               </div>
             );
           })()}
