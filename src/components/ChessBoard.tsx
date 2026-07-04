@@ -1,13 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-// Use the FILLED glyphs for both colors so pieces read on a LIGHT board;
-// colour + outline distinguish white from black.
-const PIECE_UNICODE: Record<string, string> = {
-  K: "♚", Q: "♛", R: "♜", B: "♝", N: "♞", P: "♟",
-  k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟",
-};
+import { Piece } from "./pieces";
 
 function parseFen(fen: string): Array<Array<string | null>> {
   const board: Array<Array<string | null>> = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -154,17 +148,9 @@ export function ChessBoard({
                 }}
               >
                 {piece && (
-                  <span style={{
-                    color: isWhitePiece ? "#ffffff" : "#26222e",
-                    // White pieces get a dark outline so they read on white squares;
-                    // black pieces get a soft drop shadow for depth.
-                    textShadow: isWhitePiece
-                      ? "-1px -1px 0 #4a4658, 1px -1px 0 #4a4658, -1px 1px 0 #4a4658, 1px 1px 0 #4a4658, 0 2px 3px rgba(0,0,0,0.25)"
-                      : "0 1px 2px rgba(0,0,0,0.25)",
-                    userSelect: "none",
-                  }}>
-                    {PIECE_UNICODE[piece] ?? piece}
-                  </span>
+                  <div style={{ width: "88%", height: "88%" }}>
+                    <Piece type={piece.toLowerCase() as "k" | "q" | "r" | "b" | "n" | "p"} white={isWhitePiece} />
+                  </div>
                 )}
                 {colIdx === 0 && (
                   <span style={{
