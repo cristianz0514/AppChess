@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Gauge, XCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Gauge, XCircle, Search } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -297,55 +297,6 @@ function MoveTable({ moves, idx, onGo, compact }: {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-// ── Insight card ──────────────────────────────────────────────────────────────
-
-function InsightCard({ move, onShowBestMove, loadingBestMove }: {
-  move: MoveInfo | null;
-  onShowBestMove?: () => void;
-  loadingBestMove?: boolean;
-}) {
-  if (!move?.classification || !["blunder", "mistake"].includes(move.classification)) return null;
-  const col = CLASS_COLOR[move.classification] ?? "var(--bv-orange)";
-  const isBlunder = move.classification === "blunder";
-  return (
-    <div className="rounded-2xl border-l-4 overflow-hidden"
-      style={{ background: "var(--card)", border: `1px solid var(--border)`, borderLeftColor: col, borderLeftWidth: 4 }}>
-      <div className="p-3 flex items-start gap-3">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
-          style={{ background: `${col}20` }}>
-          {isBlunder ? "⚠️" : "⚡"}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-bold tracking-widest uppercase mb-0.5" style={{ color: col }}>
-            {isBlunder ? "Error Grave" : "Error"}
-          </p>
-          <p className="text-sm leading-snug">
-            Jugaste <span className="font-bold font-mono" style={{ color: col }}>{move.san}</span>.{" "}
-            {isBlunder
-              ? "Error crítico — revisa las amenazas del rival antes de mover."
-              : "Esta jugada cedió ventaja innecesariamente."}
-            {move.centipawnLoss != null && move.centipawnLoss > 0 && (
-              <span className="text-muted-foreground text-xs"> (−{move.centipawnLoss} cp)</span>
-            )}
-          </p>
-        </div>
-      </div>
-      {onShowBestMove && (
-        <div className="border-t" style={{ borderColor: "var(--border)" }}>
-          <button
-            onClick={onShowBestMove}
-            disabled={loadingBestMove}
-            className="w-full py-2 text-xs font-bold transition-colors disabled:opacity-50"
-            style={{ color: "var(--bv-green)" }}
-          >
-            {loadingBestMove ? "Calculando…" : "✨ Ver mejor jugada"}
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -968,6 +919,19 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
                   : null}
               />
+
+              {/* Deep-analyze lupa — appears on error moves (chess.com style). */}
+              {!inExplore && currentMove && ["blunder", "mistake"].includes(currentMove.classification ?? "") && (
+                <button
+                  onClick={() => fetchBestMove(idx)}
+                  title="Analizar a profundidad"
+                  className="absolute top-2 right-2 z-10 w-9 h-9 rounded-full flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                  style={{ background: "var(--bv-purple)", color: "#fff" }}>
+                  {loadingBestMove
+                    ? <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    : <Search size={17} />}
+                </button>
+              )}
             </div>
           </div>
 
@@ -979,15 +943,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
               🔍 Explorar desde aquí
             </button>
-          )}
-
-          {/* Insight on current move (only when not exploring) */}
-          {!inExplore && (
-            <InsightCard
-              move={currentMove}
-              onShowBestMove={currentMove && ["blunder", "mistake"].includes(currentMove.classification ?? "") ? () => fetchBestMove(idx) : undefined}
-              loadingBestMove={loadingBestMove}
-            />
           )}
 
           {/* Controls (game navigation, hidden in explore mode) */}
