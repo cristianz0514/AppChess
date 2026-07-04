@@ -99,7 +99,11 @@ function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promi
         const mateMatch = line.match(/score mate (-?\d+)/);
         const cpMatch   = line.match(/score cp (-?\d+)/);
         if (mateMatch) {
-          best = { score: mateMatch[1].startsWith("-") ? -9999 : 9999, mate: parseInt(mateMatch[1]) };
+          // Encode distance-to-mate in the score: |score| = 10000 − N, so the UI
+          // can show "mate in N". Sign = side-to-move perspective.
+          const n = parseInt(mateMatch[1]);
+          const mag = 10000 - Math.min(Math.abs(n), 99);
+          best = { score: (n >= 0 ? mag : -mag), mate: n };
         } else if (cpMatch) {
           best = { score: parseInt(cpMatch[1]) / 100, mate: null };
         }

@@ -161,16 +161,21 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
 
 function evalToWhitePct(ev: number | null): number {
   if (ev === null) return 50;
-  if (ev >= 90)  return 97;   // mate for white
-  if (ev <= -90) return 3;    // mate for black
+  if (ev >= 9000)  return 97;   // mate for white
+  if (ev <= -9000) return 3;    // mate for black
   // Sigmoid scaled: ±4 pawns ≈ ±40%, clamped 5–95
   return Math.min(95, Math.max(5, 50 + ev * 10));
+}
+
+// Decodes distance-to-mate from an encoded eval (|eval| = 10000 − N).
+function mateInN(ev: number): number {
+  return Math.max(1, 10000 - Math.round(Math.abs(ev)));
 }
 
 function evalLabel(ev: number | null, whiteWinning: boolean): string {
   if (ev === null) return "";
   const abs = Math.abs(ev);
-  if (abs >= 90)   return whiteWinning ? "Mate blancas" : "Mate negras";
+  if (abs >= 9000) return `Mate en ${mateInN(ev)}`;
   if (abs < 0.2)   return "Iguales";
   if (abs < 0.8)   return (whiteWinning ? "Blancas" : "Negras") + " mejor";
   if (abs < 2.0)   return (whiteWinning ? "Blancas" : "Negras") + " ganan";
@@ -180,7 +185,7 @@ function evalLabel(ev: number | null, whiteWinning: boolean): string {
 
 function evalScore(ev: number | null): string {
   if (ev === null) return "=";
-  if (Math.abs(ev) >= 90) return "M#";
+  if (Math.abs(ev) >= 9000) return (ev > 0 ? "M" : "-M") + mateInN(ev);
   const sign = ev > 0 ? "+" : ev < 0 ? "−" : "";
   return sign + Math.abs(ev).toFixed(1);
 }
@@ -194,7 +199,7 @@ function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
   const ev = currentEval ?? 0;
   const whitePct = hasRealData ? evalToWhitePct(ev) : 50;
   const whiteWinning = ev >= 0;
-  const isMate = hasRealData && Math.abs(ev) >= 90;
+  const isMate = hasRealData && Math.abs(ev) >= 9000;
   const label = hasRealData ? evalLabel(ev, whiteWinning) : "Sin análisis";
 
   return (
@@ -509,7 +514,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   }, [criticalMoment, moves]);
 
   const fmtEval = (e: number | null) =>
-    e === null ? "—" : Math.abs(e) >= 9999 ? (e > 0 ? "#" : "-#") : (e > 0 ? "+" : "") + e.toFixed(1);
+    e === null ? "—" : Math.abs(e) >= 9000 ? (e > 0 ? "#" : "-#") + mateInN(e) : (e > 0 ? "+" : "") + e.toFixed(1);
 
   // ── Story Mode: guided EMOTIONAL arc through the game ───────────────────────
   const storySlides = useMemo<StorySlide[]>(() => {
@@ -920,11 +925,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   : null}
               />
 
-              {/* Deep-analyze lupa — appears on error moves (chess.com style). */}
-              {!inExplore && currentMove && ["blunder", "mistake"].includes(currentMove.classification ?? "") && (
+              {/* Deep-analyze lupa — on EVERY move: reveals the engine's best move
+                  for the current position (chess.com style). */}
+              {!inExplore && !inStory && idx >= 0 && (
                 <button
                   onClick={() => fetchBestMove(idx)}
-                  title="Analizar a profundidad"
+                  title="Ver la mejor jugada (análisis profundo)"
+                  aria-label="Ver la mejor jugada"
                   className="absolute top-2 right-2 z-10 w-9 h-9 rounded-full flex items-center justify-center shadow-md active:scale-95 transition-transform"
                   style={{ background: "var(--bv-purple)", color: "#fff" }}>
                   {loadingBestMove
@@ -947,33 +954,33 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
           {/* Controls (game navigation, hidden in explore mode) */}
           {!inExplore && (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-3">
             <button
               onClick={() => go(-1)} disabled={idx <= -1}
               className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
               style={{ borderColor: "var(--border)", background: "var(--card)" }}
-              title="Inicio">
+              title="Inicio" aria-label="Ir al inicio">
               <ChevronsLeft size={18} />
             </button>
             <button
               onClick={() => go(idx - 1)} disabled={idx <= -1}
-              className="flex-1 h-11 flex items-center justify-center gap-1.5 rounded-xl border transition-all active:scale-95 disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-              <ChevronLeft size={16} />
-              <span className="text-sm font-semibold">Anterior</span>
+              className="w-12 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}
+              title="Anterior" aria-label="Jugada anterior">
+              <ChevronLeft size={20} />
             </button>
             <button
               onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
-              className="flex-1 h-11 flex items-center justify-center gap-1.5 rounded-xl border transition-all active:scale-95 disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-              <span className="text-sm font-semibold">Siguiente</span>
-              <ChevronRight size={16} />
+              className="w-12 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+              style={{ borderColor: "var(--border)", background: "var(--card)" }}
+              title="Siguiente" aria-label="Jugada siguiente">
+              <ChevronRight size={20} />
             </button>
             <button
               onClick={() => go(moves.length - 1)} disabled={idx >= moves.length - 1}
               className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
               style={{ borderColor: "var(--border)", background: "var(--card)" }}
-              title="Final">
+              title="Final" aria-label="Ir al final">
               <ChevronsRight size={18} />
             </button>
           </div>

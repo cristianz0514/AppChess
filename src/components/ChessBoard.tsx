@@ -130,11 +130,11 @@ export function ChessBoard({
             const isSelected = selected === sq;
             const isWhitePiece = piece !== null && piece === piece.toUpperCase();
 
-            // Light board — white + soft lavender, purple last-move highlight.
+            // Light board — white + soft lavender. Last-move highlight is a warm
+            // YELLOW (not purple) so it never blends into the lavender squares.
             let bg = isDark ? "#dcd6f2" : "#faf9ff";
-            if (isHighlighted) bg = isDark ? "rgba(109,74,237,0.34)" : "rgba(109,74,237,0.20)";
-            // Selected piece: a bright amber that clearly stands out from the
-            // white/lavender board (never blends in).
+            if (isHighlighted) bg = isDark ? "rgba(255,193,7,0.55)" : "rgba(255,205,40,0.5)";
+            // Selected piece: bright amber + inset ring — unmistakable.
             if (isSelected) bg = "#ffd23f";
 
             return (
