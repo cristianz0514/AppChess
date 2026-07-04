@@ -132,8 +132,8 @@ export function ChessBoard({
 
             // Light board — white + soft lavender, purple highlight (matches design).
             let bg = isDark ? "#dcd6f2" : "#faf9ff";
-            if (isHighlighted) bg = isDark ? "rgba(155,109,255,0.42)" : "rgba(155,109,255,0.28)";
-            if (isSelected) bg = "rgba(255,196,0,0.5)";
+            if (isHighlighted) bg = isDark ? "rgba(109,74,237,0.34)" : "rgba(109,74,237,0.20)";
+            if (isSelected) bg = "rgba(224,133,43,0.4)";
 
             return (
               <div
@@ -199,7 +199,7 @@ export function ChessBoard({
           <defs>
             {["red", "green", "blue", "orange"].map(c => {
               const colMap: Record<string, string> = {
-                red: "#ff4444", green: "#00d4a1", blue: "#9b6dff", orange: "#ff8c42",
+                red: "#E5484D", green: "#0BA678", blue: "#6D4AED", orange: "#E0852B",
               };
               return (
                 <marker key={c} id={`arrow-${c}`} markerWidth="4" markerHeight="4"
@@ -214,7 +214,7 @@ export function ChessBoard({
             const to   = sqToXYPct(arrow.to,   orientation);
             const c = arrow.color ?? "blue";
             const colMap: Record<string, string> = {
-              red: "#ff4444", green: "#00d4a1", blue: "#9b6dff", orange: "#ff8c42",
+              red: "#E5484D", green: "#0BA678", blue: "#6D4AED", orange: "#E0852B",
             };
             const stroke = colMap[c] ?? c;
             // Shorten line slightly so it doesn't overlap the arrowhead
