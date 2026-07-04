@@ -2,11 +2,10 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getUnanalyzedGameIds, getEloHistory, getResultStats } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getEloHistory, getResultStats } from "@/services/dashboardData";
 import type { HighlightGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
-import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
 import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
 import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, type LucideIcon } from "lucide-react";
@@ -71,16 +70,14 @@ export default async function DashboardPage({ searchParams }: Props) {
   const userId = await getUserId(username);
   if (!userId) redirect("/");
 
-  const [stats, openings, insights, highlights, pendingIds, eloHistory, resultStats] = await Promise.all([
+  const [stats, openings, insights, highlights, eloHistory, resultStats] = await Promise.all([
     getDashboardStats(userId),
     getTopOpenings(userId),
     getInsights(userId),
     getHighlightGames(userId),
-    getUnanalyzedGameIds(userId),
     getEloHistory(userId),
     getResultStats(userId),
   ]);
-  const pendingCount = pendingIds.length;
 
   const topInsight = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
   const remainingInsights = insights.filter((i) => i !== topInsight);
@@ -92,10 +89,6 @@ export default async function DashboardPage({ searchParams }: Props) {
     <AppLayout username={username}>
       <div className="space-y-4 max-w-lg mx-auto">
 
-        {/* ── Engine analysis prompt (only when games are pending) ── */}
-        {pendingCount > 0 && (
-          <AnalyzeAllButton username={username} />
-        )}
 
         {/* ── HERO: the dominant experience — revisit where you collapsed ── */}
         {highlights.mostErrors && highlights.mostErrors.errorCount > 0 && (

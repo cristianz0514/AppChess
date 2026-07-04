@@ -96,6 +96,27 @@ const CLASS_EMOJI: Record<string, string> = {
   blunder: "✕", mistake: "!", inaccuracy: "?", best: "✓", excellent: "✓", good: "✓",
 };
 
+const CLASS_LABEL: Record<string, string> = {
+  blunder: "Error grave", mistake: "Error", inaccuracy: "Imprecisión",
+  best: "La mejor jugada", excellent: "Excelente", good: "Buena jugada",
+};
+
+// Per-move coach line (chess.com style). Rule-based, concise, honest.
+function moveComment(m: MoveInfo | null): { label: string; text: string; color: string } | null {
+  if (!m || !m.classification) return null;
+  const label = CLASS_LABEL[m.classification] ?? "";
+  const color = CLASS_COLOR[m.classification] ?? "var(--muted-foreground)";
+  const text = {
+    blunder: "Perdiste ventaja importante. Mira cuál era la mejor jugada.",
+    mistake: "Cediste algo de ventaja innecesariamente.",
+    inaccuracy: "Había una jugada un poco mejor.",
+    good: "Jugada sólida.",
+    excellent: "Muy buena elección.",
+    best: "La mejor jugada de la posición.",
+  }[m.classification] ?? "";
+  return { label, text, color };
+}
+
 // Coach-style narrative for a critical moment: a concise cause + a practical
 // takeaway. Rule-based (no latency/cost) but written like a blitz coach.
 function storyNarrative(
@@ -873,6 +894,27 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </div>
           )}
 
+          {/* Coach commentary for the current move (chess.com style, above board) */}
+          {!inExplore && !inStory && (() => {
+            const c = moveComment(currentMove);
+            if (!c) return null;
+            return (
+              <div className="flex items-start gap-2">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
+                  style={{ background: c.color }}>
+                  {currentMove?.classification ? CLASS_EMOJI[currentMove.classification] : ""}
+                </div>
+                <div className="flex-1 rounded-2xl rounded-tl-sm border px-3 py-2"
+                  style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+                  <p className="text-sm font-bold" style={{ color: c.color }}>
+                    <span className="font-mono">{currentMove?.san}</span> — {c.label}
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-snug">{c.text}</p>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Board + eval bar (bar on top, board edge-to-edge) */}
           <div className="space-y-2 -mx-4">
             <div className="px-4"><EvalBar moves={moves} idx={inExplore ? -1 : idx} /></div>
@@ -925,20 +967,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   : null}
               />
 
-              {/* Deep-analyze lupa — on EVERY move: reveals the engine's best move
-                  for the current position (chess.com style). */}
-              {!inExplore && !inStory && idx >= 0 && (
-                <button
-                  onClick={() => fetchBestMove(idx)}
-                  title="Ver la mejor jugada (análisis profundo)"
-                  aria-label="Ver la mejor jugada"
-                  className="absolute top-2 right-2 z-10 w-9 h-9 rounded-full flex items-center justify-center shadow-md active:scale-95 transition-transform"
-                  style={{ background: "var(--bv-purple)", color: "#fff" }}>
-                  {loadingBestMove
-                    ? <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                    : <Search size={17} />}
-                </button>
-              )}
             </div>
           </div>
 
@@ -952,47 +980,56 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </button>
           )}
 
-          {/* Controls (game navigation, hidden in explore mode) */}
+          {/* Controls — arrows with the current move in the CENTER (chess.com style) */}
           {!inExplore && (
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={() => go(-1)} disabled={idx <= -1}
-              className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}
-              title="Inicio" aria-label="Ir al inicio">
-              <ChevronsLeft size={18} />
-            </button>
-            <button
-              onClick={() => go(idx - 1)} disabled={idx <= -1}
-              className="w-12 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}
-              title="Anterior" aria-label="Jugada anterior">
-              <ChevronLeft size={20} />
-            </button>
-            <button
-              onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
-              className="w-12 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}
-              title="Siguiente" aria-label="Jugada siguiente">
-              <ChevronRight size={20} />
-            </button>
-            <button
-              onClick={() => go(moves.length - 1)} disabled={idx >= moves.length - 1}
-              className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}
-              title="Final" aria-label="Ir al final">
-              <ChevronsRight size={18} />
-            </button>
-          </div>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={() => go(-1)} disabled={idx <= -1}
+                className="w-10 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                style={{ borderColor: "var(--border)", background: "var(--card)" }}
+                title="Inicio" aria-label="Ir al inicio">
+                <ChevronsLeft size={18} />
+              </button>
+              <button
+                onClick={() => go(idx - 1)} disabled={idx <= -1}
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                style={{ borderColor: "var(--border)", background: "var(--card)" }}
+                title="Anterior" aria-label="Jugada anterior">
+                <ChevronLeft size={20} />
+              </button>
+              <div className="flex-1 max-w-[140px] text-center leading-tight">
+                <p className="text-base font-bold font-mono">
+                  {idx < 0 ? "Inicio" : `${moves[idx].moveNumber}${moves[idx].color === "w" ? "." : "…"} ${moves[idx].san}`}
+                </p>
+                <p className="text-[10px] text-muted-foreground tabular-nums">{idx + 2}/{moves.length + 1}</p>
+              </div>
+              <button
+                onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                style={{ borderColor: "var(--border)", background: "var(--card)" }}
+                title="Siguiente" aria-label="Jugada siguiente">
+                <ChevronRight size={20} />
+              </button>
+              <button
+                onClick={() => go(moves.length - 1)} disabled={idx >= moves.length - 1}
+                className="w-10 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                style={{ borderColor: "var(--border)", background: "var(--card)" }}
+                title="Final" aria-label="Ir al final">
+                <ChevronsRight size={18} />
+              </button>
+            </div>
           )}
 
-          {/* Move indicator */}
-          <p className="text-center text-[11px] text-muted-foreground">
-            {inExplore
-              ? `Exploración — jugada ${exploreIdx} desde jug. ${idx < 0 ? "inicial" : `${moves[idx].moveNumber}`}`
-              : idx < 0 ? "Posición inicial" : `Jugada ${moves[idx].moveNumber} · ${moves[idx].color === "w" ? "Blancas" : "Negras"}`}
-            {!inExplore && ` · ${idx + 2}/${moves.length + 1}`}
-          </p>
+          {/* Show best move — below the controls (chess.com style) */}
+          {!inExplore && !inStory && idx >= 0 && (
+            <button
+              onClick={() => fetchBestMove(idx)} disabled={loadingBestMove}
+              className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white active:scale-[0.98] transition-transform disabled:opacity-60"
+              style={{ background: "var(--bv-green)" }}>
+              <Search size={16} />
+              {loadingBestMove ? "Calculando…" : "Mostrar mejor jugada"}
+            </button>
+          )}
 
           {/* Compact move list */}
           <MoveTable moves={moves} idx={idx} onGo={go} compact />
