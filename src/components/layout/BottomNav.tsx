@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Brain, BookOpen, User, Plus } from "lucide-react";
+import { LayoutDashboard, Brain, Swords, User, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Inicio",     icon: LayoutDashboard },
-  { href: "/insights",  label: "Coach IA",   icon: Brain },
+  { href: "/blunders",  label: "Partidas",   icon: Swords },
   null,
-  { href: "/openings",  label: "Aperturas",  icon: BookOpen },
+  { href: "/insights",  label: "Coach IA",   icon: Brain },
   { href: "/stats",     label: "Perfil",     icon: User },
 ];
 

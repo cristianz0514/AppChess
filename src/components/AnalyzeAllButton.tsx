@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Cpu } from "lucide-react";
 
@@ -9,16 +9,18 @@ interface Props {
 }
 
 // Orchestrates batch Stockfish analysis from the client: fetches the list of
-// unanalyzed games, then analyzes them one at a time (each request stays well
-// within serverless limits) while showing progress. Regenerates AI insights at
-// the end so the dashboard reflects the freshly analyzed data.
+// unanalyzed games, then analyzes them one at a time while showing progress.
+// The deep analysis takes a while per game, so the user can cancel at any time
+// and the work already done is kept.
 export function AnalyzeAllButton({ username }: Props) {
   const router = useRouter();
-  const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [state, setState] = useState<"idle" | "running" | "done" | "error" | "cancelled">("idle");
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
+  const cancelled = useRef(false);
 
   async function run() {
+    cancelled.current = false;
     setState("running");
     setDone(0);
     try {
@@ -34,6 +36,7 @@ export function AnalyzeAllButton({ username }: Props) {
       }
 
       for (let i = 0; i < pending.length; i++) {
+        if (cancelled.current) { setState("cancelled"); router.refresh(); return; }
         try {
           await fetch("/api/analyze", {
             method: "POST",
@@ -45,7 +48,7 @@ export function AnalyzeAllButton({ username }: Props) {
         }
         setDone(i + 1);
         // Refresh stats periodically so the user sees progress reflected
-        if ((i + 1) % 5 === 0) router.refresh();
+        if ((i + 1) % 3 === 0) router.refresh();
       }
 
       // Regenerate AI insights now that moves are populated
@@ -65,6 +68,7 @@ export function AnalyzeAllButton({ username }: Props) {
   }
 
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const remaining = Math.max(0, total - done);
 
   return (
     <div className="rounded-2xl border p-4 space-y-3"
@@ -84,13 +88,29 @@ export function AnalyzeAllButton({ username }: Props) {
               style={{ width: `${pct}%`, background: "var(--bv-purple)" }} />
           </div>
           <p className="text-[10px] text-muted-foreground">
-            No cierres esta página. Stockfish evalúa cada jugada de cada partida.
+            El análisis profundo tarda ~1-2 min por partida ({remaining} restantes). Puedes salir cuando quieras: lo analizado se guarda, y cada partida también se analiza sola al abrirla.
           </p>
+          <button onClick={() => { cancelled.current = true; }}
+            className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40"
+            style={{ borderColor: "var(--border)" }}>
+            Detener
+          </button>
         </div>
       ) : state === "done" ? (
         <p className="text-sm text-muted-foreground">
           ✅ Análisis completo. Tus estadísticas y consejos están actualizados.
         </p>
+      ) : state === "cancelled" ? (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Detuviste el análisis. Se guardaron {done} de {total} partidas.
+          </p>
+          <button onClick={run}
+            className="w-full py-2 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
+            style={{ background: "var(--bv-purple)", color: "#fff" }}>
+            Continuar análisis
+          </button>
+        </div>
       ) : state === "error" ? (
         <div className="space-y-2">
           <p className="text-sm" style={{ color: "var(--bv-red)" }}>Ocurrió un error durante el análisis.</p>

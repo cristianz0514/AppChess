@@ -17,7 +17,8 @@ export const getDashboardStats = cache(async function(userId: string): Promise<D
     .from("games")
     .select("result, accuracy, white_rating, black_rating, played_as, created_at")
     .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(50); // focus on the last 50 games, consistent with the rest of the app
 
   if (!games || games.length === 0) {
     return { totalGames: 0, wins: 0, losses: 0, draws: 0, winrate: 0, avgAccuracy: null, currentRating: null };
