@@ -412,6 +412,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   // Best move arrow state
   const [bestMoveArrow, setBestMoveArrow] = useState<Arrow | null>(null);
+  const [bestMoveSan, setBestMoveSan] = useState<string | null>(null);
   const [loadingBestMove, setLoadingBestMove] = useState(false);
 
   // Exploration mode state (free interactive moves from any position)
@@ -454,13 +455,22 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     const beforeFen = blunderIdx > 0 ? moves[blunderIdx - 1].fen : new Chess().fen();
     setLoadingBestMove(true);
     setBestMoveArrow(null);
+    setBestMoveSan(null);
     // Navigate to position before the blunder so the arrow makes sense visually
     setIdx(Math.max(-1, blunderIdx - 1));
     try {
       const r = await fetch(`/api/bestmove?fen=${encodeURIComponent(beforeFen)}`);
       if (r.ok) {
         const data = await r.json();
-        if (data.from && data.to) setBestMoveArrow({ from: data.from, to: data.to, color: "green" });
+        if (data.from && data.to) {
+          setBestMoveArrow({ from: data.from, to: data.to, color: "green" });
+          // Name the move in SAN so the coach can say it, not just draw it.
+          try {
+            const c = new Chess(beforeFen);
+            const mv = c.move({ from: data.from, to: data.to, promotion: data.promotion ?? "q" });
+            if (mv) setBestMoveSan(mv.san);
+          } catch {}
+        }
       }
     } catch {}
     setLoadingBestMove(false);
@@ -468,6 +478,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   const go = useCallback((n: number) => {
     setBestMoveArrow(null);
+    setBestMoveSan(null);
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
   }, [moves.length]);
 
@@ -481,12 +492,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     if (Math.abs(dx) < 40) return;
     setIdx((cur) => Math.max(-1, Math.min(moves.length - 1, cur + (dx < 0 ? 1 : -1))));
     setBestMoveArrow(null);
+    setBestMoveSan(null);
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setIdx((c) => Math.max(-1, c - 1)); }
-      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
+      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setBestMoveSan(null); setIdx((c) => Math.max(-1, c - 1)); }
+      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setBestMoveSan(null); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1114,13 +1126,25 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
           {/* Show best move — below the controls (chess.com style) */}
           {!inExplore && !inStory && idx >= 0 && (
-            <button
-              onClick={() => fetchBestMove(idx)} disabled={loadingBestMove}
-              className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white active:scale-[0.98] transition-transform disabled:opacity-60"
-              style={{ background: "var(--bv-green)" }}>
-              <Search size={16} />
-              {loadingBestMove ? "Calculando…" : "Mostrar mejor jugada"}
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => fetchBestMove(idx)} disabled={loadingBestMove}
+                className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white active:scale-[0.98] transition-transform disabled:opacity-60"
+                style={{ background: "var(--bv-green)" }}>
+                <Search size={16} />
+                {loadingBestMove ? "Calculando…" : "Mostrar mejor jugada"}
+              </button>
+              {bestMoveSan && (
+                <div className="flex items-center gap-2 rounded-xl border px-3 py-2"
+                  style={{ borderColor: "var(--bv-green)", background: "oklch(0.77 0.17 177 / 0.10)" }}>
+                  <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-green)" }}>
+                    Mejor jugada
+                  </span>
+                  <span className="font-mono text-sm font-bold" style={{ color: "var(--bv-green)" }}>{bestMoveSan}</span>
+                  <span className="text-xs text-muted-foreground ml-auto">→ mira la flecha verde</span>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Compact move list */}
