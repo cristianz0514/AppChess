@@ -89,7 +89,8 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   return (
     <AppLayout username={username}>
-      <div className="space-y-4 max-w-lg mx-auto">
+      <div className="space-y-4 max-w-lg mx-auto"
+        style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
 
         {/* ── HERO: the dominant experience — revisit where you collapsed ── */}
@@ -211,7 +212,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           <div
             className="rounded-2xl p-4 space-y-3 border"
             style={{
-              background: "oklch(0.20 0.06 50 / 0.25)",
+              background: "oklch(0.70 0.18 50 / 0.10)",
               borderColor: "oklch(0.70 0.18 50 / 0.35)",
             }}
           >
