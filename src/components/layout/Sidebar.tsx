@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, Swords, Brain, BarChart3 } from "lucide-react";
+import { LayoutDashboard, BookOpen, Swords, Brain, BarChart3, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -40,6 +40,13 @@ export function Sidebar() {
           </Link>
         ))}
       </nav>
+      <div className="p-3 border-t border-border">
+        <Link href="/"
+          className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-bold text-white transition-transform active:scale-[0.98]"
+          style={{ background: "var(--bv-purple)" }}>
+          <Plus size={16} strokeWidth={2.5} /> Importar partidas
+        </Link>
+      </div>
     </aside>
   );
 }
