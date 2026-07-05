@@ -96,7 +96,7 @@ export default function Home() {
         </form>
 
         <p className="text-[11px] text-muted-foreground mt-4">
-          Gratis · Sin registro · Últimas 200 partidas públicas
+          Gratis · Sin registro · Últimas 50 partidas públicas
         </p>
       </div>
 
