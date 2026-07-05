@@ -71,7 +71,9 @@ export async function getColorStats(userId: string): Promise<{ white: ColorStats
   const { data: games } = await supabase
     .from("games")
     .select("result, played_as")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50); // last 50 games, consistent with the rest of the app
 
   const empty = (): ColorStats => ({ winrate: 0, wins: 0, losses: 0, draws: 0, games: 0 });
 

@@ -94,8 +94,11 @@ const CLASS_COLOR: Record<string, string> = {
 
 // Simple monochrome glyphs (rendered white on a flat colored disc) — kept minimal
 // so the board doesn't feel busy.
+// Chess annotation glyphs: ‼ brilliant, ! great, ✓ best/excellent/good,
+// ?! inaccuracy, ? mistake, ✕ blunder. (mistake was wrongly "!" before —
+// which means a GOOD move — and collided with "great".)
 const CLASS_EMOJI: Record<string, string> = {
-  brilliant: "‼", great: "!", blunder: "✕", mistake: "!", inaccuracy: "?", best: "✓", excellent: "✓", good: "✓",
+  brilliant: "‼", great: "!", blunder: "✕", mistake: "?", inaccuracy: "?!", best: "✓", excellent: "✓", good: "✓",
 };
 
 const CLASS_LABEL: Record<string, string> = {
