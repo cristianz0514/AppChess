@@ -5,7 +5,7 @@ import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -415,6 +415,10 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const [bestMoveSan, setBestMoveSan] = useState<string | null>(null);
   const [loadingBestMove, setLoadingBestMove] = useState(false);
 
+  // Natural-language coach explanation (grounded in Stockfish), fetched on demand.
+  const [explain, setExplain] = useState<{ idx: number; text: string } | null>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
+
   // Exploration mode state (free interactive moves from any position)
   const [exploreFens, setExploreFens] = useState<string[]>([]);
   const [exploreMoves, setExploreMoves] = useState<Array<{ from: string; to: string }>>([]);
@@ -474,6 +478,47 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       }
     } catch {}
     setLoadingBestMove(false);
+  }
+
+  // Ask the AI coach WHY a move was worse — grounded in the engine's best move
+  // and the real eval swing. On demand only; the server caches the result.
+  async function explainMove(i: number) {
+    const m = moves[i];
+    if (!m) return;
+    const fenBefore = i > 0 ? moves[i - 1].fen : new Chess().fen();
+    setExplainLoading(true);
+    // Resolve the engine best move (SAN) to ground the explanation.
+    let best = bestMoveSan ?? undefined;
+    try {
+      const r = await fetch(`/api/bestmove?fen=${encodeURIComponent(fenBefore)}`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.from && d.to) {
+          try {
+            const c = new Chess(fenBefore);
+            const mv = c.move({ from: d.from, to: d.to, promotion: d.promotion ?? "q" });
+            if (mv) best = mv.san;
+          } catch {}
+        }
+      }
+    } catch {}
+    const phase = m.moveNumber <= 10 ? "apertura" : m.moveNumber <= 25 ? "medio juego" : "final";
+    try {
+      const r = await fetch("/api/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fenBefore, san: m.san, bestMove: best, moveNumber: m.moveNumber,
+          evalBefore: toMine(i > 0 ? moves[i - 1].evaluation : 0),
+          evalAfter: toMine(m.evaluation), phase, gameId,
+        }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.text) setExplain({ idx: i, text: d.text });
+      }
+    } catch {}
+    setExplainLoading(false);
   }
 
   const go = useCallback((n: number) => {
@@ -997,6 +1042,26 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     <span className="font-mono">{currentMove.san}</span> — {c.label}
                   </p>
                   <p className="text-xs text-muted-foreground leading-snug">{detail}</p>
+
+                  {/* AI coach explanation (grounded in Stockfish), on demand */}
+                  {isMine && gameId && (cls === "blunder" || cls === "mistake" || cls === "inaccuracy") && (
+                    explain?.idx === idx ? (
+                      <div className="mt-2 flex items-start gap-1.5 rounded-xl px-2.5 py-2"
+                        style={{ background: "oklch(0.61 0.22 285 / 0.08)" }}>
+                        <Sparkles size={13} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
+                        <p className="text-xs leading-snug" style={{ color: "var(--foreground)" }}>{explain.text}</p>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => explainMove(idx)}
+                        disabled={explainLoading}
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors hover:bg-muted/40 disabled:opacity-50"
+                        style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
+                        <Sparkles size={12} />
+                        {explainLoading ? "Pensando…" : "¿Por qué fue peor?"}
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
             );
