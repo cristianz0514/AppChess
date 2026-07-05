@@ -419,6 +419,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // Natural-language coach explanation (grounded in Stockfish), fetched on demand.
   const [explain, setExplain] = useState<{ idx: number; text: string } | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(false);
 
   // Exploration mode state (free interactive moves from any position)
   const [exploreFens, setExploreFens] = useState<string[]>([]);
@@ -797,13 +798,47 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         <ReviewSummaryModal
           open={showSummary}
           onClose={() => setShowSummary(false)}
-          onReviewMoments={() => { setShowSummary(false); startStory(); }}
+          onReviewMoments={() => setShowSummary(false)}
           accuracy={accuracy ?? null}
           avgAccuracy={avgAccuracy ?? null}
           counts={classSummary}
-          momentsCount={criticalMoments.length}
+          momentsCount={0}
           gameResult={gameResult}
         />
+      )}
+
+      {/* Coach IA "why" explanation — overlay so it never shifts the board */}
+      {whyOpen && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
+          onClick={() => setWhyOpen(false)}>
+          <div className="absolute inset-0" style={{ background: "rgba(24,20,34,0.5)", backdropFilter: "blur(2px)" }} />
+          <div className="relative w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border p-5"
+            style={{ background: "var(--card)", borderColor: "var(--border)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles size={15} style={{ color: "var(--bv-purple)" }} />
+              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+                Coach IA
+              </span>
+              <button onClick={() => setWhyOpen(false)} aria-label="Cerrar"
+                className="ml-auto w-7 h-7 rounded-full flex items-center justify-center hover:bg-black/5 text-muted-foreground">
+                ✕
+              </button>
+            </div>
+            {currentMove && (
+              <p className="text-sm font-bold mb-2 font-mono">
+                {currentMove.moveNumber}{currentMove.color === "w" ? "." : "…"} {currentMove.san}
+              </p>
+            )}
+            {explain?.idx === idx ? (
+              <p className="text-sm leading-relaxed">{explain.text}</p>
+            ) : explainLoading ? (
+              <p className="text-sm text-muted-foreground">El coach está analizando con el motor…</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">No se pudo obtener la explicación. Inténtalo de nuevo.</p>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── Header info ──────────────────────────────────────── */}
@@ -821,10 +856,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex gap-2 text-xs font-semibold">
-            {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>💥 {blunderCount}</span>}
-            {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>⚠️ {mistakeCount}</span>}
-          </div>
           {gameAnalyzed && (
             <button onClick={() => setShowSummary(true)}
               className="flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold"
@@ -844,231 +875,41 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       </div>
 
       {/* ── Tab: Analizar ────────────────────────────────────── */}
-      {tab === "analizar" && (
+      {!inPractice && (
         <>
-          {/* Story Mode — guided emotional arc (intro → moments → outro) */}
-          {!inExplore && inStory && currentSlide && (
-            <div className="rounded-2xl border p-4 space-y-3"
-              style={{ borderColor: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.07)" }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Zap size={15} style={{ color: "var(--bv-purple)" }} />
-                  <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
-                    {currentSlide.type === "intro"
-                      ? "El comienzo"
-                      : currentSlide.type === "outro"
-                        ? "El desenlace"
-                        : `Momento ${storyStep!} de ${criticalMoments.length}`}
-                  </span>
-                </div>
-                <button onClick={exitStory} className="text-[11px] text-muted-foreground underline underline-offset-2">
-                  Salir
-                </button>
-              </div>
 
-              {/* INTRO */}
-              {currentSlide.type === "intro" && (
-                <>
-                  <p className="text-lg font-bold leading-snug font-display">
-                    {currentSlide.peak >= 2
-                      ? "Ibas ganando cómodo."
-                      : currentSlide.peak >= 0.7
-                        ? "Tenías una ligera ventaja."
-                        : "La partida estaba pareja."}
-                  </p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {currentSlide.peak >= 0.7
-                      ? `Llegaste a estar +${currentSlide.peak.toFixed(1)}. Veamos cómo se te escapó.`
-                      : "Hasta que llegaron los momentos que la decidieron. Vamos uno por uno."}
-                  </p>
-                </>
-              )}
 
-              {/* MOMENT */}
-              {currentSlide.type === "moment" && (() => {
-                const cm = currentSlide.cm;
-                const dropped = (cm.evalBefore ?? 0) - (cm.evalAfter ?? 0);
-                const { cause, takeaway } = storyNarrative(cm.move, cm.evalBefore, cm.evalAfter);
-                return (
-                  <>
-                    <p className="text-base font-semibold leading-snug font-display">
-                      Jugada {cm.move.moveNumber}{cm.move.color === "w" ? "." : "…"} {cm.move.san}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums"
-                        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-                        {fmtEval(cm.evalBefore)}
-                      </span>
-                      <span className="text-muted-foreground text-xs">→</span>
-                      <span className="text-xs font-mono px-2 py-0.5 rounded-md tabular-nums font-bold"
-                        style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
-                        {fmtEval(cm.evalAfter)}
-                      </span>
-                      {dropped > 0 && Math.abs(cm.evalBefore ?? 0) < 90 && Math.abs(cm.evalAfter ?? 0) < 90 && (
-                        <span className="text-[11px] font-semibold" style={{ color: "var(--bv-red)" }}>−{dropped.toFixed(1)}</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-foreground leading-relaxed">{cause}</p>
-                    {storyBest[cm.idx] ? (
-                      <p className="text-xs leading-relaxed">
-                        <span className="text-muted-foreground">Tu jugada </span>
-                        <span className="font-mono font-bold" style={{ color: "var(--bv-red)" }}>{cm.move.san}</span>
-                        <span className="text-muted-foreground"> (flecha roja). La mejor era </span>
-                        <span className="font-mono font-bold" style={{ color: "var(--bv-green)" }}>{storyBest[cm.idx]}</span>
-                        <span className="text-muted-foreground"> (flecha verde).</span>
-                      </p>
-                    ) : bestLoading ? (
-                      <p className="text-xs text-muted-foreground italic">Stockfish está calculando la mejor jugada…</p>
-                    ) : null}
-
-                    {/* Coach comment grounded in the engine's verdict */}
-                    {(aiComment[cm.idx] || aiLoading) && (
-                      <div className="rounded-xl p-2.5 flex gap-2" style={{ background: "oklch(0.61 0.22 285 / 0.08)" }}>
-                        <Brain size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
-                        {aiComment[cm.idx] ? (
-                          <p className="text-xs leading-relaxed text-foreground">{aiComment[cm.idx]}</p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground italic">El coach está redactando…</p>
-                        )}
-                      </div>
-                    )}
-
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      <span className="font-semibold" style={{ color: "var(--bv-purple)" }}>Para la próxima: </span>
-                      {takeaway}
-                    </p>
-                  </>
-                );
-              })()}
-
-              {/* OUTRO */}
-              {currentSlide.type === "outro" && (
-                <>
-                  <p className="text-lg font-bold leading-snug font-display">
-                    {currentSlide.recovered
-                      ? "Lograste recuperarte."
-                      : "Tu evaluación nunca se recuperó."}
-                  </p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {currentSlide.recovered
-                      ? `Después de la jugada ${currentSlide.lastMoveNumber} volviste a ponerte por delante. La lección: reconoce el momento de peligro antes de que sea tarde.`
-                      : `Desde la jugada ${currentSlide.lastMoveNumber} no volviste a tomar la ventaja. Trabaja en no dejar que un error arrastre toda la partida.`}
-                  </p>
-                </>
-              )}
-
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={() => storyGo(storyStep! - 1)} disabled={storyStep === 0}
-                  className="flex-1 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-30 hover:bg-muted/40"
-                  style={{ borderColor: "var(--border)" }}>
-                  ← Anterior
-                </button>
-                {storyStep! < storySlides.length - 1 ? (
-                  <button onClick={() => storyGo(storyStep! + 1)}
-                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
-                    style={{ background: "var(--bv-purple)" }}>
-                    Siguiente →
-                  </button>
-                ) : (
-                  <button onClick={exitStory}
-                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
-                    style={{ background: "var(--bv-purple)" }}>
-                    Terminar
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Critical moment — slim quick-access row (detail lives in the per-move bubble) */}
-          {!inExplore && !inStory && criticalMoment && (
-            <div className="rounded-xl border flex items-center gap-2 px-3 py-2"
-              style={{
-                borderColor: idx === criticalMoment.idx ? "var(--bv-purple)" : "var(--border)",
-                background: "oklch(0.61 0.22 285 / 0.07)",
-              }}>
-              <button onClick={() => go(criticalMoment.idx)}
-                className="flex items-center gap-2 flex-1 min-w-0 text-left active:scale-[0.99] transition-transform">
-                <Zap size={14} className="shrink-0" style={{ color: "var(--bv-purple)" }} />
-                <span className="text-[10px] font-bold tracking-widest uppercase shrink-0" style={{ color: "var(--bv-purple)" }}>
-                  Momento clave
-                </span>
-                <span className="text-xs font-mono font-semibold truncate">
-                  {criticalMoment.move.moveNumber}{criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
-                </span>
-                <span className="text-[11px] font-mono tabular-nums ml-auto shrink-0" style={{ color: "var(--bv-red)" }}>
-                  {fmtEval(criticalMoment.evalBefore)}→{fmtEval(criticalMoment.evalAfter)}
-                </span>
-              </button>
-              {criticalMoments.length >= 2 && (
-                <button onClick={startStory}
-                  className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full text-white"
-                  style={{ background: "var(--bv-purple)" }}>
-                  Historia →
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Coach commentary for the current move (chess.com style, above board) */}
-          {!inExplore && !inStory && (() => {
+          {/* Coach one-liner - fixed height so the board never shifts */}
+          {!inExplore && (() => {
             const c = moveComment(currentMove);
-            if (!c || !currentMove) return null;
-            const cls = currentMove.classification;
-            const isMine = currentMove.color === playerColor;
-            const curE = toMine(currentMove.evaluation);
+            const cls = currentMove?.classification ?? null;
+            const isMine = currentMove?.color === playerColor;
+            const curE = toMine(currentMove?.evaluation ?? null);
             const prevE = toMine(idx > 0 ? moves[idx - 1].evaluation : 0);
-            const numeric = isMine && curE != null && prevE != null
-              && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000;
-
-            // Ground the line in real eval numbers from YOUR perspective.
-            let detail = c.text;
-            if (numeric) {
-              const swing = curE! - prevE!;
-              const from = fmtEval(prevE), to = fmtEval(curE);
-              if (cls === "blunder" || cls === "mistake") {
-                detail = `Pasaste de ${from} a ${to} — perdiste ${Math.abs(swing).toFixed(1)}. Pulsa “Mostrar mejor jugada”.`;
-              } else if (cls === "inaccuracy") {
-                detail = `Bajaste de ${from} a ${to}. Había una jugada un poco más precisa.`;
-              } else if (cls === "best" || cls === "excellent" || cls === "good") {
-                detail = curE! >= 1 ? `Mantienes la ventaja (${to}). Buen pulso.`
-                  : curE! <= -1 ? `Sigues en desventaja (${to}), pero es de lo mejor disponible.`
-                  : `Posición equilibrada (${to}).`;
-              }
+            let detail = c?.text ?? "";
+            if (currentMove && c && isMine && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
+              const swing = curE - prevE;
+              const to = fmtEval(curE);
+              if (cls === "blunder" || cls === "mistake") detail = `Perdiste ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
+              else if (cls === "inaccuracy") detail = `Imprecisa (${fmtEval(prevE)} a ${to}).`;
+              else if (cls === "best" || cls === "excellent" || cls === "good") detail = curE >= 1 ? `Mantienes ventaja (${to}).` : curE <= -1 ? `Sigues peor (${to}).` : `Equilibrio (${to}).`;
             }
+            const color = c?.color ?? "var(--muted-foreground)";
             return (
-              <div className="flex items-start gap-2">
+              <div className="flex items-center gap-2 h-12 shrink-0">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
-                  style={{ background: c.color }}>
-                  {cls ? CLASS_EMOJI[cls] : ""}
+                  style={{ background: color }}>
+                  {cls ? CLASS_EMOJI[cls] : "•"}
                 </div>
-                <div className="flex-1 rounded-2xl rounded-tl-sm border px-3 py-2"
-                  style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-                  <p className="text-sm font-bold" style={{ color: c.color }}>
-                    <span className="font-mono">{currentMove.san}</span> — {c.label}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold truncate" style={{ color }}>
+                    {currentMove
+                      ? <><span className="font-mono">{currentMove.san}</span>{c ? ` - ${c.label}` : ""}</>
+                      : "Posicion inicial"}
                   </p>
-                  <p className="text-xs text-muted-foreground leading-snug">{detail}</p>
-
-                  {/* AI coach explanation (grounded in Stockfish), on demand */}
-                  {isMine && gameId && (cls === "blunder" || cls === "mistake" || cls === "inaccuracy") && (
-                    explain?.idx === idx ? (
-                      <div className="mt-2 flex items-start gap-1.5 rounded-xl px-2.5 py-2"
-                        style={{ background: "oklch(0.61 0.22 285 / 0.08)" }}>
-                        <Sparkles size={13} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
-                        <p className="text-xs leading-snug" style={{ color: "var(--foreground)" }}>{explain.text}</p>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => explainMove(idx)}
-                        disabled={explainLoading}
-                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors hover:bg-muted/40 disabled:opacity-50"
-                        style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
-                        <Sparkles size={12} />
-                        {explainLoading ? "Pensando…" : "¿Por qué fue peor?"}
-                      </button>
-                    )
-                  )}
+                  <p className="text-xs text-muted-foreground truncate">
+                    {detail || (currentMove ? "" : "Usa las flechas para revisar la partida.")}
+                  </p>
                 </div>
               </div>
             );
@@ -1146,17 +987,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </div>
           </div>
 
-          {/* Explore button */}
-          {!inExplore && (
-            <button
-              onClick={enterExplore}
-              className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40 flex items-center justify-center gap-1.5"
-              style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
-              <Search size={14} /> Explorar desde aquí
-            </button>
-          )}
-
-          {/* Controls — arrows with the current move in the CENTER (chess.com style) */}
+          {/* Nav - arrows with the current move in the CENTER (chess.com style) */}
           {!inExplore && (
             <div className="flex items-center justify-center gap-2">
               <button
@@ -1196,161 +1027,42 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </div>
           )}
 
-          {/* Show best move — below the controls (chess.com style) */}
-          {!inExplore && !inStory && idx >= 0 && (
-            <div className="space-y-2">
-              <button
-                onClick={() => fetchBestMove(idx)} disabled={loadingBestMove}
-                className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white active:scale-[0.98] transition-transform disabled:opacity-60"
-                style={{ background: "var(--bv-green)" }}>
-                <Search size={16} />
-                {loadingBestMove ? "Calculando…" : "Mostrar mejor jugada"}
+          {/* Action row - compact; opens overlays, never shifts the board */}
+          {!inExplore && (
+            <div className="flex items-center gap-2">
+              <button onClick={enterExplore} title="Explorar variantes" aria-label="Explorar"
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
+                style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
+                <Search size={18} />
               </button>
-              {bestMoveSan && (
-                <div className="flex items-center gap-2 rounded-xl border px-3 py-2"
-                  style={{ borderColor: "var(--bv-green)", background: "oklch(0.77 0.17 177 / 0.10)" }}>
-                  <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-green)" }}>
-                    Mejor jugada
-                  </span>
-                  <span className="font-mono text-sm font-bold" style={{ color: "var(--bv-green)" }}>{bestMoveSan}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">→ mira la flecha verde</span>
-                </div>
+              <button onClick={() => fetchBestMove(idx)} disabled={loadingBestMove || idx < 0}
+                className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white active:scale-[0.98] transition-transform disabled:opacity-40"
+                style={{ background: "var(--bv-green)" }}>
+                <Target size={16} /> {loadingBestMove ? "Calculando..." : "Mejor jugada"}
+              </button>
+              {idx >= 0 && gameId && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake" || currentMove?.classification === "inaccuracy") && (
+                <button onClick={() => { setWhyOpen(true); explainMove(idx); }} title="Por que fue peor?" aria-label="Por que"
+                  className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
+                  style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
+                  <Sparkles size={18} />
+                </button>
+              )}
+              {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
+                <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
+                  className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
+                  style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
+                  <Brain size={18} />
+                </button>
               )}
             </div>
-          )}
-
-          {/* Compact move list */}
-          <MoveTable moves={moves} idx={idx} onGo={go} compact />
-
-          {/* Reopen the cinematic review summary */}
-          {gameAnalyzed && (
-            <button onClick={() => setShowSummary(true)}
-              className="w-full py-2.5 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 transition-colors hover:bg-muted/40"
-              style={{ borderColor: "var(--border)", color: "var(--bv-purple)" }}>
-              <BarChart2 size={15} /> Ver resumen de la partida
-            </button>
           )}
         </>
       )}
 
-      {/* ── Tab: Jugadas ─────────────────────────────────────── */}
-      {tab === "jugadas" && (
-        <div className="space-y-3">
-          {/* Mini board for reference */}
-          <div className="space-y-2 -mx-4">
-            <div className="px-4"><EvalBar moves={moves} idx={idx} /></div>
-            <ChessBoard fen={currentFen} orientation={playedAs} lastMove={lastMove} />
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => go(-1)} disabled={idx <= -1}
-              className="w-9 h-9 flex items-center justify-center rounded-xl border disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-              <ChevronsLeft size={15} />
-            </button>
-            <button onClick={() => go(idx - 1)} disabled={idx <= -1}
-              className="flex-1 h-9 flex items-center justify-center gap-1 rounded-xl border disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-              <ChevronLeft size={15} /><span className="text-xs font-semibold">Anterior</span>
-            </button>
-            <button onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
-              className="flex-1 h-9 flex items-center justify-center gap-1 rounded-xl border disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-              <span className="text-xs font-semibold">Siguiente</span><ChevronRight size={15} />
-            </button>
-            <button onClick={() => go(moves.length - 1)} disabled={idx >= moves.length - 1}
-              className="w-9 h-9 flex items-center justify-center rounded-xl border disabled:opacity-30"
-              style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-              <ChevronsRight size={15} />
-            </button>
-          </div>
-          {/* Full move list */}
-          <MoveTable moves={moves} idx={idx} onGo={go} />
-        </div>
-      )}
 
-      {/* ── Tab: Consejos / Práctica ─────────────────────────── */}
-      {tab === "consejos" && !inPractice && (
-        <div className="space-y-3">
-          {moves.filter(m => m.classification === "blunder" || m.classification === "mistake").length === 0 ? (
-            <div className="rounded-2xl p-8 text-center border flex flex-col items-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-              <CheckCircle2 size={36} style={{ color: "var(--bv-green)" }} className="mb-2" />
-              <p className="text-sm font-semibold">¡Partida limpia!</p>
-              <p className="text-xs text-muted-foreground mt-1">No se detectaron errores graves en esta partida.</p>
-            </div>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground px-1">
-                Toca <span className="font-semibold text-foreground">Practicar</span> en cualquier error para intentar la posición tú mismo.
-              </p>
-              {moves
-                .map((m, i) => ({ ...m, flatIdx: i }))
-                .filter(m => m.classification === "blunder" || m.classification === "mistake")
-                .map((m, i) => {
-                  const col = CLASS_COLOR[m.classification!];
-                  const isBlunder = m.classification === "blunder";
-                  return (
-                    <div key={i} className="rounded-2xl border overflow-hidden"
-                      style={{ background: "var(--card)", borderColor: "var(--border)", borderLeftColor: col, borderLeftWidth: 4 }}>
-                      <div className="p-3 flex items-start gap-3">
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
-                          style={{ background: col }}>
-                          {isBlunder ? "✕" : "?"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: col }}>
-                              {isBlunder ? "Error Grave" : "Error"} · Jug. {m.moveNumber}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-auto">{m.color === "w" ? "Blancas" : "Negras"}</span>
-                          </div>
-                          <p className="text-sm">
-                            Jugaste <span className="font-bold font-mono" style={{ color: col }}>{m.san}</span>
-                            {m.centipawnLoss != null && m.centipawnLoss > 0 && (
-                              <span className="text-muted-foreground text-xs ml-1">−{m.centipawnLoss} cp</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex border-t divide-x" style={{ borderColor: "var(--border)" }}>
-                        <button onClick={() => { go(m.flatIdx); setTab("analizar"); }}
-                          className="flex-1 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors">
-                          Ver en tablero
-                        </button>
-                        <button onClick={() => { fetchBestMove(m.flatIdx); setTab("analizar"); }}
-                          disabled={loadingBestMove}
-                          className="flex-1 py-2 text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
-                          style={{ color: "var(--bv-green)" }}>
-                          <Search size={13} /> Mejor jugada
-                        </button>
-                        <button onClick={() => startPractice(m.flatIdx)}
-                          className="flex-1 py-2 text-xs font-bold transition-colors flex items-center justify-center gap-1"
-                          style={{ color: "var(--bv-purple)" }}>
-                          <Target size={13} /> Practicar
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-            </>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 mt-2">
-            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">PRECISIÓN</p>
-              <p className="text-2xl font-bold" style={{ color: "var(--bv-purple)" }}>{accuracy ? `${accuracy}%` : "—"}</p>
-            </div>
-            <div className="rounded-xl p-3 border text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-              <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">ERRORES</p>
-              <p className="text-2xl font-bold" style={{ color: blunderCount > 0 ? "var(--bv-red)" : "var(--bv-green)" }}>
-                {blunderCount + mistakeCount}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Modo Práctica ────────────────────────────────────── */}
-      {tab === "consejos" && inPractice && practiceFen && practiceMove && (
+      {inPractice && practiceFen && practiceMove && (
         <div className="space-y-3">
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -1457,23 +1169,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         </div>
       )}
 
-      {/* ── Bottom Tab Bar ───────────────────────────────────── */}
-      <div className="sticky bottom-0 -mx-4 px-4 pb-3 pt-2 mt-2 border-t backdrop-blur-xl"
-        style={{ background: "var(--background)", borderColor: "var(--border)" }}>
-        <div className="flex justify-around">
-          {TABS.map(({ id, label, Icon }) => {
-            const isActive = tab === id;
-            return (
-              <button key={id} onClick={() => setTab(id)}
-                className="flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition-all"
-                style={{ color: isActive ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
-                <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8} />
-                <span className="text-[10px] font-semibold">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
     </div>
   );
