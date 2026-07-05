@@ -395,7 +395,7 @@ export async function getUnanalyzedGameIds(userId: string, limit = 50): Promise<
     .from("games")
     .select("id")
     .eq("user_id", userId)
-    .order("created_at", { ascending: false })
+    .order("played_at", { ascending: false, nullsFirst: false })
     .limit(limit);
 
   if (!games || games.length === 0) return [];
