@@ -419,10 +419,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const [bestMoveSan, setBestMoveSan] = useState<string | null>(null);
   const [loadingBestMove, setLoadingBestMove] = useState(false);
 
-  // Natural-language coach explanation (grounded in Stockfish), fetched on demand.
-  const [explain, setExplain] = useState<{ idx: number; text: string } | null>(null);
-  const [explainLoading, setExplainLoading] = useState(false);
-  const [whyOpen, setWhyOpen] = useState(false);
 
   // Exploration mode state (free interactive moves from any position)
   const [exploreFens, setExploreFens] = useState<string[]>([]);
@@ -484,47 +480,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       }
     } catch {}
     setLoadingBestMove(false);
-  }
-
-  // Ask the AI coach WHY a move was worse — grounded in the engine's best move
-  // and the real eval swing. On demand only; the server caches the result.
-  async function explainMove(i: number) {
-    const m = moves[i];
-    if (!m) return;
-    const fenBefore = i > 0 ? moves[i - 1].fen : new Chess().fen();
-    setExplainLoading(true);
-    // Resolve the engine best move (SAN) to ground the explanation.
-    let best = bestMoveSan ?? undefined;
-    try {
-      const r = await fetch(`/api/bestmove?fen=${encodeURIComponent(fenBefore)}`);
-      if (r.ok) {
-        const d = await r.json();
-        if (d.from && d.to) {
-          try {
-            const c = new Chess(fenBefore);
-            const mv = c.move({ from: d.from, to: d.to, promotion: d.promotion ?? "q" });
-            if (mv) best = mv.san;
-          } catch {}
-        }
-      }
-    } catch {}
-    const phase = m.moveNumber <= 10 ? "apertura" : m.moveNumber <= 25 ? "medio juego" : "final";
-    try {
-      const r = await fetch("/api/explain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fenBefore, san: m.san, bestMove: best, moveNumber: m.moveNumber,
-          evalBefore: toMine(i > 0 ? moves[i - 1].evaluation : 0),
-          evalAfter: toMine(m.evaluation), phase, gameId,
-        }),
-      });
-      if (r.ok) {
-        const d = await r.json();
-        if (d.text) setExplain({ idx: i, text: d.text });
-      }
-    } catch {}
-    setExplainLoading(false);
   }
 
   const go = useCallback((n: number) => {
@@ -810,39 +765,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         />
       )}
 
-      {/* Coach IA "why" explanation — overlay so it never shifts the board */}
-      {whyOpen && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
-          onClick={() => setWhyOpen(false)}>
-          <div className="absolute inset-0" style={{ background: "rgba(24,20,34,0.5)", backdropFilter: "blur(2px)" }} />
-          <div className="relative w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border p-5"
-            style={{ background: "var(--card)", borderColor: "var(--border)" }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles size={15} style={{ color: "var(--bv-purple)" }} />
-              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
-                Coach IA
-              </span>
-              <button onClick={() => setWhyOpen(false)} aria-label="Cerrar"
-                className="ml-auto w-7 h-7 rounded-full flex items-center justify-center hover:bg-black/5 text-muted-foreground">
-                ✕
-              </button>
-            </div>
-            {currentMove && (
-              <p className="text-sm font-bold mb-2 font-mono">
-                {currentMove.moveNumber}{currentMove.color === "w" ? "." : "…"} {currentMove.san}
-              </p>
-            )}
-            {explain?.idx === idx ? (
-              <p className="text-sm leading-relaxed">{explain.text}</p>
-            ) : explainLoading ? (
-              <p className="text-sm text-muted-foreground">El coach está analizando con el motor…</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">No se pudo obtener la explicación. Inténtalo de nuevo.</p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── Header info ──────────────────────────────────────── */}
       <div className="flex items-center justify-between">
@@ -899,8 +821,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `Mantienes ventaja (${to}).` : curE <= -1 ? `Sigues peor (${to}).` : `Equilibrio (${to}).`;
             }
             const color = c?.color ?? "var(--muted-foreground)";
-            const notableMine = isMine && (cls === "blunder" || cls === "mistake" || cls === "inaccuracy");
-            const showWhy = !ai && notableMine && !!gameId;
             return (
               <div className="flex items-start gap-2 h-16 shrink-0">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white mt-0.5"
@@ -921,12 +841,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   ) : (
                     <p className="text-xs text-muted-foreground line-clamp-2">
                       {computed || (currentMove ? "" : "Usa las flechas para revisar la partida.")}
-                      {showWhy && (
-                        <button onClick={() => { setWhyOpen(true); explainMove(idx); }}
-                          className="ml-1 font-semibold" style={{ color: "var(--bv-purple)" }}>
-                          · ¿Por qué?
-                        </button>
-                      )}
                     </p>
                   )}
                 </div>

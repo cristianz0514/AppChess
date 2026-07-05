@@ -12,12 +12,12 @@ import type { Game } from "@/types";
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ blunder?: string; story?: string }>;
+  searchParams: Promise<{ blunder?: string; story?: string; coach?: string }>;
 }
 
 export default async function GameDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const { blunder, story } = await searchParams;
+  const { blunder, story, coach } = await searchParams;
   await getUsername();
 
   const { data: game } = await supabase
@@ -35,6 +35,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   // Include the AI coach explanation when the column exists; fall back cleanly
   // to the base columns if it doesn't (older schema).
   let moves: Array<Record<string, unknown>> | null = null;
+  let explanationColumn = false;
   {
     const withExpl = await supabase
       .from("moves")
@@ -50,6 +51,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
       moves = base.data;
     } else {
       moves = withExpl.data;
+      explanationColumn = true;
     }
   }
 
@@ -60,6 +62,15 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
     evaluation: number | null;
     explanation?: string | null;
   }>;
+
+  // A game analyzed before the coach existed: it has moves but no AI comments.
+  // Regenerate once (behind the loading bar) so the coach shows inline per move.
+  const NOTABLE = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
+  const notableCount = dbMoves.filter((m) => m.classification && NOTABLE.has(m.classification)).length;
+  const hasCoach = dbMoves.some((m) => m.explanation);
+  // `coach=1` marks that a regeneration was already attempted this navigation —
+  // prevents an infinite re-analyze loop if the comments can't be persisted.
+  const needsCoach = coach !== "1" && explanationColumn && dbMoves.length > 0 && notableCount > 0 && !hasCoach;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
@@ -84,6 +95,8 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
       <main className="flex-1 pt-20 px-4 max-w-lg mx-auto w-full overflow-y-auto">
         {dbMoves.length === 0 ? (
           <GameAutoAnalyzer gameId={id} />
+        ) : needsCoach ? (
+          <GameAutoAnalyzer gameId={id} reanalyze />
         ) : (
           <GameViewer
             pgn={game.pgn}

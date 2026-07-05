@@ -6,17 +6,25 @@ import { Clock, AlertTriangle } from "lucide-react";
 
 interface Props {
   gameId: string;
+  reanalyze?: boolean;
 }
 
-export function GameAutoAnalyzer({ gameId }: Props) {
+export function GameAutoAnalyzer({ gameId, reanalyze }: Props) {
   const router = useRouter();
   const started = useRef(false);
   const [status, setStatus] = useState<"running" | "busy" | "error">("running");
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
-  const [label, setLabel] = useState("Analizando con Stockfish…");
+  const [label, setLabel] = useState(reanalyze ? "Generando el análisis del coach…" : "Analizando con Stockfish…");
 
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  // On finish: a regeneration marks ?coach=1 so the page won't loop back into
+  // regeneration if the comments couldn't be persisted; a fresh analysis just refreshes.
+  const finish = () => {
+    if (reanalyze) router.replace(`/blunders/${gameId}?coach=1`);
+    else router.refresh();
+  };
 
   const run = useRef<(() => void) | undefined>(undefined);
 
@@ -25,7 +33,7 @@ export function GameAutoAnalyzer({ gameId }: Props) {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameId }),
+        body: JSON.stringify({ gameId, force: reanalyze === true }),
       });
 
       // Engine busy — show message and retry in 15 seconds
@@ -58,12 +66,12 @@ export function GameAutoAnalyzer({ gameId }: Props) {
             if (typeof msg.done === "number") setDone(msg.done);
             if (typeof msg.total === "number") setTotal(msg.total);
             if (typeof msg.label === "string" && msg.label) setLabel(msg.label);
-            if (msg.finished) { router.refresh(); return; }
+            if (msg.finished) { finish(); return; }
           }
         }
       }
 
-      router.refresh();
+      finish();
     } catch {
       setStatus("error");
     }

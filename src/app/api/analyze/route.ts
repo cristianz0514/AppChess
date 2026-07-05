@@ -4,20 +4,23 @@ import { isEngineBusy } from "@/services/stockfish";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
-  const { gameId } = await req.json().catch(() => ({}));
+  const { gameId, force } = await req.json().catch(() => ({}));
 
   if (!gameId || typeof gameId !== "string") {
     return new Response(JSON.stringify({ error: "gameId required" }), { status: 400 });
   }
 
-  // If the game already has analyzed moves, skip Stockfish entirely.
-  const { count } = await supabase
-    .from("moves")
-    .select("id", { count: "exact", head: true })
-    .eq("game_id", gameId);
+  // If the game already has analyzed moves, skip Stockfish entirely — unless
+  // `force` is set (used to regenerate the AI coach comments for older games).
+  if (!force) {
+    const { count } = await supabase
+      .from("moves")
+      .select("id", { count: "exact", head: true })
+      .eq("game_id", gameId);
 
-  if (count && count > 0) {
-    return new Response(JSON.stringify({ done: 1, total: 1, finished: true }), { status: 200 });
+    if (count && count > 0) {
+      return new Response(JSON.stringify({ done: 1, total: 1, finished: true }), { status: 200 });
+    }
   }
 
   // If Stockfish is already analyzing another game, tell the client to retry.
