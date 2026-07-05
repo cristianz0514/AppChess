@@ -82,6 +82,8 @@ function evaluatePracticeMove(fenBefore: string, from: string, to: string): Prac
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CLASS_COLOR: Record<string, string> = {
+  brilliant:  "#1BAAA6",  // teal — chess.com brilliant
+  great:      "#5C8AE6",  // blue — chess.com great
   blunder:    "var(--bv-red)",
   mistake:    "var(--bv-orange)",
   inaccuracy: "#ffd700",
@@ -93,10 +95,11 @@ const CLASS_COLOR: Record<string, string> = {
 // Simple monochrome glyphs (rendered white on a flat colored disc) — kept minimal
 // so the board doesn't feel busy.
 const CLASS_EMOJI: Record<string, string> = {
-  blunder: "✕", mistake: "!", inaccuracy: "?", best: "✓", excellent: "✓", good: "✓",
+  brilliant: "‼", great: "!", blunder: "✕", mistake: "!", inaccuracy: "?", best: "✓", excellent: "✓", good: "✓",
 };
 
 const CLASS_LABEL: Record<string, string> = {
+  brilliant: "¡Brillante!", great: "¡Genial!",
   blunder: "Error grave", mistake: "Error", inaccuracy: "Imprecisión",
   best: "La mejor jugada", excellent: "Excelente", good: "Buena jugada",
 };
@@ -107,6 +110,8 @@ function moveComment(m: MoveInfo | null): { label: string; text: string; color: 
   const label = CLASS_LABEL[m.classification] ?? "";
   const color = CLASS_COLOR[m.classification] ?? "var(--muted-foreground)";
   const text = {
+    brilliant: "¡Jugada brillante! Un sacrificio que funciona — de las mejores.",
+    great: "¡Gran jugada! Encontraste el golpe clave.",
     blunder: "Perdiste ventaja importante. Mira cuál era la mejor jugada.",
     mistake: "Cediste algo de ventaja innecesariamente.",
     inaccuracy: "Había una jugada un poco mejor.",
@@ -491,7 +496,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   // Classification breakdown of YOUR moves (chess.com-style review summary).
   const classSummary = useMemo(() => {
-    const counts: Record<string, number> = { best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
+    const counts: Record<string, number> = { brilliant: 0, great: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
     for (const m of moves) {
       if (m.color !== playerColor) continue;
       if (m.classification && counts[m.classification] !== undefined) counts[m.classification]++;
@@ -1048,6 +1053,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {(() => {
             const accDelta = accuracy != null && avgAccuracy != null ? Math.round((accuracy - avgAccuracy) * 10) / 10 : null;
             const rows: { key: string; label: string }[] = [
+              { key: "brilliant", label: "Brillante" },
+              { key: "great", label: "Genial" },
               { key: "best", label: "Mejor" },
               { key: "excellent", label: "Excelente" },
               { key: "good", label: "Bien" },

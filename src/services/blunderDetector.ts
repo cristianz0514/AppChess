@@ -96,6 +96,40 @@ export async function analyzeGame(
   const moves = buildMoves();
   if (moves.length === 0) return;
 
+  // ── Highlight brilliant / great moves (chess.com style) ────────────────────
+  // Only upgrade moves that were already "best". A brilliant is a sound
+  // sacrifice; a great is a strong best move that wins a clean piece.
+  const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+  for (let i = 0; i < history.length; i++) {
+    if (moves[i].classification !== "best") continue;
+    const h = history[i];
+    const moverWhite = i % 2 === 0;
+    const evalAfter = whiteEval[i] == null ? 0 : (moverWhite ? whiteEval[i]! : -whiteEval[i]!);
+    const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
+    if (evalAfter < -0.5) continue;               // must stay sound
+    if (Math.abs(evalAfter) >= 9000) continue;    // ignore forced-mate lines
+
+    const movedVal = VAL[h.piece] ?? 0;
+    // Sacrifice: a cheaper enemy piece can capture the piece we just moved,
+    // yet the engine still rates this the best move → brilliant.
+    let brilliant = false;
+    if (movedVal >= 3 && evalBefore <= 4.5) {
+      try {
+        const c = new Chess(fens[i]);
+        const caps = c.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured);
+        if (caps.length && Math.min(...caps.map((x) => VAL[x.piece] ?? 99)) < movedVal) brilliant = true;
+      } catch { /* ignore */ }
+    }
+    if (brilliant) { moves[i].classification = "brilliant"; continue; }
+
+    // Great: best move that wins a clean piece (not a mere recapture) with a strong swing.
+    const wonPiece = h.captured != null && (VAL[h.captured] ?? 0) >= 3;
+    const isRecapture = i > 0 && history[i - 1].captured != null && history[i - 1].to === h.to;
+    if (wonPiece && !isRecapture && evalAfter - evalBefore >= 1.5) {
+      moves[i].classification = "great";
+    }
+  }
+
   await supabase.from("moves").delete().eq("game_id", gameId);
   await supabase.from("moves").insert(moves.map((m) => ({ ...m })));
 
