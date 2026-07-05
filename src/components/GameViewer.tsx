@@ -4,7 +4,8 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Search, Target, CheckCircle2 } from "lucide-react";
+import { ReviewSummaryModal } from "./ReviewSummaryModal";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2 } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -533,25 +534,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   const criticalMoment = criticalMoments.length > 0 ? criticalMoments[0] : null;
 
-  // Engine's best move at the #1 critical moment — shown in the summary footer.
-  const [footerBest, setFooterBest] = useState<string | null>(null);
-  useEffect(() => {
-    if (!criticalMoment) return;
-    const fenBefore = criticalMoment.idx > 0 ? moves[criticalMoment.idx - 1].fen : new Chess().fen();
-    let cancelled = false;
-    fetch(`/api/bestmove?fen=${encodeURIComponent(fenBefore)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (cancelled || !d?.from) return;
-        try {
-          const mv = new Chess(fenBefore).move({ from: d.from, to: d.to, promotion: "q" });
-          if (mv) setFooterBest(mv.san);
-        } catch {}
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [criticalMoment, moves]);
-
   const fmtEval = (e: number | null) =>
     e === null ? "—" : Math.abs(e) >= 9000 ? (e > 0 ? "#" : "-#") + mateInN(e) : (e > 0 ? "+" : "") + e.toFixed(1);
 
@@ -590,6 +572,20 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const inStory = storyStep !== null;
   const currentSlide = inStory ? storySlides[storyStep!] : null;
   const storyMomentSlide = currentSlide?.type === "moment" ? currentSlide : null;
+
+  // Review-summary modal — pops up on open (chess.com style) unless we arrived
+  // straight into Story Mode. Reopenable from the "Resumen" button.
+  const gameAnalyzed = accuracy != null || moves.some((m) => m.classification);
+  const [showSummary, setShowSummary] = useState(false);
+  const summaryAutoOpened = useRef(false);
+  useEffect(() => {
+    // Pop the review summary shortly after load (unless we went straight to
+    // Story Mode) — a clean closed→open entrance animation.
+    if (summaryAutoOpened.current || autoStory || !gameAnalyzed) return;
+    summaryAutoOpened.current = true;
+    const t = setTimeout(() => setShowSummary(true), 350);
+    return () => clearTimeout(t);
+  }, [autoStory, gameAnalyzed]);
 
   // Engine's best move per critical moment (Stockfish, objective) — SAN + green
   // arrow, grounding the "why" in real calculation. Cached by move index.
@@ -704,6 +700,19 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   return (
     <div className="flex flex-col gap-3 pt-2 pb-2">
 
+      {gameAnalyzed && (
+        <ReviewSummaryModal
+          open={showSummary}
+          onClose={() => setShowSummary(false)}
+          onReviewMoments={() => { setShowSummary(false); startStory(); }}
+          accuracy={accuracy ?? null}
+          avgAccuracy={avgAccuracy ?? null}
+          counts={classSummary}
+          momentsCount={criticalMoments.length}
+          gameResult={gameResult}
+        />
+      )}
+
       {/* ── Header info ──────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
@@ -718,9 +727,18 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </span>
           )}
         </div>
-        <div className="flex gap-2 text-xs font-semibold shrink-0">
-          {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>💥 {blunderCount}</span>}
-          {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>⚠️ {mistakeCount}</span>}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex gap-2 text-xs font-semibold">
+            {blunderCount > 0 && <span style={{ color: "var(--bv-red)" }}>💥 {blunderCount}</span>}
+            {mistakeCount > 0 && <span style={{ color: "var(--bv-orange)" }}>⚠️ {mistakeCount}</span>}
+          </div>
+          {gameAnalyzed && (
+            <button onClick={() => setShowSummary(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold"
+              style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
+              <BarChart2 size={12} /> Resumen
+            </button>
+          )}
         </div>
       </div>
 
@@ -1052,59 +1070,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {/* Compact move list */}
           <MoveTable moves={moves} idx={idx} onGo={go} compact />
 
-          {/* Review summary — accuracy + your move breakdown (chess.com style) */}
-          {(() => {
-            const accDelta = accuracy != null && avgAccuracy != null ? Math.round((accuracy - avgAccuracy) * 10) / 10 : null;
-            const rows: { key: string; label: string }[] = [
-              { key: "brilliant", label: "Brillante" },
-              { key: "great", label: "Genial" },
-              { key: "best", label: "Mejor" },
-              { key: "excellent", label: "Excelente" },
-              { key: "good", label: "Bien" },
-              { key: "inaccuracy", label: "Imprecisión" },
-              { key: "mistake", label: "Error" },
-              { key: "blunder", label: "Error grave" },
-            ];
-            return (
-              <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-                <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
-                  <div>
-                    <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Resumen · Tú</p>
-                    {accDelta != null && (
-                      <p className="text-[11px] font-semibold" style={{ color: accDelta >= 0 ? "var(--bv-green)" : "var(--bv-red)" }}>
-                        {accDelta >= 0 ? "+" : ""}{accDelta}% vs tu promedio
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold font-display" style={{ color: "var(--bv-green)" }}>
-                      {accuracy != null ? `${accuracy}%` : "—"}
-                    </p>
-                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Precisión</p>
-                  </div>
-                </div>
-                <div className="divide-y divide-border">
-                  {rows.map(({ key, label }) => (
-                    <div key={key} className="flex items-center gap-3 px-4 py-2">
-                      <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                        style={{ background: CLASS_COLOR[key] ?? "var(--muted-foreground)" }}>
-                        {CLASS_EMOJI[key]}
-                      </span>
-                      <span className="text-sm flex-1">{label}</span>
-                      <span className="text-sm font-bold tabular-nums">{classSummary[key] ?? 0}</span>
-                    </div>
-                  ))}
-                </div>
-                {footerBest && (
-                  <div className="px-4 py-2.5 border-t flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
-                    <Star size={13} style={{ color: "var(--bv-green)" }} />
-                    <span className="text-xs text-muted-foreground">Mejor jugada del momento clave:</span>
-                    <span className="text-xs font-bold font-mono">{footerBest}</span>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {/* Reopen the cinematic review summary */}
+          {gameAnalyzed && (
+            <button onClick={() => setShowSummary(true)}
+              className="w-full py-2.5 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 transition-colors hover:bg-muted/40"
+              style={{ borderColor: "var(--border)", color: "var(--bv-purple)" }}>
+              <BarChart2 size={15} /> Ver resumen de la partida
+            </button>
+          )}
         </>
       )}
 

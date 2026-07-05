@@ -1,0 +1,150 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { X, Play, Sparkles } from "lucide-react";
+
+const COLOR: Record<string, string> = {
+  brilliant: "#1BAAA6", great: "#5C8AE6", best: "var(--bv-green)",
+  excellent: "var(--bv-green)", good: "var(--bv-green)", inaccuracy: "#e0a800",
+  mistake: "var(--bv-orange)", blunder: "var(--bv-red)",
+};
+const GLYPH: Record<string, string> = {
+  brilliant: "‼", great: "!", best: "✓", excellent: "✓", good: "✓",
+  inaccuracy: "?!", mistake: "?", blunder: "✕",
+};
+const ROWS: { key: string; label: string }[] = [
+  { key: "brilliant", label: "Brillante" },
+  { key: "great", label: "Genial" },
+  { key: "best", label: "Mejor" },
+  { key: "excellent", label: "Excelente" },
+  { key: "good", label: "Bien" },
+  { key: "inaccuracy", label: "Imprecisión" },
+  { key: "mistake", label: "Error" },
+  { key: "blunder", label: "Error grave" },
+];
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  onReviewMoments: () => void;
+  accuracy: number | null;
+  avgAccuracy: number | null;
+  counts: Record<string, number>;
+  momentsCount: number;
+  gameResult?: "win" | "loss" | "draw";
+}
+
+export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, avgAccuracy, counts, momentsCount, gameResult }: Props) {
+  const [render, setRender] = useState(open);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setRender(true);
+      const r = requestAnimationFrame(() => setShown(true));
+      return () => cancelAnimationFrame(r);
+    }
+    setShown(false);
+    const t = setTimeout(() => setRender(false), 260);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  if (!render) return null;
+
+  const acc = accuracy ?? 0;
+  const headline =
+    accuracy == null ? "Partida analizada"
+      : acc >= 90 ? "¡Partida brillante!"
+      : acc >= 80 ? "¡Buena partida!"
+      : acc >= 68 ? "Partida sólida"
+      : "Partida para revisar";
+  const accDelta = accuracy != null && avgAccuracy != null ? Math.round((accuracy - avgAccuracy) * 10) / 10 : null;
+  const resultLabel = gameResult === "win" ? "Victoria" : gameResult === "loss" ? "Derrota" : gameResult === "draw" ? "Tablas" : null;
+  const resultColor = gameResult === "win" ? "var(--bv-green)" : gameResult === "loss" ? "var(--bv-red)" : "var(--bv-orange)";
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
+      <div
+        onClick={onClose}
+        className="absolute inset-0"
+        style={{ background: "rgba(24,20,34,0.5)", backdropFilter: "blur(2px)", opacity: shown ? 1 : 0, transition: "opacity .26s ease" }}
+      />
+      <div
+        className="relative w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border overflow-hidden"
+        style={{
+          background: "var(--card)",
+          borderColor: "var(--border)",
+          transform: shown ? "translateY(0) scale(1)" : "translateY(6%) scale(0.98)",
+          opacity: shown ? 1 : 0,
+          transition: "transform .28s cubic-bezier(0.16,1,0.3,1), opacity .2s ease",
+          boxShadow: "0 -8px 40px rgba(0,0,0,0.25)",
+        }}
+      >
+        {/* Header — gradient hero */}
+        <div className="relative px-5 pt-4 pb-5"
+          style={{ background: "linear-gradient(135deg, oklch(0.61 0.22 285 / 0.14), oklch(0.60 0.11 184 / 0.10))" }}>
+          <div className="mx-auto mb-3 h-1 w-10 rounded-full sm:hidden" style={{ background: "var(--border)" }} />
+          <button onClick={onClose} aria-label="Cerrar"
+            className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors">
+            <X size={18} className="text-muted-foreground" />
+          </button>
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={14} style={{ color: "var(--bv-purple)" }} />
+            <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
+              Revisión de partida
+            </span>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-xl font-display font-bold leading-tight">{headline}</p>
+              {resultLabel && (
+                <span className="text-xs font-bold" style={{ color: resultColor }}>{resultLabel}</span>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-4xl font-display font-bold leading-none" style={{ color: "var(--bv-green)" }}>
+                {accuracy != null ? `${accuracy}` : "—"}<span className="text-lg">%</span>
+              </p>
+              <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-0.5">Precisión</p>
+              {accDelta != null && (
+                <p className="text-[10px] font-semibold" style={{ color: accDelta >= 0 ? "var(--bv-green)" : "var(--bv-red)" }}>
+                  {accDelta >= 0 ? "+" : ""}{accDelta}% vs tu promedio
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Classification breakdown */}
+        <div className="px-5 py-3 grid grid-cols-2 gap-x-4 gap-y-2">
+          {ROWS.map(({ key, label }) => (
+            <div key={key} className="flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                style={{ background: COLOR[key] }}>
+                {GLYPH[key]}
+              </span>
+              <span className="text-sm flex-1 text-muted-foreground">{label}</span>
+              <span className="text-sm font-bold tabular-nums">{counts[key] ?? 0}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* CTAs */}
+        <div className="px-5 pb-5 pt-1 space-y-2">
+          {momentsCount > 0 && (
+            <button onClick={onReviewMoments}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              style={{ background: "var(--bv-purple)" }}>
+              <Play size={16} fill="#fff" /> Revivir los {momentsCount} momentos clave
+            </button>
+          )}
+          <button onClick={onClose}
+            className="w-full py-2.5 rounded-2xl text-sm font-semibold border transition-colors hover:bg-muted/40"
+            style={{ borderColor: "var(--border)" }}>
+            Ver jugada por jugada
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
