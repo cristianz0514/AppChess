@@ -492,6 +492,23 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     return () => window.removeEventListener("keydown", onKey);
   }, [moves.length]);
 
+  // Celebrate when YOU land on a Brilliant ‼ or Great ! move (chess.com-style delight).
+  const [celebrate, setCelebrate] = useState<{ label: string; emoji: string; color: string } | null>(null);
+  const playerColorEarly = playedAs === "white" ? "w" : "b";
+  useEffect(() => {
+    if (currentMove && currentMove.color === playerColorEarly &&
+        (currentMove.classification === "brilliant" || currentMove.classification === "great")) {
+      setCelebrate({
+        label: CLASS_LABEL[currentMove.classification],
+        emoji: CLASS_EMOJI[currentMove.classification],
+        color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)",
+      });
+      const t = setTimeout(() => setCelebrate(null), 1700);
+      return () => clearTimeout(t);
+    }
+    setCelebrate(null);
+  }, [idx, currentMove, playerColorEarly]);
+
   const blunderCount = useMemo(() => moves.filter(m => m.classification === "blunder").length, [moves]);
   const mistakeCount = useMemo(() => moves.filter(m => m.classification === "mistake").length, [moves]);
 
@@ -957,6 +974,23 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             <div className="relative"
               onTouchStart={!inExplore ? onTouchStart : undefined}
               onTouchEnd={!inExplore ? onTouchEnd : undefined}>
+              {/* Brilliant/Great celebration */}
+              {celebrate && !inExplore && !storyMomentSlide && (
+                <div className="absolute inset-x-0 top-3 z-20 flex justify-center pointer-events-none">
+                  <div
+                    key={celebrate.label + idx}
+                    className="flex items-center gap-2 px-4 py-2 rounded-full shadow-lg"
+                    style={{
+                      background: celebrate.color,
+                      color: "#fff",
+                      animation: "bvCelebrate 1.7s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+                    }}
+                  >
+                    <span className="text-lg font-bold leading-none">{celebrate.emoji}</span>
+                    <span className="text-sm font-bold">{celebrate.label}</span>
+                  </div>
+                </div>
+              )}
               {/* Explore mode banner */}
               {inExplore && (
                 <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
