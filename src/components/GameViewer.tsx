@@ -950,19 +950,41 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {/* Coach commentary for the current move (chess.com style, above board) */}
           {!inExplore && !inStory && (() => {
             const c = moveComment(currentMove);
-            if (!c) return null;
+            if (!c || !currentMove) return null;
+            const cls = currentMove.classification;
+            const isMine = currentMove.color === playerColor;
+            const curE = toMine(currentMove.evaluation);
+            const prevE = toMine(idx > 0 ? moves[idx - 1].evaluation : 0);
+            const numeric = isMine && curE != null && prevE != null
+              && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000;
+
+            // Ground the line in real eval numbers from YOUR perspective.
+            let detail = c.text;
+            if (numeric) {
+              const swing = curE! - prevE!;
+              const from = fmtEval(prevE), to = fmtEval(curE);
+              if (cls === "blunder" || cls === "mistake") {
+                detail = `Pasaste de ${from} a ${to} — perdiste ${Math.abs(swing).toFixed(1)}. Pulsa “Mostrar mejor jugada”.`;
+              } else if (cls === "inaccuracy") {
+                detail = `Bajaste de ${from} a ${to}. Había una jugada un poco más precisa.`;
+              } else if (cls === "best" || cls === "excellent" || cls === "good") {
+                detail = curE! >= 1 ? `Mantienes la ventaja (${to}). Buen pulso.`
+                  : curE! <= -1 ? `Sigues en desventaja (${to}), pero es de lo mejor disponible.`
+                  : `Posición equilibrada (${to}).`;
+              }
+            }
             return (
               <div className="flex items-start gap-2">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
                   style={{ background: c.color }}>
-                  {currentMove?.classification ? CLASS_EMOJI[currentMove.classification] : ""}
+                  {cls ? CLASS_EMOJI[cls] : ""}
                 </div>
                 <div className="flex-1 rounded-2xl rounded-tl-sm border px-3 py-2"
                   style={{ borderColor: "var(--border)", background: "var(--card)" }}>
                   <p className="text-sm font-bold" style={{ color: c.color }}>
-                    <span className="font-mono">{currentMove?.san}</span> — {c.label}
+                    <span className="font-mono">{currentMove.san}</span> — {c.label}
                   </p>
-                  <p className="text-xs text-muted-foreground leading-snug">{c.text}</p>
+                  <p className="text-xs text-muted-foreground leading-snug">{detail}</p>
                 </div>
               </div>
             );
