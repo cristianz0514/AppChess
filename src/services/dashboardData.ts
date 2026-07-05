@@ -13,7 +13,15 @@ export const getUserId = cache(async function(username: string): Promise<string 
 });
 
 // Whether a chosen class actually filters (undefined/"all" → mixed, all games).
-const filtersClass = (tc?: string) => !!tc && tc !== "all";
+const filtersClass = (tc?: string) => !!tc && tc !== "all" && tc !== "unknown";
+
+// Default time control for the dashboard: the most-played real class. If games
+// aren't classified yet (pre-reimport, all null → "unknown"), fall back to "all"
+// so stats aren't filtered to a value that matches no rows (empty dashboard).
+export function pickDefaultClass(classes: { time_class: string; count: number }[]): string {
+  const top = classes[0];
+  return top && top.time_class !== "unknown" ? top.time_class : "all";
+}
 
 // Distinct time controls the player has games in, with counts (most-played first).
 export const getTimeClasses = cache(async function(userId: string): Promise<{ time_class: string; count: number }[]> {

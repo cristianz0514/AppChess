@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
-import { getUserId, getDashboardStats, getTopOpeningsByClass, getColorStats, getTimeClasses } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpeningsByClass, getColorStats, getTimeClasses, pickDefaultClass } from "@/services/dashboardData";
 import { translateOpening } from "@/lib/translateOpening";
 import { TimeClassSelector } from "@/components/TimeClassSelector";
 
@@ -11,7 +11,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
   if (!userId) return null;
 
   const timeClasses = await getTimeClasses(userId);
-  const activeTc = tc ?? timeClasses[0]?.time_class ?? "all";
+  const activeTc = tc ?? pickDefaultClass(timeClasses);
 
   const [stats, openings, colors] = await Promise.all([
     getDashboardStats(userId, activeTc),

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getUserId, getDashboardStats, getTopOpeningsByClass, getHighlightGames, getEloHistory, getResultStats, getTimeClasses } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpeningsByClass, getHighlightGames, getEloHistory, getResultStats, getTimeClasses, pickDefaultClass } from "@/services/dashboardData";
 import { TimeClassSelector } from "@/components/TimeClassSelector";
 import type { HighlightGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
@@ -73,7 +73,7 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   // Pick the time control to show: the requested one, else the most-played.
   const timeClasses = await getTimeClasses(userId);
-  const activeTc = tc ?? timeClasses[0]?.time_class ?? "all";
+  const activeTc = tc ?? pickDefaultClass(timeClasses);
 
   const [stats, openings, insights, highlights, eloHistory, resultStats] = await Promise.all([
     getDashboardStats(userId, activeTc),
