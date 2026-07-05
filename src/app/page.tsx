@@ -101,7 +101,7 @@ export default function Home() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin inline-block" />
-                Importando partidas…
+                Importando tu historial…
               </span>
             ) : "Ver mis partidas →"}
           </button>
@@ -111,7 +111,7 @@ export default function Home() {
         </form>
 
         <p className="text-[11px] text-muted-foreground mt-4">
-          Gratis · Sin registro · Últimas 50 partidas públicas
+          Gratis · Sin registro · Todo tu historial público
         </p>
       </div>
 
