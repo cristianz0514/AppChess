@@ -96,7 +96,7 @@ export default async function DashboardPage({ searchParams }: Props) {
         {/* ── HERO: the dominant experience — revisit where you collapsed ── */}
         {highlights.mostErrors && highlights.mostErrors.errorCount > 0 && (
           <Link
-            href={`/blunders/${highlights.mostErrors.id}?story=1`}
+            href={`/blunders/${highlights.mostErrors.id}?blunder=1`}
             className="block rounded-3xl p-5 border transition-all active:scale-[0.99]"
             style={{
               borderColor: "var(--bv-purple)",

@@ -631,13 +631,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const [showSummary, setShowSummary] = useState(false);
   const summaryAutoOpened = useRef(false);
   useEffect(() => {
-    // Pop the review summary shortly after load (unless we went straight to
-    // Story Mode) — a clean closed→open entrance animation.
-    if (summaryAutoOpened.current || autoStory || !gameAnalyzed) return;
+    // Pop the review summary shortly after load — same for every entry point.
+    if (summaryAutoOpened.current || !gameAnalyzed) return;
     summaryAutoOpened.current = true;
     const t = setTimeout(() => setShowSummary(true), 350);
     return () => clearTimeout(t);
-  }, [autoStory, gameAnalyzed]);
+  }, [gameAnalyzed]);
 
   // Engine's best move per critical moment (Stockfish, objective) — SAN + green
   // arrow, grounding the "why" in real calculation. Cached by move index.
@@ -717,16 +716,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   }
   function exitStory() { setStoryStep(null); setBestMoveArrow(null); }
 
-  // Auto-start Story Mode when arrived via "Revivir" (guided, cinematic entry).
-  const autoStarted = useRef(false);
-  useEffect(() => {
-    if (autoStory && !autoStarted.current && storySlides.length > 0) {
-      autoStarted.current = true;
-      setBestMoveArrow(null);
-      setStoryStep(0);
-      go(storySlides[0].boardIdx);
-    }
-  }, [autoStory, storySlides, go]);
 
   function storyGo(step: number) {
     const clamped = Math.max(0, Math.min(storySlides.length - 1, step));
