@@ -82,8 +82,10 @@ export default async function DashboardPage({ searchParams }: Props) {
   const topInsight = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
   const remainingInsights = insights.filter((i) => i !== topInsight);
 
-  const strongOpenings = openings.filter((o) => o.winrate >= 55).slice(0, 2);
-  const weakOpenings   = openings.filter((o) => o.winrate < 45).slice(0, 2);
+  // Require a real sample (≥3 games) so a lucky small-sample opening isn't shown.
+  const rankable       = openings.filter((o) => o.games_played >= 3);
+  const strongOpenings = rankable.filter((o) => o.winrate >= 55).slice(0, 2);
+  const weakOpenings   = rankable.filter((o) => o.winrate < 45).slice(0, 2);
 
   return (
     <AppLayout username={username}>

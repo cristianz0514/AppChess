@@ -15,7 +15,10 @@ export default async function StatsPage() {
   ]);
 
   const initials    = username.slice(0, 2).toUpperCase();
-  const bestOpening = openings.sort((a, b) => b.winrate - a.winrate)[0] ?? null;
+  // Require a real sample (≥4 games) so a lucky 2-0 opening isn't crowned "best";
+  // fall back to any opening if none qualify.
+  const eligible    = openings.filter((o) => o.games_played >= 4);
+  const bestOpening = (eligible.length ? eligible : openings).sort((a, b) => b.winrate - a.winrate)[0] ?? null;
 
   const statRows = [
     { label: "Total de Partidas", value: stats.totalGames,                                    color: "var(--foreground)" },
