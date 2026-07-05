@@ -954,51 +954,31 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             </div>
           )}
 
-          {/* Critical moment summary card (when not in story) */}
+          {/* Critical moment — slim quick-access row (detail lives in the per-move bubble) */}
           {!inExplore && !inStory && criticalMoment && (
-            <div className="rounded-2xl border p-4"
+            <div className="rounded-xl border flex items-center gap-2 px-3 py-2"
               style={{
                 borderColor: idx === criticalMoment.idx ? "var(--bv-purple)" : "var(--border)",
                 background: "oklch(0.61 0.22 285 / 0.07)",
               }}>
-              <button onClick={() => go(criticalMoment.idx)} className="w-full text-left active:scale-[0.99] transition-transform">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap size={15} style={{ color: "var(--bv-purple)" }} />
-                  <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
-                    Momento Crítico
-                  </span>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-2xl font-display font-bold leading-[1.1]">
-                    Esta jugada <span style={{ color: "var(--bv-purple)" }}>cambió</span> la partida.
-                  </p>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold font-mono leading-tight">
-                      {criticalMoment.move.moveNumber}{criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
-                    </p>
-                    <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-1">Swing</p>
-                    <div className="flex items-center gap-1 justify-end mt-0.5">
-                      <span className="text-[11px] font-mono px-1.5 py-0.5 rounded tabular-nums"
-                        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-                        {fmtEval(criticalMoment.evalBefore)}
-                      </span>
-                      <span className="text-muted-foreground text-[11px]">→</span>
-                      <span className="text-[11px] font-mono px-1.5 py-0.5 rounded tabular-nums font-bold"
-                        style={{ background: "oklch(0.63 0.23 25 / 0.12)", color: "var(--bv-red)" }}>
-                        {fmtEval(criticalMoment.evalAfter)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {storyNarrative(criticalMoment.move, criticalMoment.evalBefore, criticalMoment.evalAfter).cause}
-                </p>
+              <button onClick={() => go(criticalMoment.idx)}
+                className="flex items-center gap-2 flex-1 min-w-0 text-left active:scale-[0.99] transition-transform">
+                <Zap size={14} className="shrink-0" style={{ color: "var(--bv-purple)" }} />
+                <span className="text-[10px] font-bold tracking-widest uppercase shrink-0" style={{ color: "var(--bv-purple)" }}>
+                  Momento clave
+                </span>
+                <span className="text-xs font-mono font-semibold truncate">
+                  {criticalMoment.move.moveNumber}{criticalMoment.move.color === "w" ? "." : "…"} {criticalMoment.move.san}
+                </span>
+                <span className="text-[11px] font-mono tabular-nums ml-auto shrink-0" style={{ color: "var(--bv-red)" }}>
+                  {fmtEval(criticalMoment.evalBefore)}→{fmtEval(criticalMoment.evalAfter)}
+                </span>
               </button>
               {criticalMoments.length >= 2 && (
                 <button onClick={startStory}
-                  className="mt-3 w-full py-2 rounded-xl text-xs font-bold text-white"
+                  className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full text-white"
                   style={{ background: "var(--bv-purple)" }}>
-                  Ver la historia: {criticalMoments.length} momentos clave →
+                  Historia →
                 </button>
               )}
             </div>
