@@ -20,11 +20,15 @@ export async function importGames(username: string): Promise<{
   // existed, while preserving each game's already-computed accuracy.
   const rows = parsed.map((g) => ({ ...g, user_id: userId }));
 
-  const { error } = await supabase
-    .from("games")
-    .upsert(rows, { onConflict: "chess_game_id" });
-
-  if (error) throw new Error(error.message);
+  // Full history can be thousands of games (each with a full PGN). Upsert in
+  // chunks so we never send a payload big enough to be rejected/timed out.
+  const CHUNK = 300;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const { error } = await supabase
+      .from("games")
+      .upsert(rows.slice(i, i + CHUNK), { onConflict: "chess_game_id" });
+    if (error) throw new Error(error.message);
+  }
 
   await updateOpeningStats(userId);
 
