@@ -33,6 +33,7 @@ export function parseGame(
       time_control: raw.time_control,
       time_class: raw.time_class ?? classifyTimeControl(raw.time_control),
       played_at: raw.end_time ? new Date(raw.end_time * 1000).toISOString() : null,
+      ended_by_abandonment: endedByAbandonment(raw.pgn),
       played_as: playedAs,
     };
   } catch {

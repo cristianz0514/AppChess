@@ -1,6 +1,5 @@
 import { cache } from "react";
 import { supabase } from "@/lib/supabase";
-import { endedByAbandonment } from "./pgnParser";
 import type { DashboardStats, OpeningStat, Game } from "@/types";
 
 export const getUserId = cache(async function(username: string): Promise<string | null> {
@@ -427,9 +426,10 @@ export interface ResultStats {
 // you got while you were actually losing because the rival just left) is excluded.
 // Games without analysis (no final eval) keep their original result.
 export const getResultStats = cache(async function(userId: string, timeClass?: string): Promise<ResultStats> {
+  // Read the precomputed abandonment flag instead of pulling every PGN.
   let q = supabase
     .from("games")
-    .select("id, result, played_as, pgn")
+    .select("id, result, played_as, ended_by_abandonment")
     .eq("user_id", userId);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
   const { data: games } = await q.order("played_at", { ascending: false, nullsFirst: false });
@@ -440,7 +440,7 @@ export const getResultStats = cache(async function(userId: string, timeClass?: s
 
   // Only abandonment games need an eval check — fetch their final eval only.
   const abandonIds = games
-    .filter((g) => endedByAbandonment(g.pgn) && (g.result === "win" || g.result === "loss"))
+    .filter((g) => g.ended_by_abandonment && (g.result === "win" || g.result === "loss"))
     .map((g) => g.id);
 
   const finalEval = new Map<string, { mv: number; eval: number }>();
@@ -461,7 +461,7 @@ export const getResultStats = cache(async function(userId: string, timeClass?: s
   const THRESHOLD = 2; // pawns of advantage that make the result "earned"
 
   for (const g of games) {
-    if (endedByAbandonment(g.pgn) && (g.result === "win" || g.result === "loss")) {
+    if (g.ended_by_abandonment && (g.result === "win" || g.result === "loss")) {
       const fin = finalEval.get(g.id);
       if (fin) {
         // eval is white-perspective; convert to "my" perspective.

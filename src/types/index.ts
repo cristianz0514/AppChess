@@ -16,6 +16,7 @@ export interface Game {
   time_control: string;
   time_class: string | null;
   played_at: string | null;
+  ended_by_abandonment: boolean;
   accuracy: number | null;
   played_as: "white" | "black";
   created_at: string;
