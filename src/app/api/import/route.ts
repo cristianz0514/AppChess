@@ -6,13 +6,13 @@ export async function POST(req: NextRequest) {
     const { username } = await req.json();
 
     if (!username || typeof username !== "string") {
-      return NextResponse.json({ error: "Username required" }, { status: 400 });
+      return NextResponse.json({ error: "Escribe tu usuario de Chess.com" }, { status: 400 });
     }
 
     const result = await importGames(username.trim());
     return NextResponse.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Import failed";
+    const message = err instanceof Error ? err.message : "No se pudo importar. Inténtalo de nuevo.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

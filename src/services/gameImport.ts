@@ -7,7 +7,7 @@ export async function importGames(username: string): Promise<{
   userId: string;
 }> {
   const valid = await validateUsername(username);
-  if (!valid) throw new Error("Username not found on Chess.com");
+  if (!valid) throw new Error("No encontramos ese usuario en Chess.com. Revisa que esté bien escrito.");
 
   const userId = await getOrCreateUser(username);
   const rawGames = await fetchRecentGames(username, 50);

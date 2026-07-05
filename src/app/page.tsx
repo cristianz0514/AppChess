@@ -25,7 +25,7 @@ export default function Home() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Import failed");
+      if (!res.ok) throw new Error(data.error ?? "No se pudo importar. Inténtalo de nuevo.");
 
       trackGamesImported(data.imported ?? 1);
       document.cookie = `bv_username=${encodeURIComponent(username.trim())}; path=/; max-age=2592000; SameSite=Lax`;
