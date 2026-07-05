@@ -58,12 +58,13 @@ export default async function InsightsPage() {
 
   return (
     <AppLayout username={username}>
-      <div className="space-y-4 max-w-lg mx-auto">
+      <div className="space-y-4 max-w-lg mx-auto"
+        style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
         {/* Saludo */}
         <div>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Coach IA</p>
-          <h1 className="text-xl font-bold mt-0.5">Hola, <span className="capitalize">{username}</span>.</h1>
+          <h1 className="font-display text-2xl font-bold mt-0.5">Hola, <span className="capitalize">{username}</span>.</h1>
           {insights.length > 0 && (
             <p className="text-sm text-muted-foreground mt-1">
               Analicé tus últimas partidas. Esto es lo que encontré.
@@ -128,8 +129,6 @@ export default async function InsightsPage() {
             </div>
           </div>
         )}
-
-        {insights.length === 0 && <InsightsCard insights={[]} username={username} />}
 
         {/* CTA */}
         <div className="rounded-2xl p-5 text-center space-y-2"

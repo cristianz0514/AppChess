@@ -31,7 +31,8 @@ export default async function StatsPage() {
 
   return (
     <AppLayout username={username}>
-      <div className="space-y-4 max-w-lg mx-auto">
+      <div className="space-y-4 max-w-lg mx-auto"
+        style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
         {/* Tarjeta de perfil */}
         <div className="bg-card border border-border rounded-2xl p-5 flex items-center gap-4">
