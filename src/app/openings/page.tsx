@@ -59,11 +59,12 @@ export default function OpeningsPage() {
 
   return (
     <AppLayout username={username}>
-      <div className="space-y-4 max-w-lg mx-auto">
+      <div className="space-y-4 max-w-lg mx-auto"
+        style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
         <div>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Análisis</p>
-          <h1 className="text-xl font-bold mt-0.5">Repertorio de Aperturas</h1>
+          <h1 className="font-display text-2xl font-bold mt-0.5">Repertorio de Aperturas</h1>
         </div>
 
         {/* ── Color filter ─────────────────────────────────────── */}

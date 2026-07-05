@@ -38,11 +38,12 @@ export default async function BlundersPage({ searchParams }: Props) {
 
   return (
     <AppLayout username={username}>
-      <div className="space-y-4 max-w-lg mx-auto">
+      <div className="space-y-4 max-w-lg mx-auto"
+        style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
         <div>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Historial</p>
-          <h1 className="text-xl font-bold mt-0.5">
+          <h1 className="font-display text-2xl font-bold mt-0.5">
             {opening ? "Partidas por Apertura" : "Partidas Recientes"}
           </h1>
           {opening && (
