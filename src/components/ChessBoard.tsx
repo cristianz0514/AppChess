@@ -228,11 +228,13 @@ export function ChessBoard({
         const { x, y } = sqToXYPct(lastMove.to, orientation);
         return (
           <div
+            key={lastMove.to + lastMoveBadge.emoji}
             style={{
               position: "absolute",
               left: `${x + 4}%`,
               top: `${y - 4.4}%`,
               transform: "translate(-50%, -50%)",
+              animation: "bvBadgePop 0.34s cubic-bezier(0.34, 1.56, 0.64, 1) both",
               width: "5cqi",
               height: "5cqi",
               borderRadius: "9999px",

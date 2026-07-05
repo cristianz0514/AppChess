@@ -37,6 +37,7 @@ interface Props {
 export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, avgAccuracy, counts, momentsCount, gameResult }: Props) {
   const [render, setRender] = useState(open);
   const [shown, setShown] = useState(false);
+  const [displayAcc, setDisplayAcc] = useState(0);
 
   useEffect(() => {
     if (open) {
@@ -48,6 +49,23 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
     const t = setTimeout(() => setRender(false), 260);
     return () => clearTimeout(t);
   }, [open]);
+
+  // Count the precisión up from 0 when the modal appears (premium micro-interaction).
+  useEffect(() => {
+    if (!shown || accuracy == null) { setDisplayAcc(accuracy ?? 0); return; }
+    const target = accuracy;
+    const start = performance.now();
+    const dur = 650;
+    let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplayAcc(Math.round(target * eased * 10) / 10);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [shown, accuracy]);
 
   if (!render) return null;
 
@@ -103,7 +121,7 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
             </div>
             <div className="text-right">
               <p className="text-4xl font-display font-bold leading-none" style={{ color: "var(--bv-green)" }}>
-                {accuracy != null ? `${accuracy}` : "—"}<span className="text-lg">%</span>
+                {accuracy != null ? displayAcc.toFixed(1) : "—"}<span className="text-lg">%</span>
               </p>
               <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-0.5">Precisión</p>
               {accDelta != null && (
@@ -117,8 +135,13 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
 
         {/* Classification breakdown */}
         <div className="px-5 py-3 grid grid-cols-2 gap-x-4 gap-y-2">
-          {ROWS.map(({ key, label }) => (
-            <div key={key} className="flex items-center gap-2.5">
+          {ROWS.map(({ key, label }, i) => (
+            <div key={key} className="flex items-center gap-2.5"
+              style={{
+                opacity: shown ? 1 : 0,
+                transform: shown ? "translateY(0)" : "translateY(4px)",
+                transition: `opacity .3s ease ${0.12 + i * 0.04}s, transform .3s ease ${0.12 + i * 0.04}s`,
+              }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                 style={{ background: COLOR[key] }}>
                 {GLYPH[key]}
