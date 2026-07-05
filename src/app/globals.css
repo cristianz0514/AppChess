@@ -150,6 +150,12 @@
   100% { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
 }
 
+/* Gentle entrance for content blocks (board, panels) on mount. */
+@keyframes bvFadeInUp {
+  0%   { transform: translateY(10px); opacity: 0; }
+  100% { transform: translateY(0);    opacity: 1; }
+}
+
 /* Brilliant/Great celebration toast: pop in, hold, drift up and fade. */
 @keyframes bvCelebrate {
   0%   { transform: translateY(8px) scale(0.8); opacity: 0; }

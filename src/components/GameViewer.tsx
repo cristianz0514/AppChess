@@ -969,7 +969,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           })()}
 
           {/* Board + eval bar (bar on top, board edge-to-edge) */}
-          <div className="space-y-2 -mx-4">
+          <div className="space-y-2 -mx-4" style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
             <div className="px-4"><EvalBar moves={moves} idx={inExplore ? -1 : idx} /></div>
             <div className="relative"
               onTouchStart={!inExplore ? onTouchStart : undefined}
