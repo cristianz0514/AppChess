@@ -31,7 +31,13 @@ export function TimeClassSelector({ classes, current }: Props) {
     router.push(`${pathname}?${next.toString()}`);
   };
 
-  const options = [...classes.map((c) => c.time_class), "all"];
+  // Stable, predictable order regardless of how counts fluctuate.
+  const ORDER = ["blitz", "rapid", "bullet", "daily", "unknown"];
+  const rank = (tc: string) => { const i = ORDER.indexOf(tc); return i === -1 ? ORDER.length : i; };
+  const options = [
+    ...classes.map((c) => c.time_class).sort((a, b) => rank(a) - rank(b)),
+    "all",
+  ];
 
   return (
     <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">

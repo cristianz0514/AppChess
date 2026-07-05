@@ -43,6 +43,8 @@ function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: 
   );
 }
 
+export const metadata = { title: "Coach IA" };
+
 export default async function InsightsPage() {
   const username  = await getUsername();
   const userId    = await getUserId(username);

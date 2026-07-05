@@ -4,6 +4,8 @@ import { getUserId, getDashboardStats, getTopOpeningsByClass, getColorStats, get
 import { translateOpening } from "@/lib/translateOpening";
 import { TimeClassSelector } from "@/components/TimeClassSelector";
 
+export const metadata = { title: "Estadísticas" };
+
 export default async function StatsPage({ searchParams }: { searchParams: Promise<{ tc?: string }> }) {
   const { tc } = await searchParams;
   const username = await getUsername();

@@ -12,6 +12,8 @@ import { translateOpening } from "@/lib/translateOpening";
 import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, AlertTriangle, type LucideIcon } from "lucide-react";
 import type { Insight } from "@/types";
 
+export const metadata = { title: "Inicio" };
+
 interface Props {
   searchParams: Promise<{ username?: string; tc?: string }>;
 }

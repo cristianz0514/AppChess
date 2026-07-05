@@ -27,9 +27,26 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "AnaliChess IA",
-  description: "Análisis de ajedrez con IA",
+  title: {
+    default: "AnaliChess IA — Tu entrenador de ajedrez con IA",
+    template: "%s · AnaliChess IA",
+  },
+  description:
+    "Conecta tu cuenta de Chess.com y descubre dónde se te escapan las partidas: análisis de Stockfish jugada a jugada y un coach IA que te explica qué debiste jugar.",
   manifest: "/manifest.json",
+  applicationName: "AnaliChess IA",
+  appleWebApp: {
+    capable: true,
+    title: "AnaliChess IA",
+    statusBarStyle: "default",
+  },
+  openGraph: {
+    title: "AnaliChess IA — Tu entrenador de ajedrez con IA",
+    description:
+      "Análisis de Stockfish jugada a jugada y un coach IA que te explica dónde y por qué se te escapan las partidas.",
+    type: "website",
+    locale: "es",
+  },
 };
 
 export default function RootLayout({

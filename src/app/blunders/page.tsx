@@ -15,6 +15,8 @@ function formatDate(iso: string) {
   return d.toLocaleDateString("es-ES", { month: "short", day: "numeric" });
 }
 
+export const metadata = { title: "Partidas" };
+
 interface Props {
   searchParams: Promise<{ opening?: string }>;
 }
