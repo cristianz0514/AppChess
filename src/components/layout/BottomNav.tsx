@@ -49,7 +49,7 @@ export function BottomNav() {
                 "flex flex-col items-center justify-center gap-1 flex-1 text-[10px] font-medium transition-colors active:opacity-60",
                 active ? "" : "text-muted-foreground"
               )}
-              style={active ? { color: "var(--bv-green)" } : {}}
+              style={active ? { color: "var(--bv-purple)" } : {}}
             >
               <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
               {label}
