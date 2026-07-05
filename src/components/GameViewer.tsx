@@ -16,6 +16,7 @@ interface DbMove {
   classification: string | null;
   centipawn_loss?: number | null;
   evaluation?: number | null;
+  explanation?: string | null;
 }
 
 interface MoveInfo {
@@ -28,6 +29,7 @@ interface MoveInfo {
   classification: string | null;
   centipawnLoss: number | null;
   evaluation: number | null;   // in pawns, white's perspective; ±9999 = mate
+  explanation: string | null;  // short AI coach comment (precomputed), when available
 }
 
 type Tab = "analizar" | "jugadas" | "consejos";
@@ -184,6 +186,7 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
       classification: db?.classification ?? null,
       centipawnLoss: db?.centipawn_loss ?? null,
       evaluation: db?.evaluation ?? null,
+      explanation: db?.explanation ?? null,
     };
   });
 }
@@ -879,37 +882,53 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         <>
 
 
-          {/* Coach one-liner - fixed height so the board never shifts */}
+          {/* Coach line — precomputed AI comment inline; fixed height so the board never shifts */}
           {!inExplore && (() => {
             const c = moveComment(currentMove);
             const cls = currentMove?.classification ?? null;
             const isMine = currentMove?.color === playerColor;
             const curE = toMine(currentMove?.evaluation ?? null);
             const prevE = toMine(idx > 0 ? moves[idx - 1].evaluation : 0);
-            let detail = c?.text ?? "";
+            const ai = currentMove?.explanation ?? null;
+            let computed = c?.text ?? "";
             if (currentMove && c && isMine && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
               const swing = curE - prevE;
               const to = fmtEval(curE);
-              if (cls === "blunder" || cls === "mistake") detail = `Perdiste ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
-              else if (cls === "inaccuracy") detail = `Imprecisa (${fmtEval(prevE)} a ${to}).`;
-              else if (cls === "best" || cls === "excellent" || cls === "good") detail = curE >= 1 ? `Mantienes ventaja (${to}).` : curE <= -1 ? `Sigues peor (${to}).` : `Equilibrio (${to}).`;
+              if (cls === "blunder" || cls === "mistake") computed = `Perdiste ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
+              else if (cls === "inaccuracy") computed = `Imprecisa (${fmtEval(prevE)} a ${to}).`;
+              else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `Mantienes ventaja (${to}).` : curE <= -1 ? `Sigues peor (${to}).` : `Equilibrio (${to}).`;
             }
             const color = c?.color ?? "var(--muted-foreground)";
+            const notableMine = isMine && (cls === "blunder" || cls === "mistake" || cls === "inaccuracy");
+            const showWhy = !ai && notableMine && !!gameId;
             return (
-              <div className="flex items-center gap-2 h-12 shrink-0">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
+              <div className="flex items-start gap-2 h-16 shrink-0">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white mt-0.5"
                   style={{ background: color }}>
                   {cls ? CLASS_EMOJI[cls] : "•"}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold truncate" style={{ color }}>
                     {currentMove
-                      ? <><span className="font-mono">{currentMove.san}</span>{c ? ` - ${c.label}` : ""}</>
-                      : "Posicion inicial"}
+                      ? <><span className="font-mono">{currentMove.san}</span>{c ? ` — ${c.label}` : ""}</>
+                      : "Posición inicial"}
                   </p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {detail || (currentMove ? "" : "Usa las flechas para revisar la partida.")}
-                  </p>
+                  {ai ? (
+                    <p className="text-xs leading-snug line-clamp-2 flex items-start gap-1 text-foreground">
+                      <Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
+                      <span>{ai}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {computed || (currentMove ? "" : "Usa las flechas para revisar la partida.")}
+                      {showWhy && (
+                        <button onClick={() => { setWhyOpen(true); explainMove(idx); }}
+                          className="ml-1 font-semibold" style={{ color: "var(--bv-purple)" }}>
+                          · ¿Por qué?
+                        </button>
+                      )}
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -1040,13 +1059,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 style={{ background: "var(--bv-green)" }}>
                 <Target size={16} /> {loadingBestMove ? "Calculando..." : "Mejor jugada"}
               </button>
-              {idx >= 0 && gameId && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake" || currentMove?.classification === "inaccuracy") && (
-                <button onClick={() => { setWhyOpen(true); explainMove(idx); }} title="Por que fue peor?" aria-label="Por que"
-                  className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
-                  style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
-                  <Sparkles size={18} />
-                </button>
-              )}
               {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
                 <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
                   className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"

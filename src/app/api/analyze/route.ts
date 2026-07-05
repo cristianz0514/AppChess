@@ -44,8 +44,8 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        await analyzeGame(game.id, game.pgn, (done, total) => {
-          send({ done, total });
+        await analyzeGame(game.id, game.pgn, (done, total, label) => {
+          send({ done, total, label });
         });
         send({ done: 1, total: 1, finished: true });
       } catch (err) {

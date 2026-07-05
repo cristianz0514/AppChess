@@ -1,9 +1,51 @@
 import { Chess } from "chess.js";
-import { analyzeAllFens, evaluatePosition } from "./stockfish";
+import Groq from "groq-sdk";
+import { analyzeAllFens, evaluatePosition, getBestMove } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
+
+// How many moves get an AI coach comment. Only the moves that matter (errors +
+// brilliant/great) — the ones an expert actually reads. Bounded to keep the
+// pre-view analysis window reasonable.
+const MAX_EXPLAIN = 14;
+const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
+
+const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
+
+const fmtP = (e: number) => (Math.abs(e) >= 90 ? (e > 0 ? "mate a favor" : "mate en contra") : `${e > 0 ? "+" : ""}${e.toFixed(1)}`);
+
+// One SHORT coach sentence, grounded in the engine's best move + eval swing.
+async function coachComment(args: {
+  fenBefore: string; san: string; bestMove: string | null; moveNumber: number;
+  evalBefore: number; evalAfter: number; good: boolean;
+}): Promise<string | null> {
+  if (!groq) return null;
+  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good } = args;
+  const prompt = good
+    ? `Eres un entrenador de ajedrez de élite. En UNA sola frase de MÁXIMO 14 palabras, en español, di por qué ${moveNumber}.${san} es una gran jugada. Básate SOLO en estos datos, no analices por tu cuenta.
+Posición (FEN): ${fenBefore}
+Evaluación antes: ${fmtP(evalBefore)} · después: ${fmtP(evalAfter)}
+Solo la frase, sin comillas ni encabezados.`
+    : `Eres un entrenador de ajedrez de élite. En UNA sola frase de MÁXIMO 14 palabras, en español, di por qué ${moveNumber}.${san} fue peor que ${bestMove ?? "la mejor jugada"}. Básate SOLO en estos datos, no inventes variantes.
+Posición (FEN): ${fenBefore}
+Mejor jugada del motor: ${bestMove ?? "(desconocida)"}
+Evaluación antes: ${fmtP(evalBefore)} · después: ${fmtP(evalAfter)}
+Solo la frase, sin comillas ni encabezados.`;
+  try {
+    const res = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.4,
+      max_tokens: 60,
+    });
+    const text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
+    return text || null;
+  } catch {
+    return null;
+  }
+}
 
 // Two-pass analysis:
 //  Pass 1 — a fast shallow sweep over EVERY position to find where the errors are.
@@ -29,7 +71,7 @@ const toWhite = (score: number, i: number) => (i % 2 === 1 ? score : -score);
 export async function analyzeGame(
   gameId: string,
   pgn: string,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, label?: string) => void,
 ): Promise<void> {
   const chess = new Chess();
 
@@ -50,7 +92,7 @@ export async function analyzeGame(
   }
 
   // ── Pass 1: shallow sweep over every position ──────────────────────────────
-  const evals = await analyzeAllFens(fens, SHALLOW_DEPTH, onProgress);
+  const evals = await analyzeAllFens(fens, SHALLOW_DEPTH, (d, t) => onProgress?.(d, t, "Evaluando cada posición…"));
 
   // Stockfish reports `score cp` from the SIDE-TO-MOVE perspective (UCI standard).
   // Convert to WHITE's perspective so the stored eval is consistent everywhere.
@@ -150,4 +192,58 @@ export async function analyzeGame(
       : null;
 
   await supabase.from("games").update({ accuracy }).eq("id", gameId);
+
+  // ── Pass 3: AI coach comments for the moves that matter ────────────────────
+  // Runs inside the pre-view analysis window. Best-move (engine) + a short,
+  // grounded LLM sentence, persisted to moves.explanation. Degrades gracefully
+  // if the column is absent or GROQ is unset.
+  if (!groq) return;
+
+  const notable = moves
+    .map((m, i) => ({ i, cls: m.classification, loss: m.centipawn_loss ?? 0 }))
+    .filter((m) => m.cls && EXPLAIN_CLASSES.has(m.cls));
+  const weight: Record<string, number> = { blunder: 5, mistake: 4, brilliant: 4, great: 3, inaccuracy: 1 };
+  const chosen = notable
+    .sort((a, b) => (weight[b.cls!] - weight[a.cls!]) || (b.loss - a.loss))
+    .slice(0, MAX_EXPLAIN)
+    .map((m) => m.i)
+    .sort((a, b) => a - b);
+
+  for (let k = 0; k < chosen.length; k++) {
+    const i = chosen[k];
+    onProgress?.(k, chosen.length, "Escribiendo el análisis del coach…");
+    const fenBefore = i === 0 ? new Chess().fen() : fens[i - 1];
+    const moverWhite = i % 2 === 0;
+    const evalAfter = whiteEval[i] == null ? 0 : (moverWhite ? whiteEval[i]! : -whiteEval[i]!);
+    const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
+    const good = moves[i].classification === "brilliant" || moves[i].classification === "great";
+
+    // Engine best move (SAN) to ground the comment — only needed for errors.
+    let bestSan: string | null = null;
+    if (!good) {
+      try {
+        const bm = await getBestMove(fenBefore, DEEP_DEPTH);
+        if (bm) {
+          const c = new Chess(fenBefore);
+          const mv = c.move({ from: bm.from, to: bm.to, promotion: "q" });
+          if (mv) bestSan = mv.san;
+        }
+      } catch { /* ignore */ }
+    }
+
+    const text = await coachComment({
+      fenBefore, san: moves[i].move, bestMove: bestSan,
+      moveNumber: moves[i].move_number, evalBefore, evalAfter, good,
+    });
+
+    if (text) {
+      try {
+        await supabase.from("moves").update({ explanation: text })
+          .eq("game_id", gameId).eq("move_number", moves[i].move_number).eq("move", moves[i].move);
+      } catch { /* column may not exist yet */ }
+    }
+    // Keep the event loop responsive between heavy calls on the free tier.
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  onProgress?.(chosen.length, chosen.length, "Análisis completado");
 }

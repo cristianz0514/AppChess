@@ -32,17 +32,33 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   const stats = await getDashboardStats(game.user_id).catch(() => null);
   const avgAccuracy = stats?.avgAccuracy ?? null;
 
-  const { data: moves } = await supabase
-    .from("moves")
-    .select("move_number, classification, centipawn_loss, evaluation")
-    .eq("game_id", id)
-    .order("move_number", { ascending: true });
+  // Include the AI coach explanation when the column exists; fall back cleanly
+  // to the base columns if it doesn't (older schema).
+  let moves: Array<Record<string, unknown>> | null = null;
+  {
+    const withExpl = await supabase
+      .from("moves")
+      .select("move_number, classification, centipawn_loss, evaluation, explanation")
+      .eq("game_id", id)
+      .order("move_number", { ascending: true });
+    if (withExpl.error) {
+      const base = await supabase
+        .from("moves")
+        .select("move_number, classification, centipawn_loss, evaluation")
+        .eq("game_id", id)
+        .order("move_number", { ascending: true });
+      moves = base.data;
+    } else {
+      moves = withExpl.data;
+    }
+  }
 
   const dbMoves = (moves ?? []) as Array<{
     move_number: number;
     classification: string | null;
     centipawn_loss: number | null;
     evaluation: number | null;
+    explanation?: string | null;
   }>;
 
   return (

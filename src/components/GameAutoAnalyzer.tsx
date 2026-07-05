@@ -14,6 +14,7 @@ export function GameAutoAnalyzer({ gameId }: Props) {
   const [status, setStatus] = useState<"running" | "busy" | "error">("running");
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
+  const [label, setLabel] = useState("Analizando con Stockfish…");
 
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -56,6 +57,7 @@ export function GameAutoAnalyzer({ gameId }: Props) {
             if (msg.error) throw new Error(msg.error);
             if (typeof msg.done === "number") setDone(msg.done);
             if (typeof msg.total === "number") setTotal(msg.total);
+            if (typeof msg.label === "string" && msg.label) setLabel(msg.label);
             if (msg.finished) { router.refresh(); return; }
           }
         }
@@ -93,9 +95,9 @@ export function GameAutoAnalyzer({ gameId }: Props) {
 
           <div className="w-full space-y-2">
             <div className="flex justify-between text-xs font-semibold">
-              <span>Analizando con Stockfish…</span>
+              <span>{label}</span>
               <span style={{ color: "var(--bv-purple)" }}>
-                {total > 0 ? `${done}/${total} jugadas` : "Iniciando…"}
+                {total > 0 ? `${done}/${total}` : "Iniciando…"}
               </span>
             </div>
 

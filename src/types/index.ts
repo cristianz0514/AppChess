@@ -27,6 +27,7 @@ export interface Move {
   evaluation: number | null;
   centipawn_loss: number | null;
   classification: "brilliant" | "great" | "best" | "excellent" | "good" | "inaccuracy" | "mistake" | "blunder" | null;
+  explanation?: string | null;
 }
 
 export interface Insight {
