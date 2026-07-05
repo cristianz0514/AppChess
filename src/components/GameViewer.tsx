@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Star, Search, Target, CheckCircle2 } from "lucide-react";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -943,7 +943,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               {inExplore && (
                 <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
                   style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
-                  <span>🔍 Exploración libre</span>
+                  <span className="flex items-center gap-1"><Search size={13} /> Exploración libre</span>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setExploreIdx(Math.max(0, exploreIdx - 1))}
@@ -992,9 +992,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {!inExplore && (
             <button
               onClick={enterExplore}
-              className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40"
+              className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40 flex items-center justify-center gap-1.5"
               style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
-              🔍 Explorar desde aquí
+              <Search size={14} /> Explorar desde aquí
             </button>
           )}
 
@@ -1147,8 +1147,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       {tab === "consejos" && !inPractice && (
         <div className="space-y-3">
           {moves.filter(m => m.classification === "blunder" || m.classification === "mistake").length === 0 ? (
-            <div className="rounded-2xl p-8 text-center border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-              <p className="text-3xl mb-2">🎯</p>
+            <div className="rounded-2xl p-8 text-center border flex flex-col items-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+              <CheckCircle2 size={36} style={{ color: "var(--bv-green)" }} className="mb-2" />
               <p className="text-sm font-semibold">¡Partida limpia!</p>
               <p className="text-xs text-muted-foreground mt-1">No se detectaron errores graves en esta partida.</p>
             </div>
@@ -1167,9 +1167,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                     <div key={i} className="rounded-2xl border overflow-hidden"
                       style={{ background: "var(--card)", borderColor: "var(--border)", borderLeftColor: col, borderLeftWidth: 4 }}>
                       <div className="p-3 flex items-start gap-3">
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
-                          style={{ background: `${col}20` }}>
-                          {isBlunder ? "⚠️" : "⚡"}
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
+                          style={{ background: col }}>
+                          {isBlunder ? "✕" : "?"}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
@@ -1193,14 +1193,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                         </button>
                         <button onClick={() => { fetchBestMove(m.flatIdx); setTab("analizar"); }}
                           disabled={loadingBestMove}
-                          className="flex-1 py-2 text-xs font-bold transition-colors disabled:opacity-50"
+                          className="flex-1 py-2 text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
                           style={{ color: "var(--bv-green)" }}>
-                          ✨ Mejor jugada
+                          <Search size={13} /> Mejor jugada
                         </button>
                         <button onClick={() => startPractice(m.flatIdx)}
-                          className="flex-1 py-2 text-xs font-bold transition-colors"
+                          className="flex-1 py-2 text-xs font-bold transition-colors flex items-center justify-center gap-1"
                           style={{ color: "var(--bv-purple)" }}>
-                          🎯 Practicar
+                          <Target size={13} /> Practicar
                         </button>
                       </div>
                     </div>
