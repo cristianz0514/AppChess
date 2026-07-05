@@ -8,7 +8,7 @@ import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
-import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, type LucideIcon } from "lucide-react";
+import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, AlertTriangle, type LucideIcon } from "lucide-react";
 import type { Insight } from "@/types";
 
 interface Props {
@@ -220,10 +220,10 @@ export default async function DashboardPage({ searchParams }: Props) {
                 {categoryLabel[topInsight.category]}
               </p>
               <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
+                className="w-7 h-7 rounded-lg flex items-center justify-center"
                 style={{ background: "oklch(0.70 0.18 50 / 0.2)" }}
               >
-                ⚠️
+                <AlertTriangle size={14} style={{ color: "var(--bv-orange)" }} />
               </div>
             </div>
             <p className="text-sm leading-relaxed font-medium">{topInsight.message}</p>
