@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getUserId, getDashboardStats, getTopOpenings, getHighlightGames, getEloHistory, getResultStats } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpeningsByClass, getHighlightGames, getEloHistory, getResultStats, getTimeClasses } from "@/services/dashboardData";
+import { TimeClassSelector } from "@/components/TimeClassSelector";
 import type { HighlightGame } from "@/services/dashboardData";
 import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
@@ -12,7 +13,7 @@ import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, AlertTriangle, typ
 import type { Insight } from "@/types";
 
 interface Props {
-  searchParams: Promise<{ username?: string }>;
+  searchParams: Promise<{ username?: string; tc?: string }>;
 }
 
 const categoryLabel: Record<Insight["category"], string> = {
@@ -61,7 +62,7 @@ function HighlightCard({
 }
 
 export default async function DashboardPage({ searchParams }: Props) {
-  const { username: usernameParam } = await searchParams;
+  const { username: usernameParam, tc } = await searchParams;
   const cookieStore = await cookies();
   const username = usernameParam ?? cookieStore.get("bv_username")?.value;
 
@@ -70,13 +71,17 @@ export default async function DashboardPage({ searchParams }: Props) {
   const userId = await getUserId(username);
   if (!userId) redirect("/");
 
+  // Pick the time control to show: the requested one, else the most-played.
+  const timeClasses = await getTimeClasses(userId);
+  const activeTc = tc ?? timeClasses[0]?.time_class ?? "all";
+
   const [stats, openings, insights, highlights, eloHistory, resultStats] = await Promise.all([
-    getDashboardStats(userId),
-    getTopOpenings(userId),
+    getDashboardStats(userId, activeTc),
+    getTopOpeningsByClass(userId, activeTc),
     getInsights(userId),
-    getHighlightGames(userId),
-    getEloHistory(userId),
-    getResultStats(userId),
+    getHighlightGames(userId, activeTc),
+    getEloHistory(userId, activeTc),
+    getResultStats(userId, activeTc),
   ]);
 
   const topInsight = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
@@ -91,6 +96,9 @@ export default async function DashboardPage({ searchParams }: Props) {
     <AppLayout username={username}>
       <div className="space-y-4 max-w-lg mx-auto"
         style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+
+        {/* Time-control selector — keep Blitz/Rapid/… stats separate */}
+        <TimeClassSelector classes={timeClasses} current={activeTc} />
 
 
         {/* ── HERO: the dominant experience — revisit where you collapsed ── */}

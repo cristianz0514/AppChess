@@ -12,13 +12,33 @@ export const getUserId = cache(async function(username: string): Promise<string 
   return data?.id ?? null;
 });
 
-export const getDashboardStats = cache(async function(userId: string): Promise<DashboardStats> {
-  const { data: games } = await supabase
+// Whether a chosen class actually filters (undefined/"all" → mixed, all games).
+const filtersClass = (tc?: string) => !!tc && tc !== "all";
+
+// Distinct time controls the player has games in, with counts (most-played first).
+export const getTimeClasses = cache(async function(userId: string): Promise<{ time_class: string; count: number }[]> {
+  const { data } = await supabase
     .from("games")
-    .select("result, accuracy, white_rating, black_rating, played_as, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(50); // focus on the last 50 games, consistent with the rest of the app
+    .select("time_class")
+    .eq("user_id", userId);
+  if (!data || data.length === 0) return [];
+  const counts = new Map<string, number>();
+  for (const g of data) {
+    const tc = (g.time_class as string) ?? "unknown";
+    counts.set(tc, (counts.get(tc) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([time_class, count]) => ({ time_class, count }))
+    .sort((a, b) => b.count - a.count);
+});
+
+export const getDashboardStats = cache(async function(userId: string, timeClass?: string): Promise<DashboardStats> {
+  let q = supabase
+    .from("games")
+    .select("result, accuracy, white_rating, black_rating, played_as, played_at")
+    .eq("user_id", userId);
+  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  const { data: games } = await q.order("played_at", { ascending: false, nullsFirst: false });
 
   if (!games || games.length === 0) {
     return { totalGames: 0, wins: 0, losses: 0, draws: 0, winrate: 0, avgAccuracy: null, currentRating: null };
@@ -59,6 +79,40 @@ export const getTopOpenings = cache(async function(userId: string): Promise<Open
   return data ?? [];
 });
 
+// Openings computed live from games, filtered by time class (the opening_stats
+// table is aggregated across ALL time controls, so it can't answer per-class).
+export async function getTopOpeningsByClass(userId: string, timeClass?: string): Promise<OpeningStat[]> {
+  let q = supabase
+    .from("games")
+    .select("opening, result")
+    .eq("user_id", userId)
+    .not("opening", "is", null);
+  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  const { data: games } = await q;
+  if (!games || games.length === 0) return [];
+
+  const map = new Map<string, { wins: number; losses: number; draws: number }>();
+  for (const g of games) {
+    const key = (g.opening as string) ?? "Unknown";
+    if (!map.has(key)) map.set(key, { wins: 0, losses: 0, draws: 0 });
+    const s = map.get(key)!;
+    if (g.result === "win") s.wins++;
+    else if (g.result === "loss") s.losses++;
+    else s.draws++;
+  }
+  return [...map.entries()]
+    .map(([opening_name, s]) => {
+      const total = s.wins + s.losses + s.draws;
+      return {
+        id: opening_name, user_id: userId, opening_name,
+        games_played: total, wins: s.wins, losses: s.losses, draws: s.draws,
+        winrate: total > 0 ? Math.round((s.wins / total) * 100 * 100) / 100 : 0,
+      } as OpeningStat;
+    })
+    .sort((a, b) => b.games_played - a.games_played)
+    .slice(0, 8);
+}
+
 export interface ColorStats {
   winrate: number;
   wins: number;
@@ -67,13 +121,13 @@ export interface ColorStats {
   games: number;
 }
 
-export async function getColorStats(userId: string): Promise<{ white: ColorStats; black: ColorStats }> {
-  const { data: games } = await supabase
+export async function getColorStats(userId: string, timeClass?: string): Promise<{ white: ColorStats; black: ColorStats }> {
+  let q = supabase
     .from("games")
     .select("result, played_as")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(50); // last 50 games, consistent with the rest of the app
+    .eq("user_id", userId);
+  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  const { data: games } = await q;
 
   const empty = (): ColorStats => ({ winrate: 0, wins: 0, losses: 0, draws: 0, games: 0 });
 
@@ -104,7 +158,9 @@ export interface RecentGame {
   white_rating: number;
   black_rating: number;
   time_control: string;
+  time_class: string | null;
   created_at: string;
+  played_at: string | null;
 }
 
 export interface ExampleGame {
@@ -132,8 +188,8 @@ export async function getExampleGames(userId: string): Promise<ExampleGamesMap> 
     .from("games")
     .select("id, opening, result")
     .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(50);
+    .order("played_at", { ascending: false, nullsFirst: false })
+    .limit(200);
 
   if (!games || games.length === 0) return emptyMap();
 
@@ -197,13 +253,13 @@ export interface HighlightGames {
   mostErrors: HighlightGame | null;
 }
 
-export const getHighlightGames = cache(async function(userId: string): Promise<HighlightGames> {
-  const { data: games } = await supabase
+export const getHighlightGames = cache(async function(userId: string, timeClass?: string): Promise<HighlightGames> {
+  let q = supabase
     .from("games")
     .select("id, opening, result, accuracy, played_as")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(50);
+    .eq("user_id", userId);
+  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  const { data: games } = await q.order("played_at", { ascending: false, nullsFirst: false });
 
   if (!games || games.length === 0) return { best: null, worst: null, mostErrors: null };
 
@@ -318,10 +374,10 @@ export async function getGamesByOpening(
 ): Promise<RecentGame[]> {
   const { data } = await supabase
     .from("games")
-    .select("id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at")
+    .select("id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, time_class, created_at, played_at")
     .eq("user_id", userId)
     .eq("opening", openingName)
-    .order("created_at", { ascending: false });
+    .order("played_at", { ascending: false, nullsFirst: false });
   return (data ?? []) as RecentGame[];
 }
 
@@ -362,13 +418,13 @@ export interface ResultStats {
 // Anything else that ended by abandonment (roughly equal, or — crucially — a win
 // you got while you were actually losing because the rival just left) is excluded.
 // Games without analysis (no final eval) keep their original result.
-export const getResultStats = cache(async function(userId: string): Promise<ResultStats> {
-  const { data: games } = await supabase
+export const getResultStats = cache(async function(userId: string, timeClass?: string): Promise<ResultStats> {
+  let q = supabase
     .from("games")
     .select("id, result, played_as, pgn")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(50);
+    .eq("user_id", userId);
+  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  const { data: games } = await q.order("played_at", { ascending: false, nullsFirst: false });
 
   if (!games || games.length === 0) {
     return { wins: 0, losses: 0, draws: 0, winrate: 0, excluded: 0, counted: 0 };
@@ -428,13 +484,13 @@ export interface EloPoint {
 }
 
 // Returns the player's ELO across games, oldest → newest, for an evolution chart.
-export const getEloHistory = cache(async function(userId: string, limit = 500): Promise<EloPoint[]> {
-  const { data } = await supabase
+export const getEloHistory = cache(async function(userId: string, timeClass?: string, limit = 1000): Promise<EloPoint[]> {
+  let q = supabase
     .from("games")
-    .select("white_rating, black_rating, played_as, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: true })
-    .limit(limit);
+    .select("white_rating, black_rating, played_as, played_at, created_at")
+    .eq("user_id", userId);
+  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  const { data } = await q.order("played_at", { ascending: true, nullsFirst: true }).limit(limit);
 
   if (!data || data.length === 0) return [];
 
@@ -443,17 +499,19 @@ export const getEloHistory = cache(async function(userId: string, limit = 500): 
       const isWhite = g.played_as === "white";
       const elo = isWhite ? g.white_rating : g.black_rating;
       const opponentElo = isWhite ? g.black_rating : g.white_rating;
-      return { index: i + 1, date: g.created_at, elo, opponentElo };
+      return { index: i + 1, date: (g.played_at ?? g.created_at) as string, elo, opponentElo };
     })
     .filter((p) => typeof p.elo === "number" && p.elo > 0);
 });
 
-export async function getRecentGames(userId: string, limit = 20): Promise<RecentGame[]> {
-  const { data } = await supabase
+export async function getRecentGames(userId: string, limit = 20, timeClass?: string): Promise<RecentGame[]> {
+  let q = supabase
     .from("games")
-    .select("id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
+    .select("id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, time_class, created_at, played_at")
+    .eq("user_id", userId);
+  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  const { data } = await q
+    .order("played_at", { ascending: false, nullsFirst: false })
     .limit(limit);
   return (data ?? []) as RecentGame[];
 }

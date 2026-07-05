@@ -8,10 +8,39 @@ export interface ChessComGame {
   url: string;
   pgn: string;
   time_control: string;
+  time_class?: string; // 'bullet' | 'blitz' | 'rapid' | 'daily'
   end_time: number;
   rated: boolean;
   white: { username: string; rating: number; result: string };
   black: { username: string; rating: number; result: string };
+}
+
+// Fetches the player's ENTIRE game history via the monthly archives index.
+// Chess.com exposes one URL per month; we fetch them all (most-recent first).
+export async function fetchAllGames(username: string): Promise<ChessComGame[]> {
+  const res = await fetch(`${BASE_URL}/player/${username}/games/archives`, { headers: HEADERS });
+  if (!res.ok) return [];
+  const { archives }: { archives?: string[] } = await res.json();
+  if (!archives || archives.length === 0) return [];
+
+  // Newest months first; fetch in small batches to be gentle with the API.
+  const urls = [...archives].reverse();
+  const all: ChessComGame[] = [];
+  const BATCH = 6;
+  for (let i = 0; i < urls.length; i += BATCH) {
+    const batch = urls.slice(i, i + BATCH);
+    const results = await Promise.all(
+      batch.map((u) =>
+        fetch(u, { headers: HEADERS })
+          .then((r) => (r.ok ? r.json() : { games: [] }))
+          .then((d) => (d.games ?? []) as ChessComGame[])
+          .catch(() => [] as ChessComGame[]),
+      ),
+    );
+    for (const g of results.flat()) all.push(g);
+  }
+
+  return all.sort((a, b) => b.end_time - a.end_time);
 }
 
 export async function fetchRecentGames(

@@ -1,17 +1,22 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
-import { getUserId, getDashboardStats, getTopOpenings, getColorStats } from "@/services/dashboardData";
+import { getUserId, getDashboardStats, getTopOpeningsByClass, getColorStats, getTimeClasses } from "@/services/dashboardData";
 import { translateOpening } from "@/lib/translateOpening";
+import { TimeClassSelector } from "@/components/TimeClassSelector";
 
-export default async function StatsPage() {
+export default async function StatsPage({ searchParams }: { searchParams: Promise<{ tc?: string }> }) {
+  const { tc } = await searchParams;
   const username = await getUsername();
   const userId   = await getUserId(username);
   if (!userId) return null;
 
+  const timeClasses = await getTimeClasses(userId);
+  const activeTc = tc ?? timeClasses[0]?.time_class ?? "all";
+
   const [stats, openings, colors] = await Promise.all([
-    getDashboardStats(userId),
-    getTopOpenings(userId),
-    getColorStats(userId),
+    getDashboardStats(userId, activeTc),
+    getTopOpeningsByClass(userId, activeTc),
+    getColorStats(userId, activeTc),
   ]);
 
   const initials    = username.slice(0, 2).toUpperCase();
@@ -34,6 +39,8 @@ export default async function StatsPage() {
       <div className="space-y-4 max-w-lg mx-auto"
         style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
+        <TimeClassSelector classes={timeClasses} current={activeTc} />
+
         {/* Tarjeta de perfil */}
         <div className="bg-card border border-border rounded-2xl p-5 flex items-center gap-4">
           <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold shrink-0"
@@ -42,7 +49,9 @@ export default async function StatsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-lg font-bold capitalize truncate">{username}</p>
-            <p className="text-xs text-muted-foreground">Chess.com · Blitz / Rapid</p>
+            <p className="text-xs text-muted-foreground">
+              Chess.com · {({ all: "Todas", bullet: "Bala", blitz: "Blitz", rapid: "Rápidas", daily: "Diarias", unknown: "Otras" } as Record<string, string>)[activeTc] ?? activeTc}
+            </p>
             {stats.currentRating && (
               <p className="text-sm font-bold mt-0.5" style={{ color: "var(--bv-green)" }}>
                 {stats.currentRating} puntos

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { fetchRecentGames, validateUsername } from "./chesscom";
+import { fetchAllGames, validateUsername } from "./chesscom";
 import { parseGames } from "./pgnParser";
 
 export async function importGames(username: string): Promise<{
@@ -10,16 +10,19 @@ export async function importGames(username: string): Promise<{
   if (!valid) throw new Error("No encontramos ese usuario en Chess.com. Revisa que esté bien escrito.");
 
   const userId = await getOrCreateUser(username);
-  const rawGames = await fetchRecentGames(username, 50);
+  const rawGames = await fetchAllGames(username);
   const parsed = parseGames(rawGames, username);
 
   if (parsed.length === 0) return { imported: 0, userId };
 
-  const rows = parsed.map((g) => ({ ...g, user_id: userId, accuracy: null }));
+  // NOTE: no `accuracy` field here on purpose. Upserting (update on conflict)
+  // backfills time_class/played_at for games imported before those columns
+  // existed, while preserving each game's already-computed accuracy.
+  const rows = parsed.map((g) => ({ ...g, user_id: userId }));
 
   const { error } = await supabase
     .from("games")
-    .upsert(rows, { onConflict: "chess_game_id", ignoreDuplicates: true });
+    .upsert(rows, { onConflict: "chess_game_id" });
 
   if (error) throw new Error(error.message);
 

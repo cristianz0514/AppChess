@@ -31,6 +31,8 @@ export function parseGame(
       white_rating: raw.white.rating,
       black_rating: raw.black.rating,
       time_control: raw.time_control,
+      time_class: raw.time_class ?? classifyTimeControl(raw.time_control),
+      played_at: raw.end_time ? new Date(raw.end_time * 1000).toISOString() : null,
       played_as: playedAs,
     };
   } catch {
@@ -78,6 +80,18 @@ function resolveResult(
   if (["checkmated", "timeout", "resigned", "lose", "abandoned"].includes(playerResult))
     return "loss";
   return "draw";
+}
+
+// Fallback when the API doesn't send time_class: derive it from the base seconds.
+// Chess.com daily games use "N/seconds" (correspondence); live games use "base+inc".
+function classifyTimeControl(tc: string): string {
+  if (!tc) return "unknown";
+  if (tc.includes("/")) return "daily";
+  const base = parseInt(tc.split("+")[0], 10);
+  if (isNaN(base)) return "unknown";
+  if (base < 180) return "bullet";
+  if (base < 600) return "blitz";
+  return "rapid";
 }
 
 function extractGameId(url: string): string {

@@ -103,7 +103,7 @@ export default async function BlundersPage({ searchParams }: Props) {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{translateOpening(opening)}</p>
                       <p className="text-[10px] text-muted-foreground capitalize">
-                        {game.played_as === "white" ? "Blancas" : "Negras"} · {game.time_control} · {formatDate(game.created_at)}
+                        {game.played_as === "white" ? "Blancas" : "Negras"} · {game.time_control} · {formatDate(game.played_at ?? game.created_at)}
                       </p>
                     </div>
                     <div className="text-right shrink-0">

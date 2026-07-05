@@ -14,6 +14,8 @@ export interface Game {
   white_rating: number;
   black_rating: number;
   time_control: string;
+  time_class: string | null;
+  played_at: string | null;
   accuracy: number | null;
   played_as: "white" | "black";
   created_at: string;
