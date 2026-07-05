@@ -5,7 +5,8 @@ import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -446,6 +447,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     try {
       const m = chess.move({ from, to, promotion: "q" });
       if (!m) return;
+      playSound(m.san.includes("x") ? "capture" : /[+#]/.test(m.san) ? "check" : "move");
     } catch { return; }
     const newFen = chess.fen();
     const slicedFens = exploreFens.slice(0, exploreIdx + 1);
@@ -565,6 +567,23 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     }
     setCelebrate(null);
   }, [idx, currentMove, playerColorEarly]);
+
+  // Sound: mute toggle (persisted) + a subtle cue when you navigate to a move.
+  const [soundOn, setSoundOn] = useState(true);
+  useEffect(() => { setSoundOn(!isMuted()); }, []);
+  const didMountSound = useRef(false);
+  useEffect(() => {
+    if (!didMountSound.current) { didMountSound.current = true; return; }
+    if (inExplore || inStory || idx < 0 || !currentMove) return;
+    const san = currentMove.san;
+    const cls = currentMove.classification;
+    if (cls === "blunder" || cls === "mistake") playSound("error");
+    else if (cls === "brilliant" || cls === "great") playSound("brilliant");
+    else if (/[+#]/.test(san)) playSound("check");
+    else if (san.includes("x")) playSound("capture");
+    else playSound("move");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx]);
 
   const blunderCount = useMemo(() => moves.filter(m => m.classification === "blunder").length, [moves]);
   const mistakeCount = useMemo(() => moves.filter(m => m.classification === "mistake").length, [moves]);
@@ -813,6 +832,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               <BarChart2 size={12} /> Resumen
             </button>
           )}
+          <button
+            onClick={() => { const on = !toggleMuted(); setSoundOn(on); if (on) playSound("move"); }}
+            aria-label={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
+            title={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
+            className="w-8 h-8 flex items-center justify-center rounded-full border transition-colors hover:bg-muted/40"
+            style={{ borderColor: "var(--border)", color: soundOn ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
+            {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          </button>
         </div>
       </div>
 
