@@ -1,6 +1,5 @@
 import { cache } from "react";
 import { supabase } from "@/lib/supabase";
-import { endedByAbandonment } from "./pgnParser";
 import type { DashboardStats, OpeningStat, Game } from "@/types";
 
 export const getUserId = cache(async function(username: string): Promise<string | null> {
@@ -28,6 +27,22 @@ async function gameOrderCol(): Promise<"played_at" | "created_at"> {
 // Whether a chosen class actually filters (undefined/"all" → mixed, all games).
 const filtersClass = (tc?: string) => !!tc && tc !== "all" && tc !== "unknown";
 
+// Count games in the DB (exact, no 1000-row transfer cap) with optional filters.
+// Essential at scale: some accounts have thousands of games, so we must NOT
+// fetch every row and count in JS (PostgREST caps responses at 1000 rows).
+async function countGames(
+  userId: string,
+  opts: { timeClass?: string; result?: string; playedAs?: string } = {},
+): Promise<number> {
+  let q = supabase.from("games").select("id", { count: "exact", head: true }).eq("user_id", userId);
+  if (filtersClass(opts.timeClass)) q = q.eq("time_class", opts.timeClass!);
+  if (opts.timeClass === "unknown") q = q.is("time_class", null);
+  if (opts.result) q = q.eq("result", opts.result);
+  if (opts.playedAs) q = q.eq("played_as", opts.playedAs);
+  const { count } = await q;
+  return count ?? 0;
+}
+
 // Default time control for the dashboard: the most-played real class. If games
 // aren't classified yet (pre-reimport, all null → "unknown"), fall back to "all"
 // so stats aren't filtered to a value that matches no rows (empty dashboard).
@@ -39,47 +54,43 @@ export function pickDefaultClass(classes: { time_class: string; count: number }[
 // Distinct time controls the player has games in, with counts (most-played first).
 export const getTimeClasses = cache(async function(userId: string): Promise<{ time_class: string; count: number }[]> {
   if (!(await hasModernSchema())) return []; // column absent → no separation yet
-  const { data } = await supabase
-    .from("games")
-    .select("time_class")
-    .eq("user_id", userId);
-  if (!data || data.length === 0) return [];
-  const counts = new Map<string, number>();
-  for (const g of data) {
-    const tc = (g.time_class as string) ?? "unknown";
-    counts.set(tc, (counts.get(tc) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([time_class, count]) => ({ time_class, count }))
-    .sort((a, b) => b.count - a.count);
+  // Count each known class exactly (not by sampling rows — that misses classes
+  // beyond the first 1000 games, which is exactly how the selector "died").
+  const CLASSES = ["blitz", "rapid", "bullet", "daily", "unknown"];
+  const results = await Promise.all(
+    CLASSES.map(async (tc) => ({ time_class: tc, count: await countGames(userId, { timeClass: tc }) })),
+  );
+  return results.filter((r) => r.count > 0).sort((a, b) => b.count - a.count);
 });
 
 export const getDashboardStats = cache(async function(userId: string, timeClass?: string): Promise<DashboardStats> {
-  const orderCol = await gameOrderCol();
-  let q = supabase
-    .from("games")
-    .select("result, accuracy, white_rating, black_rating, played_as")
-    .eq("user_id", userId);
-  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data: games } = await q.order(orderCol, { ascending: false, nullsFirst: false });
-
-  if (!games || games.length === 0) {
+  // Counts computed in the DB (scales to thousands of games; no 1000-row cap).
+  const [wins, losses, draws] = await Promise.all([
+    countGames(userId, { timeClass, result: "win" }),
+    countGames(userId, { timeClass, result: "loss" }),
+    countGames(userId, { timeClass, result: "draw" }),
+  ]);
+  const total = wins + losses + draws;
+  if (total === 0) {
     return { totalGames: 0, wins: 0, losses: 0, draws: 0, winrate: 0, avgAccuracy: null, currentRating: null };
   }
 
-  const wins = games.filter((g) => g.result === "win").length;
-  const losses = games.filter((g) => g.result === "loss").length;
-  const draws = games.filter((g) => g.result === "draw").length;
-  const total = games.length;
+  // Current rating: the player's rating in their most recent game of this class.
+  let rq = supabase.from("games").select("white_rating, black_rating, played_as").eq("user_id", userId);
+  if (filtersClass(timeClass)) rq = rq.eq("time_class", timeClass!);
+  const { data: latestRows } = await rq.order(await gameOrderCol(), { ascending: false, nullsFirst: false }).limit(1);
+  const latest = latestRows?.[0];
+  const currentRating = latest ? (latest.played_as === "white" ? latest.white_rating : latest.black_rating) : null;
 
-  const accuracies = games.map((g) => g.accuracy).filter((a): a is number => a !== null);
+  // Average accuracy over ANALYZED games only (a bounded set — most games are
+  // unanalyzed, so this stays well under the row cap).
+  let aq = supabase.from("games").select("accuracy").eq("user_id", userId).not("accuracy", "is", null);
+  if (filtersClass(timeClass)) aq = aq.eq("time_class", timeClass!);
+  const { data: accRows } = await aq.limit(1000);
+  const accuracies = (accRows ?? []).map((r) => r.accuracy as number).filter((a) => a !== null);
   const avgAccuracy = accuracies.length > 0
     ? Math.round((accuracies.reduce((s, a) => s + a, 0) / accuracies.length) * 10) / 10
     : null;
-
-  // games are ordered most-recent-first, so [0] is the latest game played
-  const latest = games[0];
-  const currentRating = latest.played_as === "white" ? latest.white_rating : latest.black_rating;
 
   return {
     totalGames: total,
@@ -145,31 +156,21 @@ export interface ColorStats {
 }
 
 export async function getColorStats(userId: string, timeClass?: string): Promise<{ white: ColorStats; black: ColorStats }> {
-  let q = supabase
-    .from("games")
-    .select("result, played_as")
-    .eq("user_id", userId);
-  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data: games } = await q;
-
   const empty = (): ColorStats => ({ winrate: 0, wins: 0, losses: 0, draws: 0, games: 0 });
 
-  if (!games || games.length === 0) return { white: empty(), black: empty() };
-
-  const calc = (color: "white" | "black"): ColorStats => {
-    const filtered = games.filter((g) => g.played_as === color);
-    if (filtered.length === 0) return empty();
-    const wins   = filtered.filter((g) => g.result === "win").length;
-    const losses = filtered.filter((g) => g.result === "loss").length;
-    const draws  = filtered.filter((g) => g.result === "draw").length;
-    return {
-      wins, losses, draws,
-      games: filtered.length,
-      winrate: Math.round((wins / filtered.length) * 100),
-    };
+  const calc = async (color: "white" | "black"): Promise<ColorStats> => {
+    const [wins, losses, draws] = await Promise.all([
+      countGames(userId, { timeClass, playedAs: color, result: "win" }),
+      countGames(userId, { timeClass, playedAs: color, result: "loss" }),
+      countGames(userId, { timeClass, playedAs: color, result: "draw" }),
+    ]);
+    const games = wins + losses + draws;
+    if (games === 0) return empty();
+    return { wins, losses, draws, games, winrate: Math.round((wins / games) * 100) };
   };
 
-  return { white: calc("white"), black: calc("black") };
+  const [white, black] = await Promise.all([calc("white"), calc("black")]);
+  return { white, black };
 }
 
 export interface RecentGame {
@@ -277,12 +278,15 @@ export interface HighlightGames {
 }
 
 export const getHighlightGames = cache(async function(userId: string, timeClass?: string): Promise<HighlightGames> {
+  // Only ANALYZED games matter here (accuracy + move errors). That's a bounded
+  // set even when the account has thousands of games, so no row-cap problem.
   let q = supabase
     .from("games")
     .select("id, opening, result, accuracy, played_as")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .not("accuracy", "is", null);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data: games } = await q.order(await gameOrderCol(), { ascending: false, nullsFirst: false });
+  const { data: games } = await q.order(await gameOrderCol(), { ascending: false, nullsFirst: false }).limit(1000);
 
   if (!games || games.length === 0) return { best: null, worst: null, mostErrors: null };
 
@@ -444,59 +448,53 @@ export interface ResultStats {
 // you got while you were actually losing because the rival just left) is excluded.
 // Games without analysis (no final eval) keep their original result.
 export const getResultStats = cache(async function(userId: string, timeClass?: string): Promise<ResultStats> {
+  // Base W/L/D from exact DB counts (scales to thousands of games).
+  const [wins0, losses0, draws] = await Promise.all([
+    countGames(userId, { timeClass, result: "win" }),
+    countGames(userId, { timeClass, result: "loss" }),
+    countGames(userId, { timeClass, result: "draw" }),
+  ]);
+
+  let wins = wins0, losses = losses0, excluded = 0;
   const modern = await hasModernSchema();
-  // Modern: read the precomputed flag. Legacy: read the PGN and detect on the fly.
-  let q = supabase
-    .from("games")
-    .select(modern ? "id, result, played_as, ended_by_abandonment" : "id, result, played_as, pgn")
-    .eq("user_id", userId);
-  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data: rawGames } = await q.order(modern ? "played_at" : "created_at", { ascending: false, nullsFirst: false });
-  const games = (rawGames ?? []) as unknown as Array<{ id: string; result: string; played_as: string; ended_by_abandonment?: boolean; pgn?: string }>;
 
-  if (games.length === 0) {
-    return { wins: 0, losses: 0, draws: 0, winrate: 0, excluded: 0, counted: 0 };
-  }
-  const isAbandon = (g: { ended_by_abandonment?: boolean; pgn?: string }) =>
-    modern ? !!g.ended_by_abandonment : endedByAbandonment(g.pgn ?? "");
+  // Only ANALYZED abandonment games (win/loss) can be excluded — a tiny set.
+  if (modern) {
+    let aq = supabase
+      .from("games")
+      .select("id, result, played_as")
+      .eq("user_id", userId)
+      .eq("ended_by_abandonment", true)
+      .in("result", ["win", "loss"])
+      .not("accuracy", "is", null);
+    if (filtersClass(timeClass)) aq = aq.eq("time_class", timeClass!);
+    const { data: abGames } = await aq.limit(1000);
 
-  // Only abandonment games need an eval check — fetch their final eval only.
-  const abandonIds = games
-    .filter((g) => isAbandon(g) && (g.result === "win" || g.result === "loss"))
-    .map((g) => g.id);
-
-  const finalEval = new Map<string, { mv: number; eval: number }>();
-  if (abandonIds.length > 0) {
-    const { data: moveRows } = await supabase
-      .from("moves")
-      .select("game_id, move_number, evaluation")
-      .in("game_id", abandonIds)
-      .not("evaluation", "is", null);
-
-    for (const r of moveRows ?? []) {
-      const cur = finalEval.get(r.game_id);
-      if (!cur || r.move_number > cur.mv) finalEval.set(r.game_id, { mv: r.move_number, eval: r.evaluation as number });
-    }
-  }
-
-  let wins = 0, losses = 0, draws = 0, excluded = 0;
-  const THRESHOLD = 2; // pawns of advantage that make the result "earned"
-
-  for (const g of games) {
-    if (isAbandon(g) && (g.result === "win" || g.result === "loss")) {
-      const fin = finalEval.get(g.id);
-      if (fin) {
-        // eval is white-perspective; convert to "my" perspective.
+    if (abGames && abGames.length > 0) {
+      const finalEval = new Map<string, { mv: number; eval: number }>();
+      const { data: moveRows } = await supabase
+        .from("moves")
+        .select("game_id, move_number, evaluation")
+        .in("game_id", abGames.map((g) => g.id))
+        .not("evaluation", "is", null);
+      for (const r of moveRows ?? []) {
+        const cur = finalEval.get(r.game_id);
+        if (!cur || r.move_number > cur.mv) finalEval.set(r.game_id, { mv: r.move_number, eval: r.evaluation as number });
+      }
+      const THRESHOLD = 2; // pawns of advantage that make the result "earned"
+      for (const g of abGames) {
+        const fin = finalEval.get(g.id);
+        if (!fin) continue; // no eval → keep the original result
         const myEval = g.played_as === "white" ? fin.eval : -fin.eval;
         const earned =
           (g.result === "win"  && myEval >=  THRESHOLD) ||
           (g.result === "loss" && myEval <= -THRESHOLD);
-        if (!earned) { excluded++; continue; }
+        if (!earned) {
+          excluded++;
+          if (g.result === "win") wins--; else losses--;
+        }
       }
     }
-    if (g.result === "win") wins++;
-    else if (g.result === "loss") losses++;
-    else draws++;
   }
 
   const counted = wins + losses + draws;
@@ -522,11 +520,15 @@ export const getEloHistory = cache(async function(userId: string, timeClass?: st
     .select(modern ? "white_rating, black_rating, played_as, played_at, created_at" : "white_rating, black_rating, played_as, created_at")
     .eq("user_id", userId);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data } = await q.order(orderCol, { ascending: true, nullsFirst: true }).limit(limit);
+  // Take the most-recent `limit` games (desc), then flip to chronological order
+  // so the chart reads left→right oldest→newest even with thousands of games.
+  const { data } = await q.order(orderCol, { ascending: false, nullsFirst: false }).limit(limit);
 
   if (!data || data.length === 0) return [];
 
   return (data as unknown as Array<{ white_rating: number; black_rating: number; played_as: string; played_at?: string; created_at: string }>)
+    .slice()
+    .reverse()
     .map((g, i) => {
       const isWhite = g.played_as === "white";
       const elo = isWhite ? g.white_rating : g.black_rating;
