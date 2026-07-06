@@ -5,7 +5,7 @@ import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2 } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
 import type { Game } from "@/types";
 
@@ -13,6 +13,7 @@ import type { Game } from "@/types";
 
 interface DbMove {
   move_number: number;
+  move?: string | null;   // SAN — used to match rows to plies reliably
   classification: string | null;
   centipawn_loss?: number | null;
   evaluation?: number | null;
@@ -168,18 +169,24 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
   try { master.loadPgn(pgn); } catch { return []; }
   const history = master.history({ verbose: true });
 
-  // dbMoves is ordered by move_number ASC from the DB query.
-  // move_number in the DB is the chess notation number (1 for both white's and black's
-  // first moves), so using it as a map key loses one of the two plies.
-  // Instead, match by array position: dbMoves[i] corresponds to ply i.
+  // Match each ply to its DB row by (move_number, SAN) — a stable, unique key.
+  // Matching by array index is fragile: the DB may return tied move_numbers in
+  // any order (an explanation UPDATE can even reorder rows), which would attach
+  // classifications and AI comments to the WRONG move ("out of context").
+  const byKey = new Map<string, DbMove>();
+  for (const m of dbMoves) if (m.move) byKey.set(`${m.move_number}|${m.move}`, m);
+
   const game = new Chess();
   return history.map((h, i) => {
     game.move(h.san);
-    const db = dbMoves[i];
+    const moveNumber = Math.floor(i / 2) + 1;
+    // Prefer the stable (move_number, SAN) match; fall back to index if the DB
+    // rows lack SAN (older query) so nothing breaks.
+    const db = byKey.get(`${moveNumber}|${h.san}`) ?? dbMoves[i];
     return {
       san: h.san,
       fen: game.fen(),
-      moveNumber: Math.floor(i / 2) + 1,
+      moveNumber,
       color: h.color as "w" | "b",
       from: h.from,
       to: h.to,
@@ -526,6 +533,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     }
     setCelebrate(null);
   }, [idx, currentMove, playerColorEarly]);
+
+  // Board orientation — flip like any chess review tool.
+  const [flipped, setFlipped] = useState(false);
+  const boardOrientation: "white" | "black" =
+    flipped ? (playedAs === "white" ? "black" : "white") : playedAs;
 
   // Sound: mute toggle (persisted) + a subtle cue when you navigate to a move.
   const [soundOn, setSoundOn] = useState(true);
@@ -887,7 +899,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               )}
               <ChessBoard
                 fen={inExplore ? currentExploreFen! : currentFen}
-                orientation={playedAs}
+                orientation={boardOrientation}
                 lastMove={inExplore ? exploreLastMove : storyMomentSlide ? null : lastMove}
                 arrows={
                   inExplore
@@ -952,6 +964,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {/* Action row - compact; opens overlays, never shifts the board */}
           {!inExplore && (
             <div className="flex items-center gap-2">
+              <button onClick={() => setFlipped((f) => !f)} title="Girar tablero" aria-label="Girar tablero"
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
+                style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
+                <FlipVertical2 size={18} />
+              </button>
               <button onClick={enterExplore} title="Explorar variantes" aria-label="Explorar"
                 className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
                 style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>

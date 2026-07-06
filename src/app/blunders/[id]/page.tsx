@@ -39,13 +39,13 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   {
     const withExpl = await supabase
       .from("moves")
-      .select("move_number, classification, centipawn_loss, evaluation, explanation")
+      .select("move_number, move, classification, centipawn_loss, evaluation, explanation")
       .eq("game_id", id)
       .order("move_number", { ascending: true });
     if (withExpl.error) {
       const base = await supabase
         .from("moves")
-        .select("move_number, classification, centipawn_loss, evaluation")
+        .select("move_number, move, classification, centipawn_loss, evaluation")
         .eq("game_id", id)
         .order("move_number", { ascending: true });
       moves = base.data;
@@ -57,6 +57,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
 
   const dbMoves = (moves ?? []) as Array<{
     move_number: number;
+    move?: string | null;
     classification: string | null;
     centipawn_loss: number | null;
     evaluation: number | null;

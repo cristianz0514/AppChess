@@ -41,10 +41,13 @@ Solo la frase, sin comillas ni encabezados.`;
       max_tokens: 60,
     });
     let text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
-    // Keep it truly short (chess.com-style caption): first sentence, hard cap.
-    const firstSentence = text.match(/^[^.!?]*[.!?]/);
-    if (firstSentence) text = firstSentence[0].trim();
-    if (text.length > 140) text = text.slice(0, 137).trimEnd() + "…";
+    // Soft length cap only — do NOT split on the first "." (that would cut inside
+    // decimals like "+1.5" and mangle the comment). Trim at a word boundary.
+    if (text.length > 160) {
+      const cut = text.slice(0, 160);
+      const lastSpace = cut.lastIndexOf(" ");
+      text = (lastSpace > 120 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
+    }
     return text || null;
   } catch {
     return null;
