@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { supabase } from "@/lib/supabase";
+import { endedByAbandonment } from "./pgnParser";
 import type { DashboardStats, OpeningStat, Game } from "@/types";
 
 export const getUserId = cache(async function(username: string): Promise<string | null> {
@@ -10,6 +11,19 @@ export const getUserId = cache(async function(username: string): Promise<string 
     .single();
   return data?.id ?? null;
 });
+
+// Whether the new schema columns (time_class / played_at / ended_by_abandonment)
+// exist. If a deploy runs before the migration, everything must still work — so
+// we detect it once (per request) and fall back to legacy queries when absent.
+export const hasModernSchema = cache(async function(): Promise<boolean> {
+  const { error } = await supabase.from("games").select("played_at").limit(1);
+  return !error;
+});
+
+// Order games by real play date when available, else by import time.
+async function gameOrderCol(): Promise<"played_at" | "created_at"> {
+  return (await hasModernSchema()) ? "played_at" : "created_at";
+}
 
 // Whether a chosen class actually filters (undefined/"all" → mixed, all games).
 const filtersClass = (tc?: string) => !!tc && tc !== "all" && tc !== "unknown";
@@ -24,6 +38,7 @@ export function pickDefaultClass(classes: { time_class: string; count: number }[
 
 // Distinct time controls the player has games in, with counts (most-played first).
 export const getTimeClasses = cache(async function(userId: string): Promise<{ time_class: string; count: number }[]> {
+  if (!(await hasModernSchema())) return []; // column absent → no separation yet
   const { data } = await supabase
     .from("games")
     .select("time_class")
@@ -40,12 +55,13 @@ export const getTimeClasses = cache(async function(userId: string): Promise<{ ti
 });
 
 export const getDashboardStats = cache(async function(userId: string, timeClass?: string): Promise<DashboardStats> {
+  const orderCol = await gameOrderCol();
   let q = supabase
     .from("games")
-    .select("result, accuracy, white_rating, black_rating, played_as, played_at")
+    .select("result, accuracy, white_rating, black_rating, played_as")
     .eq("user_id", userId);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data: games } = await q.order("played_at", { ascending: false, nullsFirst: false });
+  const { data: games } = await q.order(orderCol, { ascending: false, nullsFirst: false });
 
   if (!games || games.length === 0) {
     return { totalGames: 0, wins: 0, losses: 0, draws: 0, winrate: 0, avgAccuracy: null, currentRating: null };
@@ -266,7 +282,7 @@ export const getHighlightGames = cache(async function(userId: string, timeClass?
     .select("id, opening, result, accuracy, played_as")
     .eq("user_id", userId);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data: games } = await q.order("played_at", { ascending: false, nullsFirst: false });
+  const { data: games } = await q.order(await gameOrderCol(), { ascending: false, nullsFirst: false });
 
   if (!games || games.length === 0) return { best: null, worst: null, mostErrors: null };
 
@@ -379,13 +395,15 @@ export async function getGamesByOpening(
   userId: string,
   openingName: string
 ): Promise<RecentGame[]> {
+  const modern = await hasModernSchema();
+  const base = "id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at";
   const { data } = await supabase
     .from("games")
-    .select("id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, time_class, created_at, played_at")
+    .select(modern ? `${base}, time_class, played_at` : base)
     .eq("user_id", userId)
     .eq("opening", openingName)
-    .order("played_at", { ascending: false, nullsFirst: false });
-  return (data ?? []) as RecentGame[];
+    .order(modern ? "played_at" : "created_at", { ascending: false, nullsFirst: false });
+  return (data ?? []) as unknown as RecentGame[];
 }
 
 // Returns IDs of the user's games that have no analyzed moves yet (most recent first).
@@ -394,7 +412,7 @@ export async function getUnanalyzedGameIds(userId: string, limit = 50): Promise<
     .from("games")
     .select("id")
     .eq("user_id", userId)
-    .order("played_at", { ascending: false, nullsFirst: false })
+    .order(await gameOrderCol(), { ascending: false, nullsFirst: false })
     .limit(limit);
 
   if (!games || games.length === 0) return [];
@@ -426,21 +444,25 @@ export interface ResultStats {
 // you got while you were actually losing because the rival just left) is excluded.
 // Games without analysis (no final eval) keep their original result.
 export const getResultStats = cache(async function(userId: string, timeClass?: string): Promise<ResultStats> {
-  // Read the precomputed abandonment flag instead of pulling every PGN.
+  const modern = await hasModernSchema();
+  // Modern: read the precomputed flag. Legacy: read the PGN and detect on the fly.
   let q = supabase
     .from("games")
-    .select("id, result, played_as, ended_by_abandonment")
+    .select(modern ? "id, result, played_as, ended_by_abandonment" : "id, result, played_as, pgn")
     .eq("user_id", userId);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data: games } = await q.order("played_at", { ascending: false, nullsFirst: false });
+  const { data: rawGames } = await q.order(modern ? "played_at" : "created_at", { ascending: false, nullsFirst: false });
+  const games = (rawGames ?? []) as unknown as Array<{ id: string; result: string; played_as: string; ended_by_abandonment?: boolean; pgn?: string }>;
 
-  if (!games || games.length === 0) {
+  if (games.length === 0) {
     return { wins: 0, losses: 0, draws: 0, winrate: 0, excluded: 0, counted: 0 };
   }
+  const isAbandon = (g: { ended_by_abandonment?: boolean; pgn?: string }) =>
+    modern ? !!g.ended_by_abandonment : endedByAbandonment(g.pgn ?? "");
 
   // Only abandonment games need an eval check — fetch their final eval only.
   const abandonIds = games
-    .filter((g) => g.ended_by_abandonment && (g.result === "win" || g.result === "loss"))
+    .filter((g) => isAbandon(g) && (g.result === "win" || g.result === "loss"))
     .map((g) => g.id);
 
   const finalEval = new Map<string, { mv: number; eval: number }>();
@@ -461,7 +483,7 @@ export const getResultStats = cache(async function(userId: string, timeClass?: s
   const THRESHOLD = 2; // pawns of advantage that make the result "earned"
 
   for (const g of games) {
-    if (g.ended_by_abandonment && (g.result === "win" || g.result === "loss")) {
+    if (isAbandon(g) && (g.result === "win" || g.result === "loss")) {
       const fin = finalEval.get(g.id);
       if (fin) {
         // eval is white-perspective; convert to "my" perspective.
@@ -493,16 +515,18 @@ export interface EloPoint {
 
 // Returns the player's ELO across games, oldest → newest, for an evolution chart.
 export const getEloHistory = cache(async function(userId: string, timeClass?: string, limit = 1000): Promise<EloPoint[]> {
+  const modern = await hasModernSchema();
+  const orderCol = modern ? "played_at" : "created_at";
   let q = supabase
     .from("games")
-    .select("white_rating, black_rating, played_as, played_at, created_at")
+    .select(modern ? "white_rating, black_rating, played_as, played_at, created_at" : "white_rating, black_rating, played_as, created_at")
     .eq("user_id", userId);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
-  const { data } = await q.order("played_at", { ascending: true, nullsFirst: true }).limit(limit);
+  const { data } = await q.order(orderCol, { ascending: true, nullsFirst: true }).limit(limit);
 
   if (!data || data.length === 0) return [];
 
-  return data
+  return (data as unknown as Array<{ white_rating: number; black_rating: number; played_as: string; played_at?: string; created_at: string }>)
     .map((g, i) => {
       const isWhite = g.played_as === "white";
       const elo = isWhite ? g.white_rating : g.black_rating;
@@ -513,13 +537,15 @@ export const getEloHistory = cache(async function(userId: string, timeClass?: st
 });
 
 export async function getRecentGames(userId: string, limit = 20, timeClass?: string): Promise<RecentGame[]> {
+  const modern = await hasModernSchema();
+  const base = "id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at";
   let q = supabase
     .from("games")
-    .select("id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, time_class, created_at, played_at")
+    .select(modern ? `${base}, time_class, played_at` : base)
     .eq("user_id", userId);
   if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
   const { data } = await q
-    .order("played_at", { ascending: false, nullsFirst: false })
+    .order(modern ? "played_at" : "created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
-  return (data ?? []) as RecentGame[];
+  return (data ?? []) as unknown as RecentGame[];
 }

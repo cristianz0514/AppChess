@@ -22,11 +22,21 @@ export async function importGames(username: string): Promise<{
 
   // Full history can be thousands of games (each with a full PGN). Upsert in
   // chunks so we never send a payload big enough to be rejected/timed out.
+  // If the new columns aren't in the DB yet (migration not run), strip them and
+  // retry so importing still works — the app degrades gracefully.
+  const NEW_COLS = ["time_class", "played_at", "ended_by_abandonment"] as const;
   const CHUNK = 300;
   for (let i = 0; i < rows.length; i += CHUNK) {
-    const { error } = await supabase
-      .from("games")
-      .upsert(rows.slice(i, i + CHUNK), { onConflict: "chess_game_id" });
+    const chunk = rows.slice(i, i + CHUNK);
+    let { error } = await supabase.from("games").upsert(chunk, { onConflict: "chess_game_id" });
+    if (error && (error.code === "42703" || /does not exist/i.test(error.message))) {
+      const legacy = chunk.map((r) => {
+        const c = { ...r } as Record<string, unknown>;
+        for (const k of NEW_COLS) delete c[k];
+        return c;
+      });
+      ({ error } = await supabase.from("games").upsert(legacy, { onConflict: "chess_game_id" }));
+    }
     if (error) throw new Error(error.message);
   }
 

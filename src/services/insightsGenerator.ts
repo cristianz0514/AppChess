@@ -70,14 +70,16 @@ interface PlayerSnapshot {
 
 async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   // Fetch game IDs first so we can join cleanly.
-  // Order by real play date (played_at). created_at is only import time, which
-  // is identical for the whole batch after a full-history import — using it
-  // would pick 50 arbitrary games instead of the 50 most recent.
+  // Order by real play date (played_at) when the column exists; else by import
+  // time. created_at is identical across a full-history batch, so played_at is
+  // preferred, but the query must not fail if the migration hasn't run.
+  const probe = await supabase.from("games").select("played_at").limit(1);
+  const orderCol = probe.error ? "created_at" : "played_at";
   const { data: gameRows } = await supabase
     .from("games")
     .select("id, result, accuracy, pgn, played_as")
     .eq("user_id", userId)
-    .order("played_at", { ascending: false, nullsFirst: false })
+    .order(orderCol, { ascending: false, nullsFirst: false })
     .limit(50);
 
   if (!gameRows || gameRows.length === 0) return null;
