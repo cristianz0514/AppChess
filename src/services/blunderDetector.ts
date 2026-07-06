@@ -27,7 +27,7 @@ async function coachComment(args: {
   if (!groq) return null;
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
   const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
-  const RULES = `Reglas estrictas: apóyate SOLO en los hechos y la evaluación dados. Puedes citar la "continuación del motor" si aparece en los hechos, pero NO inventes otras jugadas, casillas, columnas ni flancos que no estén ahí. Prioriza la IDEA ajedrecística (compensación, iniciativa, actividad de piezas, ataque al rey, mejor estructura, control del centro, tempo, material recuperado). Español, tono de entrenador humano, sin relleno. UNA sola frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
+  const RULES = `Reglas estrictas: apóyate SOLO en los hechos y la evaluación dados. Puedes citar la "continuación del motor" si aparece en los hechos, pero NO inventes otras jugadas, casillas, columnas ni flancos que no estén ahí. NO repitas el número ni el nombre de la jugada del alumno (ya se muestra en pantalla): empieza directo por la idea. Prioriza la IDEA ajedrecística (compensación, iniciativa, actividad de piezas, ataque al rey, mejor estructura, control del centro, tempo, material recuperado). Español, tono de entrenador humano, sin relleno. UNA sola frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
   const prompt = good
     ? `Eres un entrenador de ajedrez de élite. Explica el VALOR de la jugada ${moveNumber}.${san}. Si los hechos dicen que es un sacrificio, explica qué tipo de compensación general justifica entregar material.
 Hechos: ${facts}
