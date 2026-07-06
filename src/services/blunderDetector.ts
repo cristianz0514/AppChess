@@ -40,7 +40,11 @@ Solo la frase, sin comillas ni encabezados.`;
       temperature: 0.4,
       max_tokens: 60,
     });
-    const text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
+    let text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
+    // Keep it truly short (chess.com-style caption): first sentence, hard cap.
+    const firstSentence = text.match(/^[^.!?]*[.!?]/);
+    if (firstSentence) text = firstSentence[0].trim();
+    if (text.length > 140) text = text.slice(0, 137).trimEnd() + "…";
     return text || null;
   } catch {
     return null;
