@@ -173,6 +173,48 @@ export async function getPrincipalVariation(fen: string, depth = 14, maxPlies = 
   }));
 }
 
+export interface EngineLine { mate: number | null; scoreCp: number | null; pv: string[] }
+
+// Top-N engine lines (MultiPV) for a position — the real best move + the next
+// best alternatives, each with its principal variation (UCI). Deeper than the
+// sweep because these feed the coach comments (quality over speed here).
+export async function getTopLines(fen: string, depth = 16, multipv = 3): Promise<EngineLine[]> {
+  const engine = await getEngine();
+  return runExclusive(() => new Promise<EngineLine[]>((resolve) => {
+    let settled = false;
+    const lines = new Map<number, EngineLine>();
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      engine.listener = null;
+      engine.sendCommand("setoption name MultiPV value 1"); // reset so plain evals aren't affected
+      resolve([...lines.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v));
+    };
+    const timer = setTimeout(finish, 9000);
+    engine.listener = (line: string) => {
+      if (line.startsWith("info")) {
+        const mpv = line.match(/multipv (\d+)/);
+        const pvm = line.match(/ pv (.+)$/);
+        if (!mpv || !pvm) return;
+        const k = parseInt(mpv[1]);
+        const mate = line.match(/score mate (-?\d+)/);
+        const cp = line.match(/score cp (-?\d+)/);
+        lines.set(k, {
+          mate: mate ? parseInt(mate[1]) : null,
+          scoreCp: cp ? parseInt(cp[1]) : null,
+          pv: pvm[1].trim().split(/\s+/).slice(0, 6),
+        });
+      } else if (line.startsWith("bestmove")) {
+        finish();
+      }
+    };
+    engine.sendCommand("setoption name MultiPV value " + multipv);
+    engine.sendCommand("position fen " + fen);
+    engine.sendCommand("go depth " + depth);
+  }));
+}
+
 // Evaluates multiple FENs sequentially on the shared engine.
 export async function analyzeAllFens(
   fens: string[],

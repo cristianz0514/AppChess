@@ -1,6 +1,6 @@
 import { Chess } from "chess.js";
 import Groq from "groq-sdk";
-import { analyzeAllFens, evaluatePosition, getPrincipalVariation } from "./stockfish";
+import { analyzeAllFens, evaluatePosition, getTopLines } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import type { Move } from "@/types";
 
@@ -10,6 +10,9 @@ export type MoveClassification = Move["classification"];
 // brilliant/great) — the ones an expert actually reads. Bounded to keep the
 // pre-view analysis window reasonable.
 const MAX_EXPLAIN = 20;
+// Deeper analysis just for the coach lines (quality over speed — the user opted
+// to wait longer). MultiPV gives the best move + alternatives.
+const EXPLAIN_DEPTH = 16;
 const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
@@ -27,7 +30,7 @@ async function coachComment(args: {
   if (!groq) return null;
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
   const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
-  const RULES = `Reglas estrictas: apóyate SOLO en los hechos y la evaluación dados. Puedes citar la "continuación del motor" si aparece en los hechos, pero NO inventes otras jugadas, casillas, columnas ni flancos que no estén ahí. NO repitas el número ni el nombre de la jugada del alumno (ya se muestra en pantalla): empieza directo por la idea. Prioriza la IDEA ajedrecística (compensación, iniciativa, actividad de piezas, ataque al rey, mejor estructura, control del centro, tempo, material recuperado). Español, tono de entrenador humano, sin relleno. UNA sola frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
+  const RULES = `Reglas estrictas: apóyate SOLO en los hechos y la evaluación dados. Puedes citar la "continuación del motor" si aparece en los hechos, pero NO inventes otras jugadas, casillas, columnas ni flancos que no estén ahí. NO repitas el número ni el nombre de la jugada del alumno (ya se muestra en pantalla): empieza directo por la idea. Prioriza la IDEA ajedrecística (iniciativa, actividad de piezas, ataque al rey, mejor estructura, control del centro, tempo, material). NO uses la palabra "sacrificio" salvo que aparezca en los hechos. NO menciones cifras, "puntos" ni "evaluación" numérica. Evita jerga vacía; habla claro y concreto como a un jugador fuerte. Español, tono de entrenador humano, sin relleno. UNA sola frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
   const prompt = good
     ? `Eres un entrenador de ajedrez de élite. Explica el VALOR de la jugada ${moveNumber}.${san}. Si los hechos dicen que es un sacrificio, explica qué tipo de compensación general justifica entregar material.
 Hechos: ${facts}
@@ -229,7 +232,7 @@ export async function analyzeGame(
     const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
     const good = moves[i].classification === "brilliant" || moves[i].classification === "great";
 
-    // Helper: turn a UCI principal variation into readable SAN from a position.
+    // Helper: turn a UCI line into readable SAN from a position.
     const pvToSan = (fromFen: string, pv: string[]): string[] => {
       const c = new Chess(fromFen);
       const out: string[] = [];
@@ -243,19 +246,6 @@ export async function analyzeGame(
       return out;
     };
 
-    // For ERRORS, the engine's best LINE (not just the move) grounds "what you
-    // should have played and what it achieved". One PV call replaces getBestMove.
-    let bestSan: string | null = null;
-    let bestLineSan = "";
-    if (!good) {
-      try {
-        const pv = await getPrincipalVariation(fenBefore, DEEP_DEPTH, 5);
-        const sans = pvToSan(fenBefore, pv);
-        if (sans.length) { bestSan = sans[0]; bestLineSan = sans.join(" "); }
-      } catch { /* ignore */ }
-    }
-
-    // Concrete facts to ground the comment (real value, not generic praise).
     const h = history[i];
     const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
     const movedVal = VAL[h.piece] ?? 0;
@@ -263,53 +253,70 @@ export async function analyzeGame(
     const movedName = PIECE_ES[h.piece] ?? "pieza";
     const capturedName = h.captured ? (PIECE_ES[h.captured] ?? "pieza") : null;
 
-    // Can the OPPONENT recapture the piece we just moved? Check on the position
-    // AFTER the move (fens[i]) — the previous code checked our own moves BEFORE
-    // moving, so it never detected real sacrifices (e.g. RxB exchange sacs).
+    // Deep multi-line engine analysis from BEFORE the move: the best line +
+    // alternatives. Deeper than the sweep (quality for the coach).
+    let lines: { mate: number | null; scoreCp: number | null; pv: string[] }[] = [];
+    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 3); } catch { /* ignore */ }
+    const mainSans = lines[0] ? pvToSan(fenBefore, lines[0].pv) : [];
+    const bestSan = mainSans[0] ?? null;
+    const mainLineSan = mainSans.join(" ");
+    const altSans = lines.slice(1).map((l) => pvToSan(fenBefore, l.pv)[0]).filter(Boolean).slice(0, 2);
+    const forcedMate = lines[0]?.mate != null;
+
+    // Sacrifice: can the OPPONENT recapture the moved piece with something cheaper?
     let cheapestRecapture: number | null = null;
     try {
       const after = new Chess(fens[i]);
       const recaps = after.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured);
       if (recaps.length) cheapestRecapture = Math.min(...recaps.map((x) => VAL[x.piece] ?? 99));
     } catch { /* ignore */ }
-    // Net material you end up with if the opponent recaptures the moved piece.
-    const netIfRecaptured = capturedVal - movedVal;
-    const isSacrifice = cheapestRecapture != null && netIfRecaptured < 0;
+    const isSacrifice = cheapestRecapture != null && (capturedVal - movedVal) < 0;
 
-    // Engine's real continuation after this move — grounds the compensation.
-    let lineSan = "";
-    if (good) {
-      try {
-        const pv = await getPrincipalVariation(fens[i], DEEP_DEPTH, 6);
-        const sans = pvToSan(fens[i], pv);
-        if (sans.length) lineSan = sans.join(" ");
-      } catch { /* ignore */ }
-    }
-    // Tactical signals that ARE verifiable from SAN: check / mate now or in the line.
-    const mateInLine = /#/.test(moves[i].move) || /#/.test(lineSan) || /#/.test(bestLineSan);
-    const givesCheck = /\+/.test(moves[i].move);
+    // Deterministic double attack: with the turn flipped back to the mover, how
+    // many valuable enemy pieces does the just-moved piece attack? (Geometric
+    // fact, not an LLM guess.) Fails safely when the move gave check.
+    let doubleAttack = 0;
+    try {
+      const flipped = fens[i].replace(/ (w|b) /, (_m, s) => (s === "w" ? " b " : " w "));
+      const cc = new Chess(flipped);
+      const hits = cc.moves({ square: h.to, verbose: true }).filter((x) => x.captured && (VAL[x.captured] ?? 0) >= 3);
+      doubleAttack = new Set(hits.map((x) => x.to)).size;
+    } catch { /* ignore */ }
+    const gaveCheck = /[+#]/.test(moves[i].move);
 
+    // Verifiable tactical phrase (never invented).
     let facts = "";
     if (good) {
-      const line = lineSan ? ` Continuación del motor tras la jugada: ${lineSan}.` : "";
-      const tactic = mateInLine ? " El motor ve un mate forzado en esta línea." : givesCheck ? " La jugada da jaque." : "";
+      let tactic = "";
+      if (forcedMate || /#/.test(mainLineSan)) tactic = " Conduce a un mate forzado a tu favor.";
+      else if (gaveCheck && doubleAttack >= 1) tactic = " Da jaque y a la vez ataca otra pieza (doble ataque).";
+      else if (doubleAttack >= 2) tactic = " Crea un doble ataque sobre dos piezas.";
+      else if (gaveCheck) tactic = " La jugada da jaque.";
+      // For good moves the line STARTS with the played move — safe to show.
+      const cont = mainLineSan ? ` Tu línea sigue así según el motor: ${mainLineSan}.` : "";
       if (isSacrifice && capturedName) {
-        facts = `Sacrificio de calidad: entregas tu ${movedName} por un ${capturedName} (menos material nominal), pero el motor lo confirma como la MEJOR jugada: hay compensación.${tactic}${line}`;
+        facts = `Sacrificio de calidad: entregas tu ${movedName} por un ${capturedName} (menos material nominal), pero el motor la confirma como la MEJOR jugada: hay compensación.${tactic}${cont}`;
       } else if (isSacrifice) {
-        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente, y el motor lo confirma como la MEJOR jugada.${tactic}${line}`;
+        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente y el motor la confirma como la MEJOR jugada.${tactic}${cont}`;
       } else if (capturedName && capturedVal >= movedVal) {
-        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName}; el motor lo confirma como la mejor.${tactic}${line}`;
+        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName}; el motor la confirma como la mejor.${tactic}${cont}`;
+      } else if (doubleAttack >= 2 || (gaveCheck && doubleAttack >= 1)) {
+        facts = `El motor la confirma como la mejor jugada.${tactic}${cont}`;
       } else if (capturedName) {
-        facts = `Capturas un ${capturedName}; el motor confirma que es la mejor jugada.${tactic}${line}`;
+        facts = `Capturas un ${capturedName}; el motor la confirma como la mejor jugada.${tactic}${cont}`;
       } else {
-        facts = `El motor confirma que es la mejor jugada (no es captura).${tactic}${line}`;
+        facts = `El motor la confirma como la mejor jugada de la posición.${tactic}${cont}`;
       }
     } else {
-      const line = bestLineSan ? ` La mejor era ${bestSan}; el motor seguía: ${bestLineSan}.` : (bestSan ? ` La mejor era ${bestSan}.` : "");
-      const tactic = mateInLine && bestLineSan ? " La línea correcta llevaba a un mate o ataque decisivo." : "";
+      // For errors the line is what the STUDENT should have played — make ownership explicit.
+      const mateNote = forcedMate ? ` Tenías un MATE FORZADO a tu favor y lo dejaste pasar.` : "";
+      const cont = bestSan
+        ? ` Lo correcto para ti era ${bestSan}${mainLineSan ? `, con tu secuencia ganadora ${mainLineSan}` : ""}.`
+        : "";
+      const alt = altSans.length ? ` Otras jugadas buenas tuyas: ${altSans.join(", ")}.` : "";
       facts = capturedName
-        ? `Con esta jugada capturaste un ${capturedName}, pero fue imprecisa.${line}${tactic}`
-        : `Jugada imprecisa.${line}${tactic}`;
+        ? `Capturaste un ${capturedName}, pero fue imprecisa.${mateNote}${cont}${alt}`
+        : `Jugada imprecisa.${mateNote}${cont}${alt}`;
     }
 
     const text = await coachComment({
