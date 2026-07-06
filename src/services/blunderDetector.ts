@@ -1,6 +1,6 @@
 import { Chess } from "chess.js";
 import Groq from "groq-sdk";
-import { analyzeAllFens, evaluatePosition, getBestMove, getPrincipalVariation } from "./stockfish";
+import { analyzeAllFens, evaluatePosition, getPrincipalVariation } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import type { Move } from "@/types";
 
@@ -229,16 +229,29 @@ export async function analyzeGame(
     const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
     const good = moves[i].classification === "brilliant" || moves[i].classification === "great";
 
-    // Engine best move (SAN) to ground the comment — only needed for errors.
+    // Helper: turn a UCI principal variation into readable SAN from a position.
+    const pvToSan = (fromFen: string, pv: string[]): string[] => {
+      const c = new Chess(fromFen);
+      const out: string[] = [];
+      for (const uci of pv) {
+        try {
+          const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4, 5) || "q" });
+          if (!mv) break;
+          out.push(mv.san);
+        } catch { break; }
+      }
+      return out;
+    };
+
+    // For ERRORS, the engine's best LINE (not just the move) grounds "what you
+    // should have played and what it achieved". One PV call replaces getBestMove.
     let bestSan: string | null = null;
+    let bestLineSan = "";
     if (!good) {
       try {
-        const bm = await getBestMove(fenBefore, DEEP_DEPTH);
-        if (bm) {
-          const c = new Chess(fenBefore);
-          const mv = c.move({ from: bm.from, to: bm.to, promotion: "q" });
-          if (mv) bestSan = mv.san;
-        }
+        const pv = await getPrincipalVariation(fenBefore, DEEP_DEPTH, 5);
+        const sans = pvToSan(fenBefore, pv);
+        if (sans.length) { bestSan = sans[0]; bestLineSan = sans.join(" "); }
       } catch { /* ignore */ }
     }
 
@@ -263,39 +276,40 @@ export async function analyzeGame(
     const netIfRecaptured = capturedVal - movedVal;
     const isSacrifice = cheapestRecapture != null && netIfRecaptured < 0;
 
-    // Engine's real continuation after this move (as SAN) — lets the comment be
-    // concrete and grounded instead of vague. Only for the good moves we praise.
+    // Engine's real continuation after this move — grounds the compensation.
     let lineSan = "";
     if (good) {
       try {
         const pv = await getPrincipalVariation(fens[i], DEEP_DEPTH, 6);
-        const c = new Chess(fens[i]);
-        const sans: string[] = [];
-        for (const uci of pv) {
-          const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4, 5) || "q" });
-          if (!mv) break;
-          sans.push(mv.san);
-        }
+        const sans = pvToSan(fens[i], pv);
         if (sans.length) lineSan = sans.join(" ");
       } catch { /* ignore */ }
     }
+    // Tactical signals that ARE verifiable from SAN: check / mate now or in the line.
+    const mateInLine = /#/.test(moves[i].move) || /#/.test(lineSan) || /#/.test(bestLineSan);
+    const givesCheck = /\+/.test(moves[i].move);
 
     let facts = "";
     if (good) {
       const line = lineSan ? ` Continuación del motor tras la jugada: ${lineSan}.` : "";
+      const tactic = mateInLine ? " El motor ve un mate forzado en esta línea." : givesCheck ? " La jugada da jaque." : "";
       if (isSacrifice && capturedName) {
-        facts = `Sacrificio de calidad: entregas tu ${movedName} por un ${capturedName} (menos material nominal), pero el motor lo confirma como la MEJOR jugada: hay compensación.${line}`;
+        facts = `Sacrificio de calidad: entregas tu ${movedName} por un ${capturedName} (menos material nominal), pero el motor lo confirma como la MEJOR jugada: hay compensación.${tactic}${line}`;
       } else if (isSacrifice) {
-        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente, y el motor lo confirma como la MEJOR jugada.${line}`;
+        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente, y el motor lo confirma como la MEJOR jugada.${tactic}${line}`;
       } else if (capturedName && capturedVal >= movedVal) {
-        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName}; el motor lo confirma como la mejor.${line}`;
+        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName}; el motor lo confirma como la mejor.${tactic}${line}`;
       } else if (capturedName) {
-        facts = `Capturas un ${capturedName}; el motor confirma que es la mejor jugada.${line}`;
+        facts = `Capturas un ${capturedName}; el motor confirma que es la mejor jugada.${tactic}${line}`;
       } else {
-        facts = `El motor confirma que es la mejor jugada (no es captura).${line}`;
+        facts = `El motor confirma que es la mejor jugada (no es captura).${tactic}${line}`;
       }
     } else {
-      facts = capturedName ? `Con esta jugada capturaste un ${capturedName}.` : `Jugada tranquila (sin captura).`;
+      const line = bestLineSan ? ` La mejor era ${bestSan}; el motor seguía: ${bestLineSan}.` : (bestSan ? ` La mejor era ${bestSan}.` : "");
+      const tactic = mateInLine && bestLineSan ? " La línea correcta llevaba a un mate o ataque decisivo." : "";
+      facts = capturedName
+        ? `Con esta jugada capturaste un ${capturedName}, pero fue imprecisa.${line}${tactic}`
+        : `Jugada imprecisa.${line}${tactic}`;
     }
 
     const text = await coachComment({
