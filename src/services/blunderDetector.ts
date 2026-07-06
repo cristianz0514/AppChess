@@ -247,20 +247,39 @@ export async function analyzeGame(
     // Concrete facts to ground the comment (real value, not generic praise).
     const h = history[i];
     const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+    const movedVal = VAL[h.piece] ?? 0;
+    const capturedVal = h.captured ? (VAL[h.captured] ?? 0) : 0;
+    const movedName = PIECE_ES[h.piece] ?? "pieza";
+    const capturedName = h.captured ? (PIECE_ES[h.captured] ?? "pieza") : null;
+
+    // Can the OPPONENT recapture the piece we just moved? Check on the position
+    // AFTER the move (fens[i]) — the previous code checked our own moves BEFORE
+    // moving, so it never detected real sacrifices (e.g. RxB exchange sacs).
+    let cheapestRecapture: number | null = null;
+    try {
+      const after = new Chess(fens[i]);
+      const recaps = after.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured);
+      if (recaps.length) cheapestRecapture = Math.min(...recaps.map((x) => VAL[x.piece] ?? 99));
+    } catch { /* ignore */ }
+    // Net material you end up with if the opponent recaptures the moved piece.
+    const netIfRecaptured = capturedVal - movedVal;
+    const isSacrifice = cheapestRecapture != null && netIfRecaptured < 0;
+
     let facts = "";
     if (good) {
-      let sacrificed: string | null = null;
-      try {
-        const c = new Chess(fenBefore);
-        const caps = c.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured);
-        const movedVal = VAL[h.piece] ?? 0;
-        if (caps.length && Math.min(...caps.map((x) => VAL[x.piece] ?? 99)) < movedVal) sacrificed = h.piece;
-      } catch { /* ignore */ }
-      if (sacrificed) facts = `Es un sacrificio de ${PIECE_ES[sacrificed]}; el motor lo confirma como la mejor jugada.`;
-      else if (h.captured) facts = `Gana un ${PIECE_ES[h.captured]}; el motor la confirma como la mejor jugada.`;
-      else facts = `El motor la confirma como la mejor jugada de la posición.`;
+      if (isSacrifice && capturedName) {
+        facts = `Sacrificio de calidad: entregas tu ${movedName} y capturas un ${capturedName} (quedas con menos material nominal), pero el motor lo confirma como la MEJOR jugada — hay compensación posicional o táctica.`;
+      } else if (isSacrifice) {
+        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente, y aun así el motor lo confirma como la MEJOR jugada (compensación posicional o táctica).`;
+      } else if (capturedName && capturedVal >= movedVal) {
+        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName} y el motor lo confirma como la mejor jugada.`;
+      } else if (capturedName) {
+        facts = `Capturas un ${capturedName}; el motor confirma que es la mejor jugada de la posición.`;
+      } else {
+        facts = `El motor confirma que es la mejor jugada de la posición (no es una captura).`;
+      }
     } else {
-      facts = h.captured ? `Con esta jugada capturaste un ${PIECE_ES[h.captured]}.` : `Jugada tranquila (sin captura).`;
+      facts = capturedName ? `Con esta jugada capturaste un ${capturedName}.` : `Jugada tranquila (sin captura).`;
     }
 
     const text = await coachComment({
