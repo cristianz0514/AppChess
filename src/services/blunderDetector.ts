@@ -9,10 +9,11 @@ export type MoveClassification = Move["classification"];
 // How many moves get an AI coach comment. Only the moves that matter (errors +
 // brilliant/great) — the ones an expert actually reads. Bounded to keep the
 // pre-view analysis window reasonable.
-const MAX_EXPLAIN = 20;
-// Deeper analysis just for the coach lines (quality over speed — the user opted
-// to wait longer). MultiPV gives the best move + alternatives.
-const EXPLAIN_DEPTH = 16;
+const MAX_EXPLAIN = 16;
+// Depth for the coach lines. Tuned to what the free-tier CPU can actually FINISH
+// within the engine timeout — too deep and it times out with EMPTY lines, which
+// strips the comment of its grounding and makes it worse, not better.
+const EXPLAIN_DEPTH = 14;
 const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
@@ -256,7 +257,7 @@ export async function analyzeGame(
     // Deep multi-line engine analysis from BEFORE the move: the best line +
     // alternatives. Deeper than the sweep (quality for the coach).
     let lines: { mate: number | null; scoreCp: number | null; pv: string[] }[] = [];
-    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 3); } catch { /* ignore */ }
+    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 2); } catch { /* ignore */ }
     const mainSans = lines[0] ? pvToSan(fenBefore, lines[0].pv) : [];
     const bestSan = mainSans[0] ?? null;
     const mainLineSan = mainSans.join(" ");

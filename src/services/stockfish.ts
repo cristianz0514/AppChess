@@ -191,7 +191,7 @@ export async function getTopLines(fen: string, depth = 16, multipv = 3): Promise
       engine.sendCommand("setoption name MultiPV value 1"); // reset so plain evals aren't affected
       resolve([...lines.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v));
     };
-    const timer = setTimeout(finish, 9000);
+    const timer = setTimeout(finish, 13000);
     engine.listener = (line: string) => {
       if (line.startsWith("info")) {
         const mpv = line.match(/multipv (\d+)/);
