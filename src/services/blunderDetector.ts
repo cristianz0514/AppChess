@@ -9,36 +9,42 @@ export type MoveClassification = Move["classification"];
 // How many moves get an AI coach comment. Only the moves that matter (errors +
 // brilliant/great) — the ones an expert actually reads. Bounded to keep the
 // pre-view analysis window reasonable.
-const MAX_EXPLAIN = 14;
+const MAX_EXPLAIN = 20;
 const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
 const fmtP = (e: number) => (Math.abs(e) >= 90 ? (e > 0 ? "mate a favor" : "mate en contra") : `${e > 0 ? "+" : ""}${e.toFixed(1)}`);
 
-// One SHORT coach sentence, grounded in the engine's best move + eval swing.
+const PIECE_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
+
+// One short coach sentence, grounded in concrete facts (best move, sacrifice /
+// captured material, eval swing) so it adds real value — not generic praise.
 async function coachComment(args: {
   fenBefore: string; san: string; bestMove: string | null; moveNumber: number;
-  evalBefore: number; evalAfter: number; good: boolean;
+  evalBefore: number; evalAfter: number; good: boolean; facts: string;
 }): Promise<string | null> {
   if (!groq) return null;
-  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good } = args;
+  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
+  const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
   const prompt = good
-    ? `Eres un entrenador de ajedrez de élite. En UNA sola frase de MÁXIMO 14 palabras, en español, di por qué ${moveNumber}.${san} es una gran jugada. Básate SOLO en estos datos, no analices por tu cuenta.
+    ? `Eres un entrenador de ajedrez de élite, concreto y directo. En español, en UNA frase de MÁXIMO 20 palabras, explica la IDEA concreta de por qué ${moveNumber}.${san} es una gran jugada: nombra el motivo real (material, seguridad del rey rival, iniciativa, una columna/diagonal abierta, un clavado, tempo). Apóyate en los datos; NO inventes variantes largas ni jugadas.
+Hechos: ${facts}
 Posición (FEN): ${fenBefore}
-Evaluación antes: ${fmtP(evalBefore)} · después: ${fmtP(evalAfter)}
-Solo la frase, sin comillas ni encabezados.`
-    : `Eres un entrenador de ajedrez de élite. En UNA sola frase de MÁXIMO 14 palabras, en español, di por qué ${moveNumber}.${san} fue peor que ${bestMove ?? "la mejor jugada"}. Básate SOLO en estos datos, no inventes variantes.
-Posición (FEN): ${fenBefore}
+Evaluación tuya: antes ${fmtP(evalBefore)}, después ${fmtP(evalAfter)}.
+Devuelve SOLO la frase, sin comillas.`
+    : `Eres un entrenador de ajedrez de élite, concreto y directo. En español, en UNA frase de MÁXIMO 20 palabras, explica QUÉ concedió ${moveNumber}.${san} o QUÉ lograba ${bestMove ?? "la mejor jugada"}: nombra el motivo real (pierde material, deja el rey expuesto, cede iniciativa/columna, permite una táctica). Apóyate en los datos; NO inventes variantes largas.
+Hechos: ${facts}
 Mejor jugada del motor: ${bestMove ?? "(desconocida)"}
-Evaluación antes: ${fmtP(evalBefore)} · después: ${fmtP(evalAfter)}
-Solo la frase, sin comillas ni encabezados.`;
+Posición (FEN): ${fenBefore}
+Evaluación tuya: antes ${fmtP(evalBefore)}, después ${fmtP(evalAfter)} (cambio de ${swing}).
+Devuelve SOLO la frase, sin comillas.`;
   try {
     const res = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.4,
-      max_tokens: 60,
+      temperature: 0.35,
+      max_tokens: 90,
     });
     let text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
     // Soft length cap only — do NOT split on the first "." (that would cut inside
@@ -238,9 +244,28 @@ export async function analyzeGame(
       } catch { /* ignore */ }
     }
 
+    // Concrete facts to ground the comment (real value, not generic praise).
+    const h = history[i];
+    const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+    let facts = "";
+    if (good) {
+      let sacrificed: string | null = null;
+      try {
+        const c = new Chess(fenBefore);
+        const caps = c.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured);
+        const movedVal = VAL[h.piece] ?? 0;
+        if (caps.length && Math.min(...caps.map((x) => VAL[x.piece] ?? 99)) < movedVal) sacrificed = h.piece;
+      } catch { /* ignore */ }
+      if (sacrificed) facts = `Es un sacrificio de ${PIECE_ES[sacrificed]}; el motor lo confirma como la mejor jugada.`;
+      else if (h.captured) facts = `Gana un ${PIECE_ES[h.captured]}; el motor la confirma como la mejor jugada.`;
+      else facts = `El motor la confirma como la mejor jugada de la posición.`;
+    } else {
+      facts = h.captured ? `Con esta jugada capturaste un ${PIECE_ES[h.captured]}.` : `Jugada tranquila (sin captura).`;
+    }
+
     const text = await coachComment({
       fenBefore, san: moves[i].move, bestMove: bestSan,
-      moveNumber: moves[i].move_number, evalBefore, evalAfter, good,
+      moveNumber: moves[i].move_number, evalBefore, evalAfter, good, facts,
     });
 
     if (text) {
