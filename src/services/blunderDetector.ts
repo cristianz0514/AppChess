@@ -31,13 +31,13 @@ async function coachComment(args: {
   if (!groq) return null;
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
   const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
-  const RULES = `Reglas estrictas: apóyate SOLO en los hechos y la evaluación dados. Puedes citar la "continuación del motor" si aparece en los hechos, pero NO inventes otras jugadas, casillas, columnas ni flancos que no estén ahí. NO repitas el número ni el nombre de la jugada del alumno (ya se muestra en pantalla): empieza directo por la idea. Prioriza la IDEA ajedrecística (iniciativa, actividad de piezas, ataque al rey, mejor estructura, control del centro, tempo, material). NO uses la palabra "sacrificio" salvo que aparezca en los hechos. NO menciones cifras, "puntos" ni "evaluación" numérica. Evita jerga vacía; habla claro y concreto como a un jugador fuerte. Español, tono de entrenador humano, sin relleno. UNA sola frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
+  const RULES = `Reglas: apóyate SOLO en los hechos y la evaluación. Puedes citar la línea/tácticas de los hechos, pero NO inventes otras jugadas, casillas ni flancos que no estén ahí. NO repitas el nombre de la jugada del alumno (ya se muestra). NO uses "sacrificio" salvo que aparezca en los hechos. NO menciones cifras, "puntos" ni la palabra "evaluación". PROHIBIDAS las frases vacías: "no aprovechaste la oportunidad", "perdiste ventaja", "mejora en la evaluación", "secuencia ganadora". NO inventes qué pieza moviste ni digas que una pieza "queda mal colocada" salvo que los hechos lo indiquen (los hechos dicen qué pieza moviste). Si no hay un defecto concreto en los hechos, explica qué LOGRABA la mejor jugada (su idea) sin inventar defectos. Nombra un elemento concreto (una pieza y qué le pasa, el rey, una columna/casilla, la iniciativa, el material). Tono de entrenador fuerte y directo. Español. UNA frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
   const prompt = good
-    ? `Eres un entrenador de ajedrez de élite. Explica el VALOR de la jugada ${moveNumber}.${san}. Si los hechos dicen que es un sacrificio, explica qué tipo de compensación general justifica entregar material.
+    ? `Eres un entrenador de ajedrez fuerte. Di POR QUÉ ${moveNumber}.${san} es una gran jugada, nombrando el elemento concreto que gana (material, seguridad del rey, iniciativa, actividad). Si los hechos dicen que es un sacrificio, explica qué compensación lo justifica.
 Hechos: ${facts}
 Evaluación tuya: antes ${fmtP(evalBefore)}, después ${fmtP(evalAfter)}.
 ${RULES}`
-    : `Eres un entrenador de ajedrez de élite. Explica en qué falló ${moveNumber}.${san} frente a la mejor del motor (${bestMove ?? "desconocida"}): qué concede (material, seguridad del rey, iniciativa, estructura) o qué lograba la mejor.
+    : `Eres un entrenador de ajedrez fuerte. Di QUÉ CONCEDE o PERMITE la jugada ${moveNumber}.${san} (qué pieza queda mal, qué gana el rival, qué recurso da) y de pasada qué buscaba la mejor (${bestMove ?? "desconocida"}). No te limites a decir "era mejor X".
 Hechos: ${facts}
 Cambio de evaluación: ${fmtP(evalBefore)} → ${fmtP(evalAfter)} (${swing}).
 ${RULES}`;
@@ -116,6 +116,13 @@ export async function analyzeGame(
   // Builds the moves array (loss + classification) from the current whiteEval.
   const buildMoves = (): Omit<Move, "id">[] =>
     history.map((move, i) => {
+      // A move that delivers checkmate is the best possible outcome — never an
+      // error. Engine eval at the terminal position can flip sign and misclassify
+      // it as a blunder, so short-circuit here.
+      if (move.san.includes("#")) {
+        const whiteMated = i % 2 === 0;
+        return { game_id: gameId, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: whiteMated ? 9999 : -9999, centipawn_loss: 0, classification: "best" };
+      }
       const cur = whiteEval[i];
       if (cur === null) {
         return { game_id: gameId, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: null, centipawn_loss: null, classification: null };
@@ -216,7 +223,9 @@ export async function analyzeGame(
 
   const notable = moves
     .map((m, i) => ({ i, cls: m.classification, loss: m.centipawn_loss ?? 0 }))
-    .filter((m) => m.cls && EXPLAIN_CLASSES.has(m.cls));
+    .filter((m) => m.cls && EXPLAIN_CLASSES.has(m.cls))
+    // Skip trivial inaccuracies (e.g. +3.5→+3.0): a comment there is just noise.
+    .filter((m) => m.cls !== "inaccuracy" || m.loss >= 80);
   const weight: Record<string, number> = { blunder: 5, mistake: 4, brilliant: 4, great: 3, inaccuracy: 1 };
   const chosen = notable
     .sort((a, b) => (weight[b.cls!] - weight[a.cls!]) || (b.loss - a.loss))
@@ -309,15 +318,26 @@ export async function analyzeGame(
         facts = `El motor la confirma como la mejor jugada de la posición.${tactic}${cont}`;
       }
     } else {
-      // For errors the line is what the STUDENT should have played — make ownership explicit.
+      // What does the move ALLOW? The opponent's best reply from the after-position
+      // — grounds "what went wrong" instead of only "you should've played X".
+      let concede = "";
+      try {
+        const opp = await getTopLines(fens[i], DEEP_DEPTH, 1);
+        const oppSan = opp[0] ? pvToSan(fens[i], opp[0].pv)[0] : null;
+        if (oppSan) {
+          const cc = new Chess(fens[i]);
+          const mv = cc.moves({ verbose: true }).find((x) => x.san === oppSan);
+          concede = mv && mv.captured && (VAL[mv.captured] ?? 0) >= 3
+            ? ` Permite ${oppSan}, que le gana un ${PIECE_ES[mv.captured]}.`
+            : ` El rival responde ${oppSan}.`;
+        }
+      } catch { /* ignore */ }
       const mateNote = forcedMate ? ` Tenías un MATE FORZADO a tu favor y lo dejaste pasar.` : "";
-      const cont = bestSan
-        ? ` Lo correcto para ti era ${bestSan}${mainLineSan ? `, con tu secuencia ganadora ${mainLineSan}` : ""}.`
-        : "";
-      const alt = altSans.length ? ` Otras jugadas buenas tuyas: ${altSans.join(", ")}.` : "";
+      const better = bestSan ? ` La mejor era ${bestSan} (línea: ${mainLineSan}).` : "";
+      const moved = ` Moviste tu ${movedName}.`;
       facts = capturedName
-        ? `Capturaste un ${capturedName}, pero fue imprecisa.${mateNote}${cont}${alt}`
-        : `Jugada imprecisa.${mateNote}${cont}${alt}`;
+        ? `Capturaste un ${capturedName}, pero fue imprecisa.${moved}${concede}${mateNote}${better}`
+        : `Jugada imprecisa.${moved}${concede}${mateNote}${better}`;
     }
 
     const text = await coachComment({
