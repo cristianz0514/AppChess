@@ -1,6 +1,6 @@
 import { Chess } from "chess.js";
 import Groq from "groq-sdk";
-import { analyzeAllFens, evaluatePosition, getBestMove } from "./stockfish";
+import { analyzeAllFens, evaluatePosition, getBestMove, getPrincipalVariation } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import type { Move } from "@/types";
 
@@ -27,18 +27,16 @@ async function coachComment(args: {
   if (!groq) return null;
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
   const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
+  const RULES = `Reglas estrictas: apóyate SOLO en los hechos y la evaluación dados. Puedes citar la "continuación del motor" si aparece en los hechos, pero NO inventes otras jugadas, casillas, columnas ni flancos que no estén ahí. Prioriza la IDEA ajedrecística (compensación, iniciativa, actividad de piezas, ataque al rey, mejor estructura, control del centro, tempo, material recuperado). Español, tono de entrenador humano, sin relleno. UNA sola frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
   const prompt = good
-    ? `Eres un entrenador de ajedrez de élite, concreto y directo. En español, en UNA frase de MÁXIMO 20 palabras, explica la IDEA concreta de por qué ${moveNumber}.${san} es una gran jugada: nombra el motivo real (material, seguridad del rey rival, iniciativa, una columna/diagonal abierta, un clavado, tempo). Apóyate en los datos; NO inventes variantes largas ni jugadas.
+    ? `Eres un entrenador de ajedrez de élite. Explica el VALOR de la jugada ${moveNumber}.${san}. Si los hechos dicen que es un sacrificio, explica qué tipo de compensación general justifica entregar material.
 Hechos: ${facts}
-Posición (FEN): ${fenBefore}
 Evaluación tuya: antes ${fmtP(evalBefore)}, después ${fmtP(evalAfter)}.
-Devuelve SOLO la frase, sin comillas.`
-    : `Eres un entrenador de ajedrez de élite, concreto y directo. En español, en UNA frase de MÁXIMO 20 palabras, explica QUÉ concedió ${moveNumber}.${san} o QUÉ lograba ${bestMove ?? "la mejor jugada"}: nombra el motivo real (pierde material, deja el rey expuesto, cede iniciativa/columna, permite una táctica). Apóyate en los datos; NO inventes variantes largas.
+${RULES}`
+    : `Eres un entrenador de ajedrez de élite. Explica en qué falló ${moveNumber}.${san} frente a la mejor del motor (${bestMove ?? "desconocida"}): qué concede (material, seguridad del rey, iniciativa, estructura) o qué lograba la mejor.
 Hechos: ${facts}
-Mejor jugada del motor: ${bestMove ?? "(desconocida)"}
-Posición (FEN): ${fenBefore}
-Evaluación tuya: antes ${fmtP(evalBefore)}, después ${fmtP(evalAfter)} (cambio de ${swing}).
-Devuelve SOLO la frase, sin comillas.`;
+Cambio de evaluación: ${fmtP(evalBefore)} → ${fmtP(evalAfter)} (${swing}).
+${RULES}`;
   try {
     const res = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -265,18 +263,36 @@ export async function analyzeGame(
     const netIfRecaptured = capturedVal - movedVal;
     const isSacrifice = cheapestRecapture != null && netIfRecaptured < 0;
 
+    // Engine's real continuation after this move (as SAN) — lets the comment be
+    // concrete and grounded instead of vague. Only for the good moves we praise.
+    let lineSan = "";
+    if (good) {
+      try {
+        const pv = await getPrincipalVariation(fens[i], DEEP_DEPTH, 6);
+        const c = new Chess(fens[i]);
+        const sans: string[] = [];
+        for (const uci of pv) {
+          const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4, 5) || "q" });
+          if (!mv) break;
+          sans.push(mv.san);
+        }
+        if (sans.length) lineSan = sans.join(" ");
+      } catch { /* ignore */ }
+    }
+
     let facts = "";
     if (good) {
+      const line = lineSan ? ` Continuación del motor tras la jugada: ${lineSan}.` : "";
       if (isSacrifice && capturedName) {
-        facts = `Sacrificio de calidad: entregas tu ${movedName} y capturas un ${capturedName} (quedas con menos material nominal), pero el motor lo confirma como la MEJOR jugada — hay compensación posicional o táctica.`;
+        facts = `Sacrificio de calidad: entregas tu ${movedName} por un ${capturedName} (menos material nominal), pero el motor lo confirma como la MEJOR jugada: hay compensación.${line}`;
       } else if (isSacrifice) {
-        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente, y aun así el motor lo confirma como la MEJOR jugada (compensación posicional o táctica).`;
+        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente, y el motor lo confirma como la MEJOR jugada.${line}`;
       } else if (capturedName && capturedVal >= movedVal) {
-        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName} y el motor lo confirma como la mejor jugada.`;
+        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName}; el motor lo confirma como la mejor.${line}`;
       } else if (capturedName) {
-        facts = `Capturas un ${capturedName}; el motor confirma que es la mejor jugada de la posición.`;
+        facts = `Capturas un ${capturedName}; el motor confirma que es la mejor jugada.${line}`;
       } else {
-        facts = `El motor confirma que es la mejor jugada de la posición (no es una captura).`;
+        facts = `El motor confirma que es la mejor jugada (no es captura).${line}`;
       }
     } else {
       facts = capturedName ? `Con esta jugada capturaste un ${capturedName}.` : `Jugada tranquila (sin captura).`;

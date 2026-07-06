@@ -145,6 +145,34 @@ export async function getBestMove(fen: string, depth = 12): Promise<{ from: stri
   }));
 }
 
+// Returns the engine's principal variation (best line) as UCI moves — the real
+// continuation, so a coach comment can be grounded in what actually happens.
+export async function getPrincipalVariation(fen: string, depth = 14, maxPlies = 6): Promise<string[]> {
+  const engine = await getEngine();
+  return runExclusive(() => new Promise<string[]>((resolve) => {
+    let settled = false;
+    let pv: string[] = [];
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      engine.listener = null;
+      resolve(pv);
+    };
+    const timer = setTimeout(finish, 4500);
+    engine.listener = (line: string) => {
+      if (line.startsWith("info")) {
+        const m = line.match(/ pv (.+)$/);
+        if (m) pv = m[1].trim().split(/\s+/).slice(0, maxPlies);
+      } else if (line.startsWith("bestmove")) {
+        finish();
+      }
+    };
+    engine.sendCommand("position fen " + fen);
+    engine.sendCommand("go depth " + depth);
+  }));
+}
+
 // Evaluates multiple FENs sequentially on the shared engine.
 export async function analyzeAllFens(
   fens: string[],
