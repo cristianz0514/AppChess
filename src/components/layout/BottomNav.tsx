@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Brain, Swords, BookOpen, Plus } from "lucide-react";
+import { LayoutDashboard, Brain, Swords, BookOpen } from "lucide-react";
+import { Piece } from "../pieces";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -24,15 +25,25 @@ export function BottomNav() {
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.map((item) => {
           if (!item) {
+            // The centerpiece action — Practica el Mate is the app's core
+            // feature, so it gets the most prominent slot, not a buried menu item.
+            const onPractice = pathname === "/practica-mate";
             return (
               <div key="fab" className="flex items-center justify-center flex-1">
                 <Link
-                  href="/"
-                  className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-                  style={{ background: "var(--bv-purple)" }}
-                  aria-label="Importar partidas"
+                  href="/practica-mate"
+                  className="w-14 h-14 -mt-4 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform p-2.5"
+                  style={{
+                    background: "var(--bv-purple)",
+                    boxShadow: onPractice
+                      ? "0 4px 16px oklch(0.61 0.22 285 / 0.45)"
+                      : "0 4px 14px oklch(0.61 0.22 285 / 0.32)",
+                    outline: onPractice ? "2.5px solid var(--bv-purple)" : undefined,
+                    outlineOffset: 2,
+                  }}
+                  aria-label="Practica el Mate"
                 >
-                  <Plus size={22} strokeWidth={2.5} className="text-white" />
+                  <Piece type="n" white />
                 </Link>
               </div>
             );

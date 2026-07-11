@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard",      label: "Inicio",           icon: LayoutDashboard },
+  { href: "/practica-mate",  label: "Practica el Mate", icon: Target },
   { href: "/openings",       label: "Aperturas",        icon: BookOpen },
   { href: "/blunders",       label: "Partidas",         icon: Swords },
   { href: "/insights",       label: "Coach IA",         icon: Brain },
-  { href: "/practica-mate",  label: "Practica el Mate", icon: Target },
 ];
 
 export function Sidebar() {
