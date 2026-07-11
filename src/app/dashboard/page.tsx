@@ -9,7 +9,7 @@ import { getInsights } from "@/services/insightsGenerator";
 import { InsightsCard } from "@/components/InsightsCard";
 import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
-import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, AlertTriangle, type LucideIcon } from "lucide-react";
+import { Trophy, TrendingDown, TrendingUp, Search, Play, Zap, AlertTriangle, Target, ChevronRight, type LucideIcon } from "lucide-react";
 import type { Insight } from "@/types";
 
 export const metadata = { title: "Inicio" };
@@ -180,6 +180,21 @@ export default async function DashboardPage({ searchParams }: Props) {
             </div>
           ))}
         </div>
+
+        {/* ── Practica el Mate — road trip entry point ─────────── */}
+        <Link href="/practica-mate"
+          className="flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.98]"
+          style={{ borderColor: "oklch(0.61 0.22 285 / 0.2)", background: "oklch(0.61 0.22 285 / 0.06)" }}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: "oklch(0.61 0.22 285 / 0.15)" }}>
+            <Target size={18} style={{ color: "var(--bv-purple)" }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Practica el Mate</p>
+            <p className="text-[11px] text-muted-foreground">Ejercicios de mate forzado, incluidos algunos de tus partidas</p>
+          </div>
+          <ChevronRight size={16} className="text-muted-foreground shrink-0" />
+        </Link>
 
         {/* ── Partidas Destacadas ─────────────────────────────── */}
         {(highlights.best || highlights.worst || highlights.mostErrors) && (

@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, Swords, Brain, Plus } from "lucide-react";
+import { LayoutDashboard, BookOpen, Swords, Brain, Target, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Inicio",       icon: LayoutDashboard },
-  { href: "/openings",  label: "Aperturas",    icon: BookOpen },
-  { href: "/blunders",  label: "Partidas",     icon: Swords },
-  { href: "/insights",  label: "Coach IA",     icon: Brain },
+  { href: "/dashboard",      label: "Inicio",           icon: LayoutDashboard },
+  { href: "/openings",       label: "Aperturas",        icon: BookOpen },
+  { href: "/blunders",       label: "Partidas",         icon: Swords },
+  { href: "/insights",       label: "Coach IA",         icon: Brain },
+  { href: "/practica-mate",  label: "Practica el Mate", icon: Target },
 ];
 
 export function Sidebar() {
