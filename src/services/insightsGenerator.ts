@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
+import { hasModernSchema } from "./dashboardData";
 import type { Insight } from "@/types";
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
@@ -73,8 +74,9 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   // Order by real play date (played_at) when the column exists; else by import
   // time. created_at is identical across a full-history batch, so played_at is
   // preferred, but the query must not fail if the migration hasn't run.
-  const probe = await supabase.from("games").select("played_at").limit(1);
-  const orderCol = probe.error ? "created_at" : "played_at";
+  // Reuses dashboardData's cache()-memoized probe instead of re-querying —
+  // a dashboard load calls both this and getDashboardStats in the same request.
+  const orderCol = (await hasModernSchema()) ? "played_at" : "created_at";
   const { data: gameRows } = await supabase
     .from("games")
     .select("id, result, accuracy, pgn, played_as")
