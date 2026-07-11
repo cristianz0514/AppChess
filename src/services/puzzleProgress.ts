@@ -30,7 +30,7 @@ const WORLD_META: Record<1 | 2, { title: string; subtitle: string }> = {
 // after it is "locked", and a whole world is locked until the previous one is
 // 100% solved (Mate en 2 unlocks only after all of Mate en 1 is done).
 export async function getRoadTrip(userId: string): Promise<RoadTripWorld[]> {
-  const [{ data: puzzles }, { data: progress }] = await Promise.all([
+  const [puzzlesRes, progressRes] = await Promise.all([
     supabase
       .from("puzzles")
       .select("id, mate_in, order_index, fen, solution, source, game_id, user_id")
@@ -42,6 +42,8 @@ export async function getRoadTrip(userId: string): Promise<RoadTripWorld[]> {
       .select("puzzle_id, solved")
       .eq("user_id", userId),
   ]);
+  const { data: puzzles } = puzzlesRes;
+  const { data: progress } = progressRes;
 
   const solvedSet = new Set((progress ?? []).filter((p) => p.solved).map((p) => p.puzzle_id));
 

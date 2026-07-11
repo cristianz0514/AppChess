@@ -45,20 +45,37 @@ async function fetchOneLichessPuzzle(angle: "mateIn1" | "mateIn2"): Promise<{
   };
 }
 
-// Seeds a FIXED, numbered batch of Lichess puzzles for a mate-in-N level —
-// this gives the road trip stable, replayable content instead of depending on
-// the live API during play. Safe to re-run: skips puzzle ids already stored,
-// and only adds enough new ones to reach `count` total for that level.
+// Thrown when the `puzzles` table doesn't exist yet (migration not run) — lets
+// callers fail FAST with a clear, actionable message instead of grinding
+// through dozens of live Lichess calls that can never succeed.
+export class PuzzlesSchemaMissingError extends Error {
+  constructor() { super("La tabla 'puzzles' no existe todavía en la base de datos. Corre la migración 005 en Supabase."); }
+}
+
+function isMissingTableError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "PGRST205" || /could not find the table/i.test(error.message ?? "");
+}
+
+// Seeds a batch of Lichess puzzles for a mate-in-N level, up to `count` total
+// stored for that level — this gives the road trip stable, replayable content
+// instead of depending on the live API during play. Safe to re-run: skips
+// puzzle ids already stored, only adds as many NEW ones as needed.
+//
+// Designed to be called with a SMALL `count` for a fast initial batch (a few
+// seconds, unblocks the player quickly) and again with a larger target to top
+// up in the background while they play — see BackgroundSeeder on the client.
 export async function seedLichessPuzzles(mateIn: 1 | 2, count: number): Promise<{ added: number; total: number }> {
   const angle = mateIn === 1 ? "mateIn1" : "mateIn2";
 
-  const { count: existing } = await supabase
+  const existingQ = await supabase
     .from("puzzles")
     .select("id", { count: "exact", head: true })
     .eq("source", "lichess")
     .eq("mate_in", mateIn);
+  if (isMissingTableError(existingQ.error)) throw new PuzzlesSchemaMissingError();
 
-  let have = existing ?? 0;
+  let have = existingQ.count ?? 0;
   if (have >= count) return { added: 0, total: have };
 
   const { data: maxRow } = await supabase
@@ -73,8 +90,12 @@ export async function seedLichessPuzzles(mateIn: 1 | 2, count: number): Promise<
 
   const seen = new Set<string>();
   let added = 0;
-  // Cap attempts so a run of duplicates/failures can't loop forever.
-  const MAX_ATTEMPTS = (count - have) * 4 + 20;
+  let consecutiveErrors = 0;
+  // Cap attempts so a run of duplicates/failures can't loop forever, but abort
+  // MUCH earlier (after a handful of consecutive failures) — a persistent DB
+  // error won't fix itself by retrying 50 more times against Lichess.
+  const MAX_ATTEMPTS = (count - have) * 3 + 10;
+  const MAX_CONSECUTIVE_ERRORS = 4;
   for (let attempt = 0; attempt < MAX_ATTEMPTS && have < count; attempt++) {
     const p = await fetchOneLichessPuzzle(angle);
     if (!p || seen.has(p.externalId)) continue;
@@ -89,8 +110,16 @@ export async function seedLichessPuzzles(mateIn: 1 | 2, count: number): Promise<
       rating: p.rating,
       order_index: nextOrder,
     });
-    // Unique(source, external_id) may already have this one from a prior run — skip, don't fail the batch.
-    if (!error) { nextOrder++; have++; added++; }
+    if (isMissingTableError(error)) throw new PuzzlesSchemaMissingError();
+    if (!error) {
+      nextOrder++; have++; added++; consecutiveErrors = 0;
+    } else {
+      // Unique(source, external_id) may already have this one from a prior run
+      // — that's expected/harmless. Anything else repeating means a real
+      // problem (bad connection, RLS, etc.) — don't grind forever on it.
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) break;
+    }
     // Be gentle with Lichess's anonymous rate limit.
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -114,6 +143,12 @@ const MINE_MAX_PLIES_PER_GAME = 20;
 const MINE_STOP_AFTER_ADDED = 5;
 
 export async function minePlayerMates(userId: string, maxGames = MINE_MAX_GAMES): Promise<{ added: number }> {
+  // Fail fast if the schema isn't ready — otherwise this would burn real engine
+  // CPU (up to ~160 depth-10 calls) scanning games for a table that can never
+  // accept the resulting insert anyway.
+  const probe = await supabase.from("puzzles").select("id", { head: true }).limit(1);
+  if (isMissingTableError(probe.error)) throw new PuzzlesSchemaMissingError();
+
   const { data: games } = await supabase
     .from("games")
     .select("id, pgn, played_as")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Chess } from "chess.js";
 import { Check, Lock, ExternalLink } from "lucide-react";
@@ -40,6 +40,15 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
   const [active, setActive] = useState<{ world: number; node: RoadTripNode } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // `useState(initialWorlds)` only seeds state on first mount — a later
+  // `router.refresh()` (from BackgroundSeeder, once it tops up more puzzles)
+  // passes a NEW `worlds` prop, but plain useState would silently ignore it.
+  // Sync local state whenever the server sends fresh data, so newly-seeded
+  // nodes actually appear on the path without a manual reload.
+  useEffect(() => {
+    setWorlds(initialWorlds);
+  }, [initialWorlds]);
 
   function toast(msg: string) {
     setToastMsg(msg);
@@ -226,6 +235,12 @@ function uciSquares(uci: string): { from: string; to: string } {
 }
 
 function PuzzleSheet({ node, onClose, onSolved }: { node: RoadTripNode; onClose: () => void; onSolved: () => void }) {
+  // Orient the board toward whoever is SOLVING (like chess.com/Lichess) —
+  // about half of these puzzles have Black to move, and always showing White
+  // at the bottom would leave the solver's own pieces at the top, confusing.
+  // Derived from the puzzle's starting FEN (node doesn't change across this
+  // mounted instance's lifetime) — must stay fixed, never flip mid-solve.
+  const solverOrientation: "white" | "black" = node.fen.split(" ")[1] === "b" ? "black" : "white";
   const [fen, setFen] = useState(node.fen);
   const [step, setStep] = useState(0);
   const [wrongTries, setWrongTries] = useState(0);
@@ -313,6 +328,7 @@ function PuzzleSheet({ node, onClose, onSolved }: { node: RoadTripNode; onClose:
           <div className={shake ? "puzzle-shake" : ""}>
             <ChessBoard
               fen={fen}
+              orientation={solverOrientation}
               interactive={status === "playing" && step !== 1 /* 1 = opponent auto-reply in progress */}
               onMove={handleMove}
               lastMove={lastMove}

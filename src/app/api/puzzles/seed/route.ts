@@ -1,17 +1,23 @@
-import { NextResponse } from "next/server";
-import { seedLichessPuzzles } from "@/services/puzzles";
+import { NextRequest, NextResponse } from "next/server";
+import { seedLichessPuzzles, PuzzlesSchemaMissingError } from "@/services/puzzles";
+import { FULL_TARGET } from "@/lib/puzzleConstants";
 
-// Seeds the fixed, numbered Lichess batch for both levels. Idempotent — only
-// fetches as many NEW puzzles as needed to reach the target count, so it's
-// safe to call this on every visit to the practice page.
-export async function POST() {
+// Seeds ONE level up to a given count. Called both for the fast initial batch
+// (small count, blocks the UI briefly) and for background continuation calls
+// (larger count, fire-and-forget from the client) — see BackgroundSeeder.
+// Idempotent: only fetches as many NEW puzzles as needed to reach the target.
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const mateIn = body.mateIn === 2 ? 2 : 1;
+  const count = typeof body.count === "number" ? Math.min(body.count, FULL_TARGET[mateIn]) : FULL_TARGET[mateIn];
+
   try {
-    const [mate1, mate2] = await Promise.all([
-      seedLichessPuzzles(1, 20),
-      seedLichessPuzzles(2, 15),
-    ]);
-    return NextResponse.json({ mate1, mate2 });
+    const result = await seedLichessPuzzles(mateIn as 1 | 2, count);
+    return NextResponse.json({ mateIn, ...result });
   } catch (err) {
+    if (err instanceof PuzzlesSchemaMissingError) {
+      return NextResponse.json({ error: err.message, code: "SCHEMA_MISSING" }, { status: 409 });
+    }
     return NextResponse.json({ error: err instanceof Error ? err.message : "seed failed" }, { status: 500 });
   }
 }
