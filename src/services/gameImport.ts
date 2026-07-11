@@ -73,24 +73,28 @@ async function getOrCreateUser(username: string): Promise<string> {
 }
 
 async function updateOpeningStats(userId: string): Promise<void> {
-  const { data: games } = await supabase
-    .from("games")
-    .select("opening, result")
-    .eq("user_id", userId);
+  // Paginate: PostgREST silently caps a single response at 1000 rows, so a
+  // plain unbounded select() was quietly computing wrong (truncated) totals
+  // for any account past 1000 games — not just slow, actually incorrect.
+  const PAGE = 1000;
+  const statsMap: Record<string, { wins: number; losses: number; draws: number }> = {};
 
-  if (!games) return;
+  for (let from = 0; ; from += PAGE) {
+    const { data: page } = await supabase
+      .from("games")
+      .select("opening, result")
+      .eq("user_id", userId)
+      .range(from, from + PAGE - 1);
+    if (!page || page.length === 0) break;
 
-  const statsMap: Record<
-    string,
-    { wins: number; losses: number; draws: number }
-  > = {};
-
-  for (const game of games) {
-    const key = game.opening ?? "Unknown";
-    if (!statsMap[key]) statsMap[key] = { wins: 0, losses: 0, draws: 0 };
-    if (game.result === "win") statsMap[key].wins++;
-    else if (game.result === "loss") statsMap[key].losses++;
-    else statsMap[key].draws++;
+    for (const game of page) {
+      const key = game.opening ?? "Unknown";
+      if (!statsMap[key]) statsMap[key] = { wins: 0, losses: 0, draws: 0 };
+      if (game.result === "win") statsMap[key].wins++;
+      else if (game.result === "loss") statsMap[key].losses++;
+      else statsMap[key].draws++;
+    }
+    if (page.length < PAGE) break;
   }
 
   const rows = Object.entries(statsMap).map(([opening_name, s]) => {

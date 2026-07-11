@@ -140,16 +140,6 @@ export const getDashboardStats = cache(async function(userId: string, timeClass?
   };
 });
 
-export const getTopOpenings = cache(async function(userId: string): Promise<OpeningStat[]> {
-  const { data } = await supabase
-    .from("opening_stats")
-    .select("*")
-    .eq("user_id", userId)
-    .order("games_played", { ascending: false })
-    .limit(8);
-  return data ?? [];
-});
-
 function aggregateOpenings(rows: { opening: string | null; result: string }[], userId: string): OpeningStat[] {
   const map = new Map<string, { wins: number; losses: number; draws: number }>();
   for (const g of rows) {

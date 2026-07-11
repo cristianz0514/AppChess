@@ -166,6 +166,15 @@ export async function minePlayerMates(userId: string, maxGames = MINE_MAX_GAMES)
     .eq("user_id", userId);
   const alreadyMined = new Set((existingRows ?? []).map((r) => r.game_id));
 
+  // Precompute the order_index base ONCE per level (was a fresh COUNT query
+  // per successful match, up to MINE_STOP_AFTER_ADDED round-trips per run) —
+  // increment it locally in memory as we add puzzles within this same batch.
+  const orderBase = new Map<1 | 2, number>();
+  for (const mateIn of [1, 2] as const) {
+    const { count } = await supabase.from("puzzles").select("id", { count: "exact", head: true }).eq("mate_in", mateIn);
+    orderBase.set(mateIn, count ?? 0);
+  }
+
   let added = 0;
   for (const g of games) {
     if (added >= MINE_STOP_AFTER_ADDED) break;
@@ -193,11 +202,7 @@ export async function minePlayerMates(userId: string, maxGames = MINE_MAX_GAMES)
       const solutionMoves = mateN === 1 ? pv.slice(0, 1) : pv.slice(0, 3);
       if (solutionMoves.length < mateN * 2 - 1) continue; // PV too short to confirm the full mate line
 
-      const { count: orderBase } = await supabase
-        .from("puzzles")
-        .select("id", { count: "exact", head: true })
-        .eq("mate_in", mateN as 1 | 2);
-
+      const nextOrder = (orderBase.get(mateN as 1 | 2) ?? 0) + 1000; // personalized puzzles slot in after the seeded batch
       const { error } = await supabase.from("puzzles").insert({
         source: "user_game",
         user_id: userId,
@@ -205,9 +210,9 @@ export async function minePlayerMates(userId: string, maxGames = MINE_MAX_GAMES)
         fen: fenBefore,
         solution: solutionMoves,
         mate_in: mateN,
-        order_index: (orderBase ?? 0) + 1000, // personalized puzzles slot in after the seeded batch
+        order_index: nextOrder,
       });
-      if (!error) added++;
+      if (!error) { added++; orderBase.set(mateN as 1 | 2, (orderBase.get(mateN as 1 | 2) ?? 0) + 1); }
       break; // one personalized puzzle per game is plenty
     }
   }

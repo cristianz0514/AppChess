@@ -45,11 +45,17 @@ export async function startBatch(userId: string): Promise<{ started: boolean; to
 
   // Fire-and-forget worker — NOT awaited, so the POST returns immediately.
   void (async () => {
+    // Fetch all pending PGNs in ONE round-trip instead of one query per game
+    // inside the loop (was 50 sequential Supabase calls before any analysis
+    // even started). The CPU-heavy analysis itself stays one-at-a-time.
+    const { data: gameRows } = await supabase.from("games").select("id, pgn").in("id", pending);
+    const pgnById = new Map((gameRows ?? []).map((g) => [g.id, g.pgn]));
+
     for (const id of pending) {
       if (!state.running) break;
-      const { data: game } = await supabase.from("games").select("id, pgn").eq("id", id).single();
-      if (game) {
-        try { await analyzeGame(game.id, game.pgn); } catch { /* skip failing game */ }
+      const pgn = pgnById.get(id);
+      if (pgn) {
+        try { await analyzeGame(id, pgn); } catch { /* skip failing game */ }
       }
       state.done++;
       // Breathe between games so the single-CPU server keeps serving requests.
