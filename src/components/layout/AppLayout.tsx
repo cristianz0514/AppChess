@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3 } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
 import { InstallPrompt } from "@/components/InstallPrompt";
@@ -28,9 +28,9 @@ export function AppLayout({ children, username }: Props) {
             {initials}
           </div>
           <span className="text-sm font-bold tracking-tight">AnaliChess IA</span>
-          <Link href="/stats" aria-label="Ver estadísticas"
+          <Link href="/openings" aria-label="Ver aperturas"
             className="w-8 h-8 flex items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:text-foreground active:scale-95">
-            <BarChart3 size={16} />
+            <BookOpen size={16} />
           </Link>
         </header>
 

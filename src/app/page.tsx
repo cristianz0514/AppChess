@@ -8,6 +8,8 @@ import { Target, Activity, Crosshair, BookOpen, type LucideIcon } from "lucide-r
 export default function Home() {
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState("");
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState("");
   const router = useRouter();
 
@@ -16,6 +18,8 @@ export default function Home() {
     if (!username.trim()) return;
     setLoading(true);
     setError("");
+    setPhase("Conectando con Chess.com…");
+    setProgress(null);
 
     try {
       const res = await fetch("/api/import", {
@@ -24,17 +28,46 @@ export default function Home() {
         body: JSON.stringify({ username: username.trim() }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "No se pudo importar. Inténtalo de nuevo.");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "No se pudo importar. Inténtalo de nuevo.");
+      }
 
-      trackGamesImported(data.imported ?? 1);
+      // Stream real progress (NDJSON) — a full-history import can take a while,
+      // so the user always sees what's happening instead of a frozen screen.
+      let imported = 1;
+      if (res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { value, done: streamDone } = await reader.read();
+          if (streamDone) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const msg = JSON.parse(line);
+            if (msg.error) throw new Error(msg.error);
+            if (typeof msg.phase === "string") setPhase(msg.phase);
+            if (typeof msg.done === "number" && typeof msg.total === "number") setProgress({ done: msg.done, total: msg.total });
+            if (msg.finished) { imported = msg.imported ?? 1; }
+          }
+        }
+      }
+
+      trackGamesImported(imported);
       document.cookie = `bv_username=${encodeURIComponent(username.trim())}; path=/; max-age=2592000; SameSite=Lax`;
+      setPhase("¡Listo! Abriendo tu panel…");
       router.push(`/dashboard`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ocurrió un error inesperado");
       setLoading(false);
     }
   }
+
+  const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
 
   const features: { Icon: LucideIcon; title: string; desc: string }[] = [
     { Icon: Target,    title: "Detecta tus errores", desc: "Stockfish analiza cada jugada y clasifica errores graves, errores e imprecisiones." },
@@ -101,10 +134,33 @@ export default function Home() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin inline-block" />
-                Importando tu historial…
+                {phase || "Importando tu historial…"}
               </span>
             ) : "Ver mis partidas →"}
           </button>
+
+          {/* Real progress feedback — a full-history import can take a while;
+              this is what keeps it from ever looking frozen/failed. */}
+          {loading && (
+            <div className="space-y-1.5">
+              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width: pct != null ? `${pct}%` : "30%",
+                    background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))",
+                    animation: pct == null ? "bvIndeterminate 1.3s ease-in-out infinite" : undefined,
+                  }}
+                />
+              </div>
+              {progress && (
+                <p className="text-[11px] text-center text-muted-foreground tabular-nums">
+                  {progress.done}/{progress.total}
+                </p>
+              )}
+            </div>
+          )}
+
           {error && (
             <p className="text-xs text-center" style={{ color: "var(--bv-red)" }}>{error}</p>
           )}

@@ -17,7 +17,12 @@ export interface ChessComGame {
 
 // Fetches the player's ENTIRE game history via the monthly archives index.
 // Chess.com exposes one URL per month; we fetch them all (most-recent first).
-export async function fetchAllGames(username: string): Promise<ChessComGame[]> {
+// A large account can span many years of archives — `onProgress` lets the
+// caller show real feedback instead of a frozen-looking screen.
+export async function fetchAllGames(
+  username: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ChessComGame[]> {
   const res = await fetch(`${BASE_URL}/player/${username}/games/archives`, { headers: HEADERS });
   if (!res.ok) return [];
   const { archives }: { archives?: string[] } = await res.json();
@@ -27,6 +32,7 @@ export async function fetchAllGames(username: string): Promise<ChessComGame[]> {
   const urls = [...archives].reverse();
   const all: ChessComGame[] = [];
   const BATCH = 6;
+  onProgress?.(0, urls.length);
   for (let i = 0; i < urls.length; i += BATCH) {
     const batch = urls.slice(i, i + BATCH);
     const results = await Promise.all(
@@ -38,6 +44,7 @@ export async function fetchAllGames(username: string): Promise<ChessComGame[]> {
       ),
     );
     for (const g of results.flat()) all.push(g);
+    onProgress?.(Math.min(i + BATCH, urls.length), urls.length);
   }
 
   return all.sort((a, b) => b.end_time - a.end_time);

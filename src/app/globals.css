@@ -164,6 +164,13 @@
   100% { transform: translateY(0);    opacity: 1; }
 }
 
+/* Indeterminate progress bar — used before we know a real total (e.g. while
+   verifying the username, before the month count is known). */
+@keyframes bvIndeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(230%); }
+}
+
 /* Brilliant/Great celebration toast: pop in, hold, drift up and fade. */
 @keyframes bvCelebrate {
   0%   { transform: translateY(8px) scale(0.8); opacity: 0; }

@@ -2,15 +2,20 @@ import { supabase } from "@/lib/supabase";
 import { fetchAllGames, validateUsername } from "./chesscom";
 import { parseGames } from "./pgnParser";
 
-export async function importGames(username: string): Promise<{
+export type ImportProgress = (phase: string, done: number, total: number) => void;
+
+export async function importGames(username: string, onProgress?: ImportProgress): Promise<{
   imported: number;
   userId: string;
 }> {
+  onProgress?.("Verificando tu usuario de Chess.com…", 0, 1);
   const valid = await validateUsername(username);
   if (!valid) throw new Error("No encontramos ese usuario en Chess.com. Revisa que esté bien escrito.");
 
   const userId = await getOrCreateUser(username);
-  const rawGames = await fetchAllGames(username);
+  const rawGames = await fetchAllGames(username, (done, total) => {
+    onProgress?.("Descargando tu historial de Chess.com…", done, total);
+  });
   const parsed = parseGames(rawGames, username);
 
   if (parsed.length === 0) return { imported: 0, userId };
@@ -26,6 +31,7 @@ export async function importGames(username: string): Promise<{
   // retry so importing still works — the app degrades gracefully.
   const NEW_COLS = ["time_class", "played_at", "ended_by_abandonment"] as const;
   const CHUNK = 300;
+  const totalChunks = Math.ceil(rows.length / CHUNK);
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);
     let { error } = await supabase.from("games").upsert(chunk, { onConflict: "chess_game_id" });
@@ -38,8 +44,10 @@ export async function importGames(username: string): Promise<{
       ({ error } = await supabase.from("games").upsert(legacy, { onConflict: "chess_game_id" }));
     }
     if (error) throw new Error(error.message);
+    onProgress?.("Guardando tus partidas…", Math.floor(i / CHUNK) + 1, totalChunks);
   }
 
+  onProgress?.("Actualizando tu repertorio de aperturas…", 0, 1);
   await updateOpeningStats(userId);
 
   return { imported: parsed.length, userId };

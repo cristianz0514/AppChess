@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, Swords, Brain, BarChart3, Plus } from "lucide-react";
+import { LayoutDashboard, BookOpen, Swords, Brain, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -10,7 +10,6 @@ const navItems = [
   { href: "/openings",  label: "Aperturas",    icon: BookOpen },
   { href: "/blunders",  label: "Partidas",     icon: Swords },
   { href: "/insights",  label: "Coach IA",     icon: Brain },
-  { href: "/stats",     label: "Estadísticas", icon: BarChart3 },
 ];
 
 export function Sidebar() {
