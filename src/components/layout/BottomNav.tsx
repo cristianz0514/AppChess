@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Brain, Swords, BookOpen } from "lucide-react";
-import { Piece } from "../pieces";
+import { KnightBadge } from "../KnightBadge";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -30,20 +30,8 @@ export function BottomNav() {
             const onPractice = pathname === "/practica-mate";
             return (
               <div key="fab" className="flex items-center justify-center flex-1">
-                <Link
-                  href="/practica-mate"
-                  className="w-14 h-14 -mt-4 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform p-2.5"
-                  style={{
-                    background: "var(--bv-purple)",
-                    boxShadow: onPractice
-                      ? "0 4px 16px oklch(0.61 0.22 285 / 0.45)"
-                      : "0 4px 14px oklch(0.61 0.22 285 / 0.32)",
-                    outline: onPractice ? "2.5px solid var(--bv-purple)" : undefined,
-                    outlineOffset: 2,
-                  }}
-                  aria-label="Practica el Mate"
-                >
-                  <Piece type="n" white />
+                <Link href="/practica-mate" className="-mt-5 active:scale-95 transition-transform" aria-label="Practica el Mate">
+                  <KnightBadge active={onPractice} />
                 </Link>
               </div>
             );
