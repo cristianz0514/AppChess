@@ -21,6 +21,24 @@ const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_
 const fmtP = (e: number) => (Math.abs(e) >= 90 ? (e > 0 ? "mate a favor" : "mate en contra") : `${e > 0 ? "+" : ""}${e.toFixed(1)}`);
 
 const PIECE_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
+const ART_ES: Record<string, string> = { p: "el peón", n: "el caballo", b: "el alfil", r: "la torre", q: "la dama", k: "el rey" };
+
+// Turn a SAN move into plain Spanish ("la torre a b8", "el alfil captura el
+// caballo en e5") so comments never speak in codes like "Rb8"/"Bxd5".
+function describeMove(fen: string, san: string): string {
+  try {
+    const c = new Chess(fen);
+    const m = c.move(san);
+    if (!m) return san;
+    if (m.san.startsWith("O-O-O")) return "enroque largo";
+    if (m.san.startsWith("O-O")) return "enroque corto";
+    let s = m.captured ? `${ART_ES[m.piece]} captura ${ART_ES[m.captured]} en ${m.to}` : `${ART_ES[m.piece]} a ${m.to}`;
+    if (m.promotion) s += ` y corona ${PIECE_ES[m.promotion]}`;
+    if (m.san.includes("#")) s += " (jaque mate)";
+    else if (m.san.includes("+")) s += " (jaque)";
+    return s;
+  } catch { return san; }
+}
 
 // One short coach sentence, grounded in concrete facts (best move, sacrifice /
 // captured material, eval swing) so it adds real value — not generic praise.
@@ -31,15 +49,13 @@ async function coachComment(args: {
   if (!groq) return null;
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
   const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
-  const RULES = `Reglas: apóyate SOLO en los hechos y la evaluación. Puedes citar la línea/tácticas de los hechos, pero NO inventes otras jugadas, casillas ni flancos que no estén ahí. NO repitas el nombre de la jugada del alumno (ya se muestra). NO uses "sacrificio" salvo que aparezca en los hechos. NO menciones cifras, "puntos" ni la palabra "evaluación". PROHIBIDAS las frases vacías: "no aprovechaste la oportunidad", "perdiste ventaja", "mejora en la evaluación", "secuencia ganadora". NO inventes qué pieza moviste ni digas que una pieza "queda mal colocada" salvo que los hechos lo indiquen (los hechos dicen qué pieza moviste). Si no hay un defecto concreto en los hechos, explica qué LOGRABA la mejor jugada (su idea) sin inventar defectos. Nombra un elemento concreto (una pieza y qué le pasa, el rey, una columna/casilla, la iniciativa, el material). Tono de entrenador fuerte y directo. Español. UNA frase, 12 a 22 palabras. Devuelve SOLO la frase, sin comillas.`;
+  const RULES = `Reglas: usa SOLO los datos de los campos, no inventes nada más. Nombres de piezas y casillas siempre; PROHIBIDO usar notación tipo "Rb8"/"Bxd5" o casillas sueltas sin pieza — es una IA hablando con una persona. Cuando cites la jugada correcta o la respuesta del rival, repite la descripción TAL CUAL viene en los campos (no la reformules como "mover X"). PROHIBIDAS las frases de relleno: "mejorar la posición", "obtener ventaja", "no aprovechaste la oportunidad". No menciones cifras ni la palabra "evaluación". Español, tono de entrenador directo y sencillo. UNA sola frase, 14 a 26 palabras. Devuelve SOLO la frase, sin comillas.`;
   const prompt = good
-    ? `Eres un entrenador de ajedrez fuerte. Di POR QUÉ ${moveNumber}.${san} es una gran jugada, nombrando el elemento concreto que gana (material, seguridad del rey, iniciativa, actividad). Si los hechos dicen que es un sacrificio, explica qué compensación lo justifica.
-Hechos: ${facts}
-Evaluación tuya: antes ${fmtP(evalBefore)}, después ${fmtP(evalAfter)}.
+    ? `Eres un entrenador de ajedrez explicando a tu alumno por qué acaba de hacer una gran jugada. Si hay una línea posterior en los datos, apóyate en ella para explicar la idea (qué consigue), no solo repitas el dato de material.
+${facts}
 ${RULES}`
-    : `Eres un entrenador de ajedrez fuerte. Di QUÉ CONCEDE o PERMITE la jugada ${moveNumber}.${san} (qué pieza queda mal, qué gana el rival, qué recurso da) y de pasada qué buscaba la mejor (${bestMove ?? "desconocida"}). No te limites a decir "era mejor X".
-Hechos: ${facts}
-Cambio de evaluación: ${fmtP(evalBefore)} → ${fmtP(evalAfter)} (${swing}).
+    : `Eres un entrenador de ajedrez explicando a tu alumno un error que acaba de cometer. Menciona qué permite al rival (si hay ese dato) y cuál era la jugada correcta.
+${facts}
 ${RULES}`;
   try {
     const res = await groq.chat.completions.create({
@@ -297,30 +313,36 @@ export async function analyzeGame(
     // Verifiable tactical phrase (never invented).
     let facts = "";
     if (good) {
-      let tactic = "";
-      if (forcedMate || /#/.test(mainLineSan)) tactic = " Conduce a un mate forzado a tu favor.";
-      else if (gaveCheck && doubleAttack >= 1) tactic = " Da jaque y a la vez ataca otra pieza (doble ataque).";
-      else if (doubleAttack >= 2) tactic = " Crea un doble ataque sobre dos piezas.";
-      else if (gaveCheck) tactic = " La jugada da jaque.";
-      // For good moves the line STARTS with the played move — safe to show.
-      const cont = mainLineSan ? ` Tu línea sigue así según el motor: ${mainLineSan}.` : "";
-      if (isSacrifice && capturedName) {
-        facts = `Sacrificio de calidad: entregas tu ${movedName} por un ${capturedName} (menos material nominal), pero el motor la confirma como la MEJOR jugada: hay compensación.${tactic}${cont}`;
-      } else if (isSacrifice) {
-        facts = `Sacrificio: entregas tu ${movedName} sin recuperar material equivalente y el motor la confirma como la MEJOR jugada.${tactic}${cont}`;
-      } else if (capturedName && capturedVal >= movedVal) {
-        facts = `Ganas material: capturas un ${capturedName} con tu ${movedName}; el motor la confirma como la mejor.${tactic}${cont}`;
-      } else if (doubleAttack >= 2 || (gaveCheck && doubleAttack >= 1)) {
-        facts = `El motor la confirma como la mejor jugada.${tactic}${cont}`;
-      } else if (capturedName) {
-        facts = `Capturas un ${capturedName}; el motor la confirma como la mejor jugada.${tactic}${cont}`;
-      } else {
-        facts = `El motor la confirma como la mejor jugada de la posición.${tactic}${cont}`;
+      let tactic: string | null = null;
+      if (forcedMate || /#/.test(mainLineSan)) tactic = "conduce a un jaque mate forzado a favor del alumno";
+      else if (gaveCheck && doubleAttack >= 1) tactic = "da jaque y a la vez ataca otra pieza (doble ataque)";
+      else if (doubleAttack >= 2) tactic = "crea un doble ataque sobre dos piezas";
+      else if (gaveCheck) tactic = "la jugada da jaque";
+
+      // Describe the continuation AFTER the played move in plain Spanish.
+      const contSans = mainSans.slice(1, 4);
+      let contNat: string | null = null;
+      if (contSans.length) {
+        const cc = new Chess(fens[i]); const parts: string[] = [];
+        for (const s of contSans) { parts.push(describeMove(cc.fen(), s)); try { cc.move(s); } catch { break; } }
+        contNat = parts.join(", luego ");
       }
+
+      let material: string | null = null;
+      if (isSacrifice && capturedName) material = `es un sacrificio de calidad: entrega ${movedName} por ${capturedName}, pero el motor la confirma como la mejor jugada (hay compensación)`;
+      else if (isSacrifice) material = `es un sacrificio: entrega ${movedName} sin recuperar material equivalente, y el motor la confirma como la mejor`;
+      else if (capturedName && capturedVal >= movedVal) material = `gana material: captura ${capturedName} con ${movedName}`;
+      else if (capturedName) material = `captura ${capturedName}`;
+
+      const fieldLines: string[] = [`El motor confirma que es la mejor jugada de la posición.`];
+      if (material) fieldLines.push(`Detalle de material: ${material}`);
+      if (tactic) fieldLines.push(`Táctica: ${tactic}`);
+      if (contNat) fieldLines.push(`Después sigue esta línea: ${contNat}`);
+      facts = fieldLines.join("\n");
     } else {
       // What does the move ALLOW? The opponent's best reply from the after-position
       // — grounds "what went wrong" instead of only "you should've played X".
-      let concede = "";
+      let concede: string | null = null;
       try {
         const opp = await getTopLines(fens[i], DEEP_DEPTH, 1);
         const oppSan = opp[0] ? pvToSan(fens[i], opp[0].pv)[0] : null;
@@ -328,16 +350,18 @@ export async function analyzeGame(
           const cc = new Chess(fens[i]);
           const mv = cc.moves({ verbose: true }).find((x) => x.san === oppSan);
           concede = mv && mv.captured && (VAL[mv.captured] ?? 0) >= 3
-            ? ` Permite ${oppSan}, que le gana un ${PIECE_ES[mv.captured]}.`
-            : ` El rival responde ${oppSan}.`;
+            ? `el rival puede jugar ${describeMove(fens[i], oppSan)}, ganando ${ART_ES[mv.captured]}`
+            : `el rival responde con ${describeMove(fens[i], oppSan)}`;
         }
       } catch { /* ignore */ }
-      const mateNote = forcedMate ? ` Tenías un MATE FORZADO a tu favor y lo dejaste pasar.` : "";
-      const better = bestSan ? ` La mejor era ${bestSan} (línea: ${mainLineSan}).` : "";
-      const moved = ` Moviste tu ${movedName}.`;
-      facts = capturedName
-        ? `Capturaste un ${capturedName}, pero fue imprecisa.${moved}${concede}${mateNote}${better}`
-        : `Jugada imprecisa.${moved}${concede}${mateNote}${better}`;
+      // Labeled fields (not a run-on paragraph) — the LLM composes a cleaner,
+      // less ambiguous sentence from clearly separated facts than from prose.
+      const fieldLines: string[] = [];
+      fieldLines.push(`Pieza que movió el alumno: ${ART_ES[h.piece] ?? movedName}${capturedName ? ` (capturó ${capturedName})` : ""}`);
+      if (concede) fieldLines.push(`Lo que esto permite al rival: ${concede}`);
+      if (bestSan) fieldLines.push(`La jugada correcta era: ${describeMove(fenBefore, bestSan)}`);
+      if (forcedMate) fieldLines.push(`Dato importante: el alumno tenía un jaque mate forzado a su favor y lo dejó pasar`);
+      facts = fieldLines.join("\n");
     }
 
     const text = await coachComment({
