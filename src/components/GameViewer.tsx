@@ -347,6 +347,14 @@ function MoveTable({ moves, idx, onGo, compact }: {
     pairs.push({ n: moves[i].moveNumber, white: moves[i] ?? null, black: moves[i + 1] ?? null });
   }
 
+  // Keep the active move in view as the player navigates — both chess.com
+  // and lichess auto-scroll their move list; ours didn't, so the highlight
+  // could sit scrolled out of sight on longer games.
+  const activeRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [idx]);
+
   function MoveCell({ m, flatIdx }: { m: MoveInfo | null; flatIdx: number }) {
     if (!m) return <div className="flex-1" />;
     const isActive = flatIdx === idx;
@@ -354,6 +362,7 @@ function MoveTable({ moves, idx, onGo, compact }: {
     const isError = m.classification === "blunder" || m.classification === "mistake";
     return (
       <div
+        ref={isActive ? activeRef : undefined}
         className="flex-1 flex items-center gap-1 cursor-pointer rounded px-1.5 py-1 transition-colors text-xs font-mono"
         style={{
           background: isActive ? "oklch(0.61 0.22 285 / 0.22)" : isError ? `${col}11` : "transparent",
