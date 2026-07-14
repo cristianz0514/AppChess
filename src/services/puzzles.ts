@@ -15,9 +15,21 @@ interface LichessPuzzleResponse {
 async function fetchOneLichessPuzzle(angle: "mateIn1" | "mateIn2"): Promise<{
   externalId: string; fen: string; solution: string[]; rating: number;
 } | null> {
-  const res = await fetch(`https://lichess.org/api/puzzle/next?angle=${angle}`, { headers: LICHESS_HEADERS });
-  if (!res.ok) return null;
-  const data = (await res.json()) as LichessPuzzleResponse;
+  // No timeout here would let a single stalled connection to Lichess hang the
+  // whole seeding request forever (observed live: works from a normal network,
+  // hangs indefinitely on Render's) — bound every attempt so a bad connection
+  // just counts as one failed attempt instead of freezing the endpoint.
+  let data: LichessPuzzleResponse;
+  try {
+    const res = await fetch(`https://lichess.org/api/puzzle/next?angle=${angle}`, {
+      headers: LICHESS_HEADERS,
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    data = (await res.json()) as LichessPuzzleResponse;
+  } catch {
+    return null;
+  }
 
   // Replay the game's PGN up to initialPly to get the FEN of the puzzle position.
   const chess = new Chess();
@@ -98,7 +110,16 @@ export async function seedLichessPuzzles(mateIn: 1 | 2, count: number): Promise<
   const MAX_CONSECUTIVE_ERRORS = 4;
   for (let attempt = 0; attempt < MAX_ATTEMPTS && have < count; attempt++) {
     const p = await fetchOneLichessPuzzle(angle);
-    if (!p || seen.has(p.externalId)) continue;
+    if (!p) {
+      // A network failure/timeout reaching Lichess itself — not a duplicate.
+      // Count it toward the same fail-fast budget as insert errors so a
+      // persistently unreachable Lichess doesn't grind through MAX_ATTEMPTS
+      // at up to 8s per try.
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) break;
+      continue;
+    }
+    if (seen.has(p.externalId)) continue;
     seen.add(p.externalId);
 
     const { error } = await supabase.from("puzzles").insert({
