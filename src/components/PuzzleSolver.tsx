@@ -134,6 +134,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
           interactive={status === "playing" && !autoPlaying}
           onMove={handleMove}
           lastMove={lastMove}
+          hintSquare={showHintSq}
         />
       </div>
 

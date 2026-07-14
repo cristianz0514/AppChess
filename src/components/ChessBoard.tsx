@@ -46,6 +46,9 @@ interface Props {
   onMove?: (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => void;
   // Badge (emoji) shown over the destination square of the last move, chess.com style.
   lastMoveBadge?: { emoji: string; color: string } | null;
+  // Puzzle hint — pulses a ring around the piece that should move, instead of
+  // (or alongside) just naming the square in text.
+  hintSquare?: string | null;
 }
 
 export function ChessBoard({
@@ -56,6 +59,7 @@ export function ChessBoard({
   interactive = false,
   onMove,
   lastMoveBadge,
+  hintSquare,
 }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   // Pawn reaching the last rank — chess.com/lichess both prompt for which
@@ -234,6 +238,17 @@ export function ChessBoard({
                     }} />
                   )
                 )}
+                {hintSquare === sq && (
+                  // Puzzle hint — a pulsing purple ring around the piece that
+                  // should move, so the hint points at the board, not just at
+                  // text naming a square.
+                  <div aria-hidden style={{
+                    position: "absolute", inset: "3%", borderRadius: "9999px",
+                    boxShadow: "inset 0 0 0 0.6cqi var(--bv-purple)",
+                    animation: "bvHintPulse 1.1s ease-in-out infinite",
+                    pointerEvents: "none", zIndex: 1,
+                  }} />
+                )}
                 {colIdx === 0 && (
                   <span style={{
                     position: "absolute", top: 2, left: 3,
@@ -388,6 +403,13 @@ export function ChessBoard({
           </>
         );
       })()}
+
+      <style>{`
+        @keyframes bvHintPulse {
+          0%, 100% { opacity: 0.45; transform: scale(0.94); }
+          50% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 }
