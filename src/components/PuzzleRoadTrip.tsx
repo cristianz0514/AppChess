@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Lock, CheckCircle2, Star } from "lucide-react";
+import { Check, Lock, Star } from "lucide-react";
 import type { RoadTripWorld, RoadTripNode } from "@/services/puzzleProgress";
 
 interface Props {
@@ -68,19 +68,8 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-1 mb-3">
-        <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Practica el Mate</p>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 px-3 py-1 rounded-full"
-            style={{ background: "oklch(0.61 0.22 285 / 0.14)", color: "var(--bv-purple)" }}>
-            <CheckCircle2 size={13} strokeWidth={2.4} />
-            <span className="text-[11px] font-bold tabular-nums">{totalSolved}/{totalNodes}</span>
-          </div>
-          <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--bv-purple)" }}>
-            {totalNodes > 0 ? Math.round((totalSolved / totalNodes) * 100) : 0}%
-          </span>
-        </div>
-      </div>
+      {/* Progress summary now lives in the page's fixed header (chip + %) —
+          just the thin bar stays here as a visual anchor under it. */}
       <div className="h-1.5 rounded-full overflow-hidden mb-6" style={{ background: "var(--border)" }}>
         <div className="h-full rounded-full transition-all duration-500"
           style={{ width: `${totalNodes > 0 ? (totalSolved / totalNodes) * 100 : 0}%`, background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))" }} />

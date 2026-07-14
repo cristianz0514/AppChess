@@ -33,6 +33,10 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
   const [status, setStatus] = useState<"playing" | "solved">("playing");
   const [shake, setShake] = useState(false);
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  // Same chess.com-style badge the analysis board draws on the destination
+  // square of a classified move — puzzles don't have a "classification", but
+  // a correct/mating move is exactly as signal-worthy, so it gets one too.
+  const [badge, setBadge] = useState<{ emoji: string; color: string } | null>(null);
 
   const mateWord = node.mateIn === 1 ? "1 jugada" : "2 jugadas";
 
@@ -59,6 +63,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
     const isLastStep = step + 1 >= node.solution.length;
     if (isLastStep) {
       setStatus("solved");
+      setBadge({ emoji: "‼", color: "#1BAAA6" });
       playSound("brilliant");
       fetch("/api/puzzles/attempt", {
         method: "POST",
@@ -68,6 +73,8 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
       return;
     }
 
+    setBadge({ emoji: "✓", color: "var(--bv-green)" });
+
     if (node.mateIn === 2 && step === 0) {
       // Auto-play the opponent's forced reply after a short beat.
       const oppUci = node.solution[1];
@@ -76,7 +83,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
         const oppSq = uciSquares(oppUci);
         try {
           const oppMv = c2.move({ from: oppSq.from, to: oppSq.to, promotion: "q" });
-          if (oppMv) { setFen(c2.fen()); setLastMove(oppSq); }
+          if (oppMv) { setFen(c2.fen()); setLastMove(oppSq); setBadge(null); }
         } catch { /* ignore */ }
         setStep(2);
       }, 450);
@@ -106,6 +113,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
           interactive={status === "playing" && step !== 1 /* 1 = opponent auto-reply in progress */}
           onMove={handleMove}
           lastMove={lastMove}
+          lastMoveBadge={badge}
         />
       </div>
 

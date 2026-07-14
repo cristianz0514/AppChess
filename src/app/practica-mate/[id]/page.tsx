@@ -5,6 +5,7 @@ import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
 import { getRoadTrip } from "@/services/puzzleProgress";
 import { PuzzleSolver } from "@/components/PuzzleSolver";
+import { SoundToggle } from "@/components/SoundToggle";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -54,6 +55,7 @@ export default async function PuzzlePage({ params }: Props) {
             <span className="font-bold text-sm tracking-tight">Ejercicio {nodeIndex + 1}</span>
           </div>
         </div>
+        <SoundToggle />
       </header>
 
       <main className="flex-1 pt-20 px-4 max-w-lg mx-auto w-full overflow-y-auto">
