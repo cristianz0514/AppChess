@@ -476,10 +476,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     }
   }
 
-  // Best move arrow state
+  // Best move arrow state (Story Mode's per-moment arrow; general review now
+  // uses the automatic autoBest cache below instead of a manual fetch).
   const [bestMoveArrow, setBestMoveArrow] = useState<Arrow | null>(null);
-  const [bestMoveSan, setBestMoveSan] = useState<string | null>(null);
-  const [loadingBestMove, setLoadingBestMove] = useState(false);
 
 
   // Exploration mode state (free interactive moves from any position)
@@ -519,34 +518,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     setExploreIdx(exploreIdx + 1);
   }
 
-  async function fetchBestMove(blunderIdx: number) {
-    const beforeFen = blunderIdx > 0 ? moves[blunderIdx - 1].fen : new Chess().fen();
-    setLoadingBestMove(true);
-    setBestMoveArrow(null);
-    setBestMoveSan(null);
-    // Navigate to position before the blunder so the arrow makes sense visually
-    setIdx(Math.max(-1, blunderIdx - 1));
-    try {
-      const r = await fetch(`/api/bestmove?fen=${encodeURIComponent(beforeFen)}`);
-      if (r.ok) {
-        const data = await r.json();
-        if (data.from && data.to) {
-          setBestMoveArrow({ from: data.from, to: data.to, color: "green" });
-          // Name the move in SAN so the coach can say it, not just draw it.
-          try {
-            const c = new Chess(beforeFen);
-            const mv = c.move({ from: data.from, to: data.to, promotion: data.promotion ?? "q" });
-            if (mv) setBestMoveSan(mv.san);
-          } catch {}
-        }
-      }
-    } catch {}
-    setLoadingBestMove(false);
-  }
-
   const go = useCallback((n: number) => {
     setBestMoveArrow(null);
-    setBestMoveSan(null);
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
   }, [moves.length]);
 
@@ -560,13 +533,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     if (Math.abs(dx) < 40) return;
     setIdx((cur) => Math.max(-1, Math.min(moves.length - 1, cur + (dx < 0 ? 1 : -1))));
     setBestMoveArrow(null);
-    setBestMoveSan(null);
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setBestMoveSan(null); setIdx((c) => Math.max(-1, c - 1)); }
-      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setBestMoveSan(null); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
+      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setIdx((c) => Math.max(-1, c - 1)); }
+      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -745,6 +717,30 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       .finally(() => { if (!cancelled) setBestLoading(false); });
     return () => { cancelled = true; };
   }, [currentSlide, moves, storyBest]);
+
+  // Best move for the position being VIEWED, fetched automatically for every
+  // ply during normal review — chess.com always shows this, not just when
+  // asked. Cached per index so scrubbing back and forth doesn't refetch.
+  const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; san: string } | null>>({});
+  useEffect(() => {
+    if (inExplore || inStory || inPractice) return;
+    if (autoBest[idx] !== undefined) return;
+    let cancelled = false;
+    fetch(`/api/bestmove?fen=${encodeURIComponent(currentFen)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        if (!d?.from || !d?.to) { setAutoBest((prev) => ({ ...prev, [idx]: null })); return; }
+        try {
+          const mv = new Chess(currentFen).move({ from: d.from, to: d.to, promotion: d.promotion ?? "q" });
+          setAutoBest((prev) => ({ ...prev, [idx]: mv ? { from: d.from, to: d.to, san: mv.san } : null }));
+        } catch {
+          setAutoBest((prev) => ({ ...prev, [idx]: null }));
+        }
+      })
+      .catch(() => { if (!cancelled) setAutoBest((prev) => ({ ...prev, [idx]: null })); });
+    return () => { cancelled = true; };
+  }, [idx, inExplore, inStory, inPractice, currentFen, autoBest]);
 
   // Coach comment (LLaMA) GROUNDED in the engine's best move — fetched once the
   // best move is known for the current moment. Cached per move index.
@@ -968,7 +964,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                           { from: storyMomentSlide.cm.move.from, to: storyMomentSlide.cm.move.to, color: "red" },
                           ...(bestMoveArrow ? [bestMoveArrow] : []),
                         ]
-                      : bestMoveArrow ? [bestMoveArrow] : []
+                      : autoBest[idx]
+                        ? [{ from: autoBest[idx]!.from, to: autoBest[idx]!.to, color: "blue" }]
+                        : []
                 }
                 interactive={inExplore}
                 onMove={inExplore ? handleExploreMove : undefined}
@@ -1033,11 +1031,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
                 <Search size={18} />
               </button>
-              <button onClick={() => fetchBestMove(idx)} disabled={loadingBestMove || idx < 0}
-                className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 text-white active:scale-[0.98] transition-transform disabled:opacity-40"
-                style={{ background: "var(--bv-green)" }}>
-                <Target size={16} /> {loadingBestMove ? "Calculando..." : "Mejor jugada"}
-              </button>
+              {/* Best move is now automatic (chess.com-style blue arrow on the
+                  board for every ply) — this is just the SAN readout, no
+                  click needed. */}
+              <div className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                style={{ background: "oklch(0.61 0.22 285 / 0.10)", color: "var(--bv-purple)" }}>
+                <Target size={16} />
+                {autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : autoBest[idx] === null ? "Sin mejor jugada" : "Calculando..."}
+              </div>
               {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
                 <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
                   className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
