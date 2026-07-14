@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Chess, type Square } from "chess.js";
 import { Piece } from "./pieces";
 
 function parseFen(fen: string): Array<Array<string | null>> {
@@ -62,6 +63,19 @@ export function ChessBoard({
 
   const highlightSquares = new Set<string>();
   if (lastMove) { highlightSquares.add(lastMove.from); highlightSquares.add(lastMove.to); }
+
+  // Legal-move dots/rings for the selected piece — standard on lichess and
+  // chess.com, and genuinely useful for a learning product (shows exactly
+  // where you CAN go instead of clicking blind and getting a shake on a miss).
+  const legalTargets = useMemo(() => {
+    if (!selected || !interactive) return new Set<string>();
+    try {
+      const chess = new Chess(fen);
+      return new Set(chess.moves({ square: selected as Square, verbose: true }).map((m) => m.to));
+    } catch {
+      return new Set<string>();
+    }
+  }, [selected, fen, interactive]);
 
   function sqLabel(displayRow: number, displayCol: number): string {
     const file = orientation === "white" ? displayCol : 7 - displayCol;
@@ -148,9 +162,24 @@ export function ChessBoard({
                 }}
               >
                 {piece && (
-                  <div style={{ width: "88%", height: "88%" }}>
+                  <div style={{ width: "88%", height: "88%", position: "relative", zIndex: 1 }}>
                     <Piece type={piece.toLowerCase() as "k" | "q" | "r" | "b" | "n" | "p"} white={isWhitePiece} />
                   </div>
+                )}
+                {legalTargets.has(sq) && (
+                  piece ? (
+                    // Capture target — a ring around the edge of the square.
+                    <div aria-hidden style={{
+                      position: "absolute", inset: "4%", borderRadius: "9999px",
+                      boxShadow: "inset 0 0 0 0.55cqi rgba(38,36,46,0.35)", pointerEvents: "none",
+                    }} />
+                  ) : (
+                    // Empty destination — a small centered dot.
+                    <div aria-hidden style={{
+                      position: "absolute", width: "28%", height: "28%", borderRadius: "9999px",
+                      background: "rgba(38,36,46,0.28)", pointerEvents: "none",
+                    }} />
+                  )
                 )}
                 {colIdx === 0 && (
                   <span style={{
