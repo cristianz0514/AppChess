@@ -118,7 +118,7 @@ export default function Home() {
             autoCapitalize="none"
             autoCorrect="off"
             disabled={loading}
-            className="w-full px-4 py-3 rounded-2xl border text-sm outline-none transition-all"
+            className="w-full px-4 py-3 rounded-2xl border text-sm outline-none transition"
             style={{
               background: "var(--card)",
               borderColor: "var(--border)",
@@ -128,7 +128,7 @@ export default function Home() {
           <button
             type="submit"
             disabled={loading || !username.trim()}
-            className="w-full py-3 rounded-2xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50"
+            className="w-full py-3 rounded-2xl text-sm font-bold transition active:scale-95 disabled:opacity-50"
             style={{ background: "var(--bv-purple)", color: "#fff" }}
           >
             {loading ? (
@@ -145,9 +145,11 @@ export default function Home() {
             <div className="space-y-1.5">
               <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
                 <div
-                  className="h-full rounded-full transition-all duration-300"
+                  className="h-full rounded-full transition duration-300"
                   style={{
-                    width: pct != null ? `${pct}%` : "30%",
+                    width: pct != null ? "100%" : "30%",
+                    transform: pct != null ? `scaleX(${pct / 100})` : undefined,
+                    transformOrigin: "left",
                     background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))",
                     animation: pct == null ? "bvIndeterminate 1.3s ease-in-out infinite" : undefined,
                   }}
@@ -175,7 +177,7 @@ export default function Home() {
       <div className="relative px-5 pb-10 grid grid-cols-2 gap-3 max-w-sm mx-auto w-full">
         {features.map((f, i) => (
           <div key={f.title}
-            className="rounded-2xl p-4 border flex flex-col gap-2 transition-all hover:-translate-y-0.5 hover:shadow-md"
+            className="rounded-2xl p-4 border flex flex-col gap-2 transition [@media(hover:hover)_and_(pointer:fine)]:hover:-translate-y-0.5 [@media(hover:hover)_and_(pointer:fine)]:hover:shadow-md"
             style={{
               background: "var(--card)",
               borderColor: "var(--border)",

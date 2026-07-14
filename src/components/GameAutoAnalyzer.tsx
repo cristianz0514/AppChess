@@ -113,9 +113,10 @@ export function GameAutoAnalyzer({ gameId, reanalyze }: Props) {
             <div className="w-full h-2 rounded-full overflow-hidden"
               style={{ background: "var(--border)" }}>
               <div
-                className="h-full rounded-full transition-all duration-300"
+                className="h-full w-full rounded-full transition duration-300"
                 style={{
-                  width: `${total > 0 ? pct : 0}%`,
+                  transform: `scaleX(${total > 0 ? pct / 100 : 0})`,
+                  transformOrigin: "left",
                   background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))",
                 }}
               />

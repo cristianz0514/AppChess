@@ -73,7 +73,7 @@ export default function OpeningsPage() {
             <button
               key={id}
               onClick={() => setColor(id)}
-              className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
+              className="flex-1 py-2 rounded-xl text-xs font-semibold transition"
               style={{
                 background: color === id ? "var(--bv-purple)" : "transparent",
                 color: color === id ? "#fff" : "var(--muted-foreground)",
@@ -110,7 +110,8 @@ export default function OpeningsPage() {
                       {stats.winrate}<span className="text-xl">%</span>
                     </p>
                     <div className="h-1 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{ width: `${stats.winrate}%`, background: accent }} />
+                      <div className="h-full w-full rounded-full transition"
+                        style={{ transform: `scaleX(${stats.winrate / 100})`, transformOrigin: "left", background: accent }} />
                     </div>
                     <p className="text-[10px] text-muted-foreground">{stats.games} partidas · {stats.wins}V {stats.losses}D</p>
                   </div>
@@ -132,7 +133,8 @@ export default function OpeningsPage() {
                         {stats.winrate}<span className="text-2xl">%</span>
                       </p>
                       <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${stats.winrate}%`, background: accent }} />
+                        <div className="h-full w-full rounded-full transition duration-500"
+                          style={{ transform: `scaleX(${stats.winrate / 100})`, transformOrigin: "left", background: accent }} />
                       </div>
                       <p className="text-xs text-muted-foreground">{stats.games} partidas · {stats.wins} victorias · {stats.losses} derrotas · {stats.draws} tablas</p>
                     </>

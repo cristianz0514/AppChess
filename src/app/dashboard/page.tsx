@@ -42,7 +42,7 @@ function HighlightCard({
   const resultColor = game.result === "win" ? "var(--bv-green)" : game.result === "loss" ? "var(--bv-red)" : "var(--bv-orange)";
   return (
     <Link href={href}
-      className="flex items-center gap-3 p-3 rounded-2xl border transition-all active:scale-[0.98]"
+      className="flex items-center gap-3 p-3 rounded-2xl border transition active:scale-[0.98]"
       style={{ background: accentBg, borderColor: accentColor + "44" }}>
       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
         style={{ background: accentColor + "22" }}>
@@ -107,7 +107,7 @@ export default async function DashboardPage({ searchParams }: Props) {
         {highlights.mostErrors && highlights.mostErrors.errorCount > 0 && (
           <Link
             href={`/blunders/${highlights.mostErrors.id}?blunder=1`}
-            className="block rounded-3xl p-5 border transition-all active:scale-[0.99]"
+            className="block rounded-3xl p-5 border transition active:scale-[0.99]"
             style={{
               borderColor: "var(--bv-purple)",
               background: "linear-gradient(135deg, oklch(0.61 0.22 285 / 0.12), oklch(0.63 0.23 25 / 0.06))",
@@ -170,7 +170,7 @@ export default async function DashboardPage({ searchParams }: Props) {
         {/* ── Practica el Mate — road trip entry point (top billing: this is
              core to the product, right after the hero, not buried below stats) ── */}
         <Link href="/practica-mate"
-          className="flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.98]"
+          className="flex items-center gap-3 p-4 rounded-2xl border transition active:scale-[0.98]"
           style={{ borderColor: "oklch(0.61 0.22 285 / 0.25)", background: "oklch(0.61 0.22 285 / 0.08)" }}>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
             style={{ background: "oklch(0.61 0.22 285 / 0.15)" }}>

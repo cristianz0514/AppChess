@@ -255,14 +255,14 @@ function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
         {/* White fill from the left */}
         <div
           style={{
-            position: "absolute", left: 0, top: 0, bottom: 0,
-            width: `${whitePct}%`,
+            position: "absolute", left: 0, top: 0, bottom: 0, width: "100%",
+            transform: `scaleX(${whitePct / 100})`, transformOrigin: "left",
             background: !hasRealData
               ? "var(--muted)"
               : isMate
                 ? (whiteWinning ? "var(--bv-green)" : "#e8edf5")
                 : "#e8edf5",
-            transition: "width 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
+            transition: "transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         />
         {/* Center tick */}
@@ -926,14 +926,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             <div className="flex items-center justify-center gap-2">
               <button
                 onClick={() => go(-1)} disabled={idx <= -1}
-                className="w-10 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                className="w-10 h-11 flex items-center justify-center rounded-xl border transition active:scale-95 disabled:opacity-30"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}
                 title="Inicio" aria-label="Ir al inicio">
                 <ChevronsLeft size={18} />
               </button>
               <button
                 onClick={() => go(idx - 1)} disabled={idx <= -1}
-                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95 disabled:opacity-30"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}
                 title="Anterior" aria-label="Jugada anterior">
                 <ChevronLeft size={20} />
@@ -946,14 +946,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               </div>
               <button
                 onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
-                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95 disabled:opacity-30"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}
                 title="Siguiente" aria-label="Jugada siguiente">
                 <ChevronRight size={20} />
               </button>
               <button
                 onClick={() => go(moves.length - 1)} disabled={idx >= moves.length - 1}
-                className="w-10 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-30"
+                className="w-10 h-11 flex items-center justify-center rounded-xl border transition active:scale-95 disabled:opacity-30"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}
                 title="Final" aria-label="Ir al final">
                 <ChevronsRight size={18} />
@@ -965,12 +965,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           {!inExplore && (
             <div className="flex items-center gap-2">
               <button onClick={() => setFlipped((f) => !f)} title="Girar tablero" aria-label="Girar tablero"
-                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
                 style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
                 <FlipVertical2 size={18} />
               </button>
               <button onClick={enterExplore} title="Explorar variantes" aria-label="Explorar"
-                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
                 style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
                 <Search size={18} />
               </button>
@@ -981,7 +981,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               </button>
               {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
                 <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
-                  className="w-11 h-11 flex items-center justify-center rounded-xl border transition-all active:scale-95"
+                  className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
                   style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
                   <Brain size={18} />
                 </button>
@@ -1075,7 +1075,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           <div className="flex gap-2">
             {practiceResult && (
               <button onClick={() => { setPracticeResult(null); setPracticeMovePlayed(null); }}
-                className="flex-1 py-2.5 rounded-2xl border text-xs font-semibold transition-all"
+                className="flex-1 py-2.5 rounded-2xl border text-xs font-semibold transition"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}>
                 Intentar de nuevo
               </button>
@@ -1085,13 +1085,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               const nextErr = errors.find(e => e.flatIdx > practiceBlunderIdx!);
               return nextErr ? (
                 <button onClick={() => startPractice(nextErr.flatIdx)}
-                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition-all"
+                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition"
                   style={{ background: "var(--bv-purple)", color: "#fff" }}>
                   Siguiente error →
                 </button>
               ) : (
                 <button onClick={exitPractice}
-                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition-all"
+                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition"
                   style={{ background: "var(--bv-green)", color: "#fff" }}>
                   ¡Completado! 🎉
                 </button>

@@ -71,8 +71,8 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
       {/* Progress summary now lives in the page's fixed header (chip + %) —
           just the thin bar stays here as a visual anchor under it. */}
       <div className="h-1.5 rounded-full overflow-hidden mb-6" style={{ background: "var(--border)" }}>
-        <div className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${totalNodes > 0 ? (totalSolved / totalNodes) * 100 : 0}%`, background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))" }} />
+        <div className="h-full w-full rounded-full transition duration-500"
+          style={{ transform: `scaleX(${totalNodes > 0 ? totalSolved / totalNodes : 0})`, transformOrigin: "left", background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))" }} />
       </div>
 
       {worlds.map((world, wi) => (
@@ -192,7 +192,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
         </div>
       ))}
 
-      <div className="fixed left-1/2 z-[70] px-4 py-2.5 rounded-full text-xs font-semibold text-white transition-all"
+      <div className="fixed left-1/2 z-[70] px-4 py-2.5 rounded-full text-xs font-semibold text-white transition"
         style={{
           bottom: 26, transform: `translateX(-50%) translateY(${toastMsg ? "0" : "16px"})`,
           background: "var(--foreground)", opacity: toastMsg ? 1 : 0, pointerEvents: "none",

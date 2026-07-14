@@ -89,8 +89,8 @@ export function AnalyzeAllButton({ username }: Props) {
         <div className="space-y-2">
           <p className="text-sm font-semibold">Analizando en segundo plano… {done}/{total}</p>
           <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
-            <div className="h-full rounded-full transition-all"
-              style={{ width: `${pct}%`, background: "var(--bv-purple)" }} />
+            <div className="h-full w-full rounded-full transition"
+              style={{ transform: `scaleX(${pct / 100})`, transformOrigin: "left", background: "var(--bv-purple)" }} />
           </div>
           <p className="text-[10px] text-muted-foreground">
             Puedes salir de esta pantalla: el análisis continúa solo ({remaining} restantes). El análisis profundo tarda ~1-2 min por partida.
@@ -115,7 +115,7 @@ export function AnalyzeAllButton({ username }: Props) {
             Evalúa tus partidas con Stockfish para obtener precisión, detección de errores y consejos personalizados. Corre en segundo plano — puedes seguir usando la app.
           </p>
           <button onClick={start}
-            className="w-full py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
+            className="w-full py-2.5 rounded-xl text-sm font-bold transition active:scale-[0.98]"
             style={{ background: "var(--bv-purple)", color: "#fff" }}>
             Analizar mis partidas
           </button>
