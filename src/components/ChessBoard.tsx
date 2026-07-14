@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import { Piece } from "./pieces";
 
@@ -63,6 +63,34 @@ export function ChessBoard({
 
   const highlightSquares = new Set<string>();
   if (lastMove) { highlightSquares.add(lastMove.from); highlightSquares.add(lastMove.to); }
+
+  // Piece-slide animation (FLIP technique) — both chess.com and lichess slide
+  // the moved piece from its origin to destination; ours used to teleport
+  // (instant re-render on the new FEN, no transition at all). We only track
+  // the DESTINATION square's piece element: on each new lastMove, snap it
+  // instantly to an offset equal to (origin - destination) in square units,
+  // force a reflow, then transition that offset back to zero — the piece
+  // visually slides in. Covers the primary moved piece; castling's rook and
+  // en passant's captured pawn still teleport (rare enough to accept).
+  const slideRef = useRef<HTMLDivElement | null>(null);
+  const prevMoveKey = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!lastMove) return;
+    const key = `${lastMove.from}-${lastMove.to}`;
+    if (prevMoveKey.current === key) return;
+    prevMoveKey.current = key;
+    const el = slideRef.current;
+    if (!el) return;
+    const from = sqToColRow(lastMove.from, orientation);
+    const to = sqToColRow(lastMove.to, orientation);
+    const dx = (from.col - to.col) * 100;
+    const dy = (from.row - to.row) * 100;
+    el.style.transition = "none";
+    el.style.transform = `translate(${dx}%, ${dy}%)`;
+    void el.offsetHeight; // force reflow so the instant offset commits before animating
+    el.style.transition = "transform 0.2s cubic-bezier(0.2, 0, 0.2, 1)";
+    el.style.transform = "translate(0, 0)";
+  }, [lastMove?.from, lastMove?.to, orientation]);
 
   // Legal-move dots/rings for the selected piece — standard on lichess and
   // chess.com, and genuinely useful for a learning product (shows exactly
@@ -162,7 +190,10 @@ export function ChessBoard({
                 }}
               >
                 {piece && (
-                  <div style={{ width: "88%", height: "88%", position: "relative", zIndex: 1 }}>
+                  <div
+                    ref={lastMove?.to === sq ? slideRef : undefined}
+                    style={{ width: "88%", height: "88%", position: "relative", zIndex: 1 }}
+                  >
                     <Piece type={piece.toLowerCase() as "k" | "q" | "r" | "b" | "n" | "p"} white={isWhitePiece} />
                   </div>
                 )}
