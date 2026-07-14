@@ -1,8 +1,9 @@
 import { supabase } from "@/lib/supabase";
+import { MATE_LEVELS, type MateIn } from "@/lib/puzzleConstants";
 
 export interface RoadTripNode {
   id: string;
-  mateIn: 1 | 2;
+  mateIn: MateIn;
   orderIndex: number;
   fen: string;
   solution: string[];
@@ -12,7 +13,7 @@ export interface RoadTripNode {
 }
 
 export interface RoadTripWorld {
-  mateIn: 1 | 2;
+  mateIn: MateIn;
   title: string;
   subtitle: string;
   nodes: RoadTripNode[];
@@ -20,9 +21,11 @@ export interface RoadTripWorld {
   locked: boolean; // whole world locked until the previous one is fully solved
 }
 
-const WORLD_META: Record<1 | 2, { title: string; subtitle: string }> = {
+const WORLD_META: Record<MateIn, { title: string; subtitle: string }> = {
   1: { title: "Mate en 1", subtitle: "Encuentra la jugada que da jaque mate de inmediato." },
   2: { title: "Mate en 2", subtitle: "Dos jugadas tuyas, con una respuesta forzada del rival." },
+  3: { title: "Mate en 3", subtitle: "Tres jugadas tuyas encadenadas hasta el mate forzado." },
+  4: { title: "Mate en 4", subtitle: "Una combinación larga: cuatro jugadas hasta el jaque mate." },
 };
 
 // Builds the full road trip for a player: puzzles ordered per level, with
@@ -47,11 +50,10 @@ export async function getRoadTrip(userId: string): Promise<RoadTripWorld[]> {
 
   const solvedSet = new Set((progress ?? []).filter((p) => p.solved).map((p) => p.puzzle_id));
 
-  const levels: (1 | 2)[] = [1, 2];
   const worlds: RoadTripWorld[] = [];
   let previousWorldFullySolved: boolean = true;
 
-  for (const mateIn of levels) {
+  for (const mateIn of MATE_LEVELS) {
     const rows = (puzzles ?? []).filter((p) => p.mate_in === mateIn);
     const worldLocked: boolean = !previousWorldFullySolved;
 

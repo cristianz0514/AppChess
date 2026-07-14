@@ -1,8 +1,16 @@
 import { Chess } from "chess.js";
 import { supabase } from "@/lib/supabase";
 import { getTopLines } from "./stockfish";
+import { MATE_LEVELS, type MateIn } from "@/lib/puzzleConstants";
 
 const LICHESS_HEADERS = { Accept: "application/json" };
+
+// Lichess's puzzle-theme taxonomy defines mateIn1 through mateIn5 — verified
+// against their theme translation source (github.com/lichess-org/lila),
+// since the live endpoint itself is rate-limited for exploratory testing.
+const ANGLE_BY_MATE_IN: Record<MateIn, string> = {
+  1: "mateIn1", 2: "mateIn2", 3: "mateIn3", 4: "mateIn4",
+};
 
 interface LichessPuzzleResponse {
   game: { pgn: string };
@@ -12,7 +20,7 @@ interface LichessPuzzleResponse {
 // Fetches ONE live puzzle from Lichess's public puzzle API (CC0-licensed data,
 // no auth needed) and converts it into our storage shape: a FEN for the
 // position the PLAYER must solve from, plus their own solution moves in UCI.
-async function fetchOneLichessPuzzle(angle: "mateIn1" | "mateIn2"): Promise<{
+async function fetchOneLichessPuzzle(angle: string): Promise<{
   externalId: string; fen: string; solution: string[]; rating: number;
 } | null> {
   // No timeout here would let a single stalled connection to Lichess hang the
@@ -82,8 +90,8 @@ function isMissingTableError(error: { code?: string; message?: string } | null):
 // Designed to be called with a SMALL `count` for a fast initial batch (a few
 // seconds, unblocks the player quickly) and again with a larger target to top
 // up in the background while they play — see BackgroundSeeder on the client.
-export async function seedLichessPuzzles(mateIn: 1 | 2, count: number): Promise<{ added: number; total: number }> {
-  const angle = mateIn === 1 ? "mateIn1" : "mateIn2";
+export async function seedLichessPuzzles(mateIn: MateIn, count: number): Promise<{ added: number; total: number }> {
+  const angle = ANGLE_BY_MATE_IN[mateIn];
 
   const existingQ = await supabase
     .from("puzzles")
@@ -195,8 +203,8 @@ export async function minePlayerMates(userId: string, maxGames = MINE_MAX_GAMES)
   // Precompute the order_index base ONCE per level (was a fresh COUNT query
   // per successful match, up to MINE_STOP_AFTER_ADDED round-trips per run) —
   // increment it locally in memory as we add puzzles within this same batch.
-  const orderBase = new Map<1 | 2, number>();
-  for (const mateIn of [1, 2] as const) {
+  const orderBase = new Map<MateIn, number>();
+  for (const mateIn of MATE_LEVELS) {
     const { count } = await supabase.from("puzzles").select("id", { count: "exact", head: true }).eq("mate_in", mateIn);
     orderBase.set(mateIn, count ?? 0);
   }
@@ -220,15 +228,16 @@ export async function minePlayerMates(userId: string, maxGames = MINE_MAX_GAMES)
       const fenBefore = i === 0 ? new Chess().fen() : fens[i - 1];
 
       let lines: { mate: number | null; pv: string[] }[] = [];
-      try { lines = await getTopLines(fenBefore, 10, 1); } catch { continue; }
+      try { lines = await getTopLines(fenBefore, 12, 1); } catch { continue; }
       const mateN = lines[0]?.mate;
-      if (mateN == null || mateN <= 0 || mateN > 2) continue; // only real mate-in-1/2, for the mover
+      if (mateN == null || mateN <= 0 || mateN > 4) continue; // only real mate-in-1..4, for the mover
 
       const pv = lines[0].pv;
-      const solutionMoves = mateN === 1 ? pv.slice(0, 1) : pv.slice(0, 3);
+      const solutionMoves = pv.slice(0, mateN * 2 - 1);
       if (solutionMoves.length < mateN * 2 - 1) continue; // PV too short to confirm the full mate line
 
-      const nextOrder = (orderBase.get(mateN as 1 | 2) ?? 0) + 1000; // personalized puzzles slot in after the seeded batch
+      const level = mateN as MateIn;
+      const nextOrder = (orderBase.get(level) ?? 0) + 1000; // personalized puzzles slot in after the seeded batch
       const { error } = await supabase.from("puzzles").insert({
         source: "user_game",
         user_id: userId,
@@ -238,7 +247,7 @@ export async function minePlayerMates(userId: string, maxGames = MINE_MAX_GAMES)
         mate_in: mateN,
         order_index: nextOrder,
       });
-      if (!error) { added++; orderBase.set(mateN as 1 | 2, (orderBase.get(mateN as 1 | 2) ?? 0) + 1); }
+      if (!error) { added++; orderBase.set(level, (orderBase.get(level) ?? 0) + 1); }
       break; // one personalized puzzle per game is plenty
     }
   }

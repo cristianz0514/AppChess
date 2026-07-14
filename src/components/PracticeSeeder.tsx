@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FAST_TARGET, FULL_TARGET } from "@/lib/puzzleConstants";
+import { FAST_TARGET, FULL_TARGET, MATE_LEVELS, type MateIn } from "@/lib/puzzleConstants";
 
-async function seedOne(mateIn: 1 | 2, count: number): Promise<{ added: number; total: number } | { error: string; code?: string }> {
+async function seedOne(mateIn: MateIn, count: number): Promise<{ added: number; total: number } | { error: string; code?: string }> {
   const res = await fetch("/api/puzzles/seed", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -64,32 +64,34 @@ export function PracticeSeeder() {
   );
 }
 
-// Fires once the path is already showing: tops up Mate en 1 to its full
-// target and seeds Mate en 2, sequentially, entirely in the background — the
-// player is already solving puzzles while this runs. Refreshes quietly when
-// new nodes are ready so they appear on the path without interrupting anything.
-export function BackgroundSeeder({ mate1Count, mate2Count }: { mate1Count: number; mate2Count: number }) {
+// Fires once the path is already showing: tops up every level (Mate en 1
+// through Mate en 4) to its full target, sequentially, entirely in the
+// background — the player is already solving puzzles while this runs.
+// Refreshes quietly when new nodes are ready so they appear on the path
+// without interrupting anything.
+export function BackgroundSeeder({ counts }: { counts: Record<MateIn, number> }) {
   const router = useRouter();
   const started = useRef(false);
+  // Levels rarely change (only grows as seeding completes) — stringify to
+  // compare by value in the effect dependency instead of by object identity.
+  const countsKey = MATE_LEVELS.map((l) => counts[l]).join(",");
 
   useEffect(() => {
-    const needsMore = mate1Count < FULL_TARGET[1] || mate2Count < FULL_TARGET[2];
+    const needsMore = MATE_LEVELS.some((l) => counts[l] < FULL_TARGET[l]);
     if (!needsMore || started.current) return;
     started.current = true;
 
     (async () => {
       let addedAny = false;
-      if (mate1Count < FULL_TARGET[1]) {
-        const r = await seedOne(1, FULL_TARGET[1]);
-        if (!("error" in r) && r.added > 0) addedAny = true;
-      }
-      if (mate2Count < FULL_TARGET[2]) {
-        const r = await seedOne(2, FULL_TARGET[2]);
+      for (const level of MATE_LEVELS) {
+        if (counts[level] >= FULL_TARGET[level]) continue;
+        const r = await seedOne(level, FULL_TARGET[level]);
         if (!("error" in r) && r.added > 0) addedAny = true;
       }
       if (addedAny) router.refresh();
     })();
-  }, [mate1Count, mate2Count, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countsKey, router]);
 
   return null;
 }

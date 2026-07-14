@@ -6,6 +6,7 @@ import { getUserId } from "@/services/dashboardData";
 import { getRoadTrip } from "@/services/puzzleProgress";
 import { PuzzleSolver } from "@/components/PuzzleSolver";
 import { SoundToggle } from "@/components/SoundToggle";
+import type { MateIn } from "@/lib/puzzleConstants";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -24,7 +25,7 @@ export default async function PuzzlePage({ params }: Props) {
   const worlds = await getRoadTrip(userId);
 
   let nodeIndex = -1;
-  let worldMateIn: 1 | 2 = 1;
+  let worldMateIn: MateIn = 1;
   let nextNodeId: string | null = null;
   const node = (() => {
     for (const world of worlds) {

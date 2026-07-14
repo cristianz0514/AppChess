@@ -5,7 +5,7 @@ import { getUserId } from "@/services/dashboardData";
 import { getRoadTrip } from "@/services/puzzleProgress";
 import { PuzzleRoadTrip } from "@/components/PuzzleRoadTrip";
 import { PracticeSeeder, BackgroundSeeder, AutoMineMates } from "@/components/PracticeSeeder";
-import { FAST_TARGET } from "@/lib/puzzleConstants";
+import { FAST_TARGET, MATE_LEVELS, type MateIn } from "@/lib/puzzleConstants";
 
 export const metadata = { title: "Practica el Mate" };
 
@@ -19,8 +19,9 @@ export default async function PracticeMatePage() {
   if (!userId) return null;
 
   const worlds = await getRoadTrip(userId);
-  const mate1Count = worlds.find((w) => w.mateIn === 1)?.nodes.length ?? 0;
-  const mate2Count = worlds.find((w) => w.mateIn === 2)?.nodes.length ?? 0;
+  const counts = Object.fromEntries(
+    MATE_LEVELS.map((l) => [l, worlds.find((w) => w.mateIn === l)?.nodes.length ?? 0]),
+  ) as Record<MateIn, number>;
   const personalCount = worlds.reduce((s, w) => s + w.nodes.filter((n) => n.personal).length, 0);
   const totalSolved = worlds.reduce((s, w) => s + w.solvedCount, 0);
   const totalNodes = worlds.reduce((s, w) => s + w.nodes.length, 0);
@@ -49,12 +50,12 @@ export default async function PracticeMatePage() {
       </header>
 
       <main className="flex-1 pt-20 px-4 max-w-lg mx-auto w-full overflow-y-auto pb-8">
-        {mate1Count < FAST_TARGET ? (
+        {counts[1] < FAST_TARGET ? (
           <PracticeSeeder />
         ) : (
           <>
             <PuzzleRoadTrip worlds={worlds} />
-            <BackgroundSeeder mate1Count={mate1Count} mate2Count={mate2Count} />
+            <BackgroundSeeder counts={counts} />
             <AutoMineMates personalCount={personalCount} />
           </>
         )}

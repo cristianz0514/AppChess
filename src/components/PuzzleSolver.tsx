@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Chess } from "chess.js";
-import { Check, ExternalLink } from "lucide-react";
+import { Check, ExternalLink, Lightbulb } from "lucide-react";
 import { ChessBoard } from "./ChessBoard";
 import { play as playSound } from "@/lib/sound";
 import type { RoadTripNode } from "@/services/puzzleProgress";
@@ -27,22 +27,27 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
   // about half of these puzzles have Black to move.
   const solverOrientation: "white" | "black" = node.fen.split(" ")[1] === "b" ? "black" : "white";
   const [fen, setFen] = useState(node.fen);
-  const [step, setStep] = useState(0);
+  // Index into node.solution the PLAYER must supply next — always an even
+  // index (0, 2, 4, ...), since the player is the attacker and moves at
+  // even plies while the opponent's forced replies auto-play at odd ones.
+  // Generalizes to any mate-in-N (was hardcoded to a single mate-in-2 cycle).
+  const [plyIndex, setPlyIndex] = useState(0);
+  const [autoPlaying, setAutoPlaying] = useState(false);
   const [wrongTries, setWrongTries] = useState(0);
+  // Exactly one hint per puzzle — a dedicated "hint zone" instead of a
+  // colored good/bad-move signal, which gave away too much of the solve
+  // (especially in Mate en 1, where the whole puzzle is a single move).
+  const [hintUsed, setHintUsed] = useState(false);
   const [showHintSq, setShowHintSq] = useState<string | null>(null);
   const [status, setStatus] = useState<"playing" | "solved">("playing");
   const [shake, setShake] = useState(false);
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
-  // Same chess.com-style badge the analysis board draws on the destination
-  // square of a classified move — puzzles don't have a "classification", but
-  // a correct/mating move is exactly as signal-worthy, so it gets one too.
-  const [badge, setBadge] = useState<{ emoji: string; color: string } | null>(null);
 
-  const mateWord = node.mateIn === 1 ? "1 jugada" : "2 jugadas";
+  const mateWord = node.mateIn === 1 ? "1 jugada" : `${node.mateIn} jugadas`;
 
   function handleMove(from: string, to: string) {
-    if (status !== "playing") return;
-    const expected = uciSquares(node.solution[step]);
+    if (status !== "playing" || autoPlaying) return;
+    const expected = uciSquares(node.solution[plyIndex]);
     if (from !== expected.from || to !== expected.to) {
       setWrongTries((n) => n + 1);
       setShake(true);
@@ -60,10 +65,9 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
     setLastMove({ from, to });
     setShowHintSq(null);
 
-    const isLastStep = step + 1 >= node.solution.length;
-    if (isLastStep) {
+    const afterPlayerIdx = plyIndex + 1;
+    if (afterPlayerIdx >= node.solution.length) {
       setStatus("solved");
-      setBadge({ emoji: "‼", color: "#1BAAA6" });
       playSound("brilliant");
       fetch("/api/puzzles/attempt", {
         method: "POST",
@@ -73,24 +77,26 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
       return;
     }
 
-    setBadge({ emoji: "✓", color: "var(--bv-green)" });
+    // There's a forced opponent reply next — auto-play it, then hand the
+    // turn back for the player's following move (repeats for however many
+    // moves this mate-in-N puzzle needs).
+    setAutoPlaying(true);
+    setTimeout(() => {
+      const c2 = new Chess(c.fen());
+      const oppSq = uciSquares(node.solution[afterPlayerIdx]);
+      try {
+        const oppMv = c2.move({ from: oppSq.from, to: oppSq.to, promotion: "q" });
+        if (oppMv) { setFen(c2.fen()); setLastMove(oppSq); }
+      } catch { /* ignore */ }
+      setPlyIndex(afterPlayerIdx + 1);
+      setAutoPlaying(false);
+    }, 450);
+  }
 
-    if (node.mateIn === 2 && step === 0) {
-      // Auto-play the opponent's forced reply after a short beat.
-      const oppUci = node.solution[1];
-      setTimeout(() => {
-        const c2 = new Chess(c.fen());
-        const oppSq = uciSquares(oppUci);
-        try {
-          const oppMv = c2.move({ from: oppSq.from, to: oppSq.to, promotion: "q" });
-          if (oppMv) { setFen(c2.fen()); setLastMove(oppSq); setBadge(null); }
-        } catch { /* ignore */ }
-        setStep(2);
-      }, 450);
-      setStep(1); // transient state while the opponent's move plays
-    } else {
-      setStep((s) => s + 1);
-    }
+  function useHint() {
+    if (hintUsed) return;
+    setHintUsed(true);
+    setShowHintSq(uciSquares(node.solution[plyIndex]).from);
   }
 
   return (
@@ -110,30 +116,43 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
         <ChessBoard
           fen={fen}
           orientation={solverOrientation}
-          interactive={status === "playing" && step !== 1 /* 1 = opponent auto-reply in progress */}
+          interactive={status === "playing" && !autoPlaying}
           onMove={handleMove}
           lastMove={lastMove}
-          lastMoveBadge={badge}
         />
       </div>
 
-      <div style={{ minHeight: 76 }}>
+      <div style={{ minHeight: 76 }} className="space-y-2">
         {status === "playing" && wrongTries > 0 && (
           <div className="rounded-xl px-3 py-2.5 text-sm font-semibold flex items-center gap-2"
             style={{ background: "oklch(0.63 0.23 25 / 0.10)", color: "var(--bv-red)" }}>
             Casi. Intenta de nuevo.
           </div>
         )}
-        {status === "playing" && wrongTries >= 2 && (
-          <button onClick={() => setShowHintSq(uciSquares(node.solution[step === 1 ? 0 : step]).from)}
-            className="mt-2 w-full py-2 rounded-xl border text-xs font-semibold text-muted-foreground"
-            style={{ borderColor: "var(--border)" }}>
-            ¿Necesitas una pista?
-          </button>
+
+        {/* Zona de pistas — exactamente 1 pista por ejercicio, no escala con
+            los intentos fallidos (evita dar demasiadas señales de la solución). */}
+        {status === "playing" && (
+          <div className="rounded-xl border px-3 py-2.5 flex items-center justify-between gap-3"
+            style={{ borderColor: "var(--border)", background: "var(--card)" }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <Lightbulb size={15} style={{ color: hintUsed ? "var(--muted-foreground)" : "var(--bv-purple)" }} />
+              {showHintSq ? (
+                <span className="text-xs">Pista: la pieza correcta está en <b>{showHintSq}</b>.</span>
+              ) : (
+                <span className="text-xs font-semibold text-muted-foreground">Zona de pistas</span>
+              )}
+            </div>
+            {!hintUsed && (
+              <button onClick={useHint}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold"
+                style={{ background: "oklch(0.61 0.22 285 / 0.12)", color: "var(--bv-purple)" }}>
+                Usar pista
+              </button>
+            )}
+          </div>
         )}
-        {showHintSq && (
-          <p className="text-xs text-muted-foreground mt-2 text-center">Pista: la pieza correcta está en <b>{showHintSq}</b>.</p>
-        )}
+
         {status === "solved" && (
           <div className="space-y-2">
             <div className="rounded-xl px-3 py-2.5 text-sm font-semibold flex items-center gap-2"

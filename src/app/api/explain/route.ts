@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { supabase } from "@/lib/supabase";
+import { detectMotifs } from "@/lib/tacticalMotifs";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -35,6 +36,17 @@ export async function POST(req: NextRequest) {
   const fmt = (e: unknown) =>
     typeof e === "number" ? (Math.abs(e) >= 90 ? (e > 0 ? "mate a tu favor" : "mate en tu contra") : `${e > 0 ? "+" : ""}${e.toFixed(1)}`) : "?";
 
+  // Rule-based tactical-pattern detection (real board geometry, not the
+  // model guessing) — grounds the coach's vocabulary in the standard Spanish
+  // terms (horquilla, clavada, ataque descubierto) instead of vague language,
+  // and only when a pattern is ACTUALLY there to name.
+  const playedMotifs = detectMotifs(fenBefore, san);
+  const bestMotifs = bestMove ? detectMotifs(fenBefore, bestMove) : [];
+  const motifLine = [
+    playedMotifs.length ? `En la jugada del alumno (${san}) se detectó: ${playedMotifs.map((m) => m.label).join(", ")}.` : null,
+    bestMotifs.length ? `En la mejor jugada (${bestMove}) se detectó: ${bestMotifs.map((m) => m.label).join(", ")}.` : null,
+  ].filter(Boolean).join(" ");
+
   const prompt = `Eres un entrenador de ajedrez blitz de alto rendimiento. Explica en español, en MÁXIMO 2 frases cortas, por qué la jugada del alumno fue peor que la del motor. NO analices la posición por tu cuenta: básate SOLO en los datos que te doy.
 
 Posición (FEN): ${fenBefore}
@@ -43,11 +55,13 @@ Mejor jugada según Stockfish: ${bestMove ?? "(desconocida)"}
 Evaluación antes (perspectiva del alumno): ${fmt(evalBefore)}
 Evaluación después de su jugada: ${fmt(evalAfter)}
 Fase: ${phase}
+${motifLine ? `Patrones tácticos verificados (detectados por análisis de tablero, NO los inventes ni uses otros distintos a estos): ${motifLine}` : "No se detectó ningún patrón táctico estándar (horquilla/clavada/descubierta) en esta jugada — no menciones ninguno."}
 
 Reglas:
 - Tono de coach directo, humano, sin jerga sin explicar.
 - Explica QUÉ ganaba ${bestMove ?? "la mejor jugada"} o QUÉ concedió ${san} (iniciativa, material, seguridad del rey, actividad).
-- NO inventes variantes largas ni jugadas que no te di.
+- Si te di un patrón táctico verificado, NÓMBRALO con esa palabra exacta (horquilla, clavada, ataque descubierto) — es más preciso que describirlo en general.
+- NO inventes variantes largas, patrones tácticos, ni jugadas que no te di.
 - Máximo 2 frases. Solo el texto, sin comillas ni encabezados.`;
 
   try {
