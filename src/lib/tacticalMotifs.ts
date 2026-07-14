@@ -134,9 +134,14 @@ export function detectMotifs(fenBefore: string, san: string): DetectedMotif[] {
     motifs.push({ key: "fork", label: "horquilla" });
   }
 
-  // Pieza colgada — an enemy piece the mover now attacks that has zero
-  // defenders of its own. The single most common, nameable blunder pattern.
-  const hanging = enemyTargets.find((t) => !isSquareAttackedBy(after, t.sq, oppColor));
+  // Pieza colgada — an enemy piece (knight or up; pawns excluded) the mover
+  // now attacks with zero defenders of its own. Pawns are deliberately
+  // excluded: an undefended pawn attacked by a routine developing move
+  // (e.g. 2.Nf3 eyeing an undefended e5) is normal opening tension the
+  // opponent fixes on their very next move, not a real "hanging piece" —
+  // flagging it as one reads as a false tactical claim to anyone who
+  // actually knows the position.
+  const hanging = enemyTargets.find((t) => PIECE_VALUE[t.piece.type] >= 3 && !isSquareAttackedBy(after, t.sq, oppColor));
   if (hanging) motifs.push({ key: "hanging", label: "pieza colgada" });
 
   // Pin (clavada) / skewer (pincho) — same ray-cast geometry, distinguished

@@ -6,7 +6,7 @@ import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
 import { Piece } from "./pieces";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
 import type { Game } from "@/types";
 
@@ -491,6 +491,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   function enterExplore() {
     setBestMoveArrow(null);
+    setPreviewBest(false);
     setExploreFens([currentFen]);
     setExploreMoves([]);
     setExploreIdx(0);
@@ -520,6 +521,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   const go = useCallback((n: number) => {
     setBestMoveArrow(null);
+    setPreviewBest(false);
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
   }, [moves.length]);
 
@@ -533,12 +535,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     if (Math.abs(dx) < 40) return;
     setIdx((cur) => Math.max(-1, Math.min(moves.length - 1, cur + (dx < 0 ? 1 : -1))));
     setBestMoveArrow(null);
+    setPreviewBest(false);
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setIdx((c) => Math.max(-1, c - 1)); }
-      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
+      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setPreviewBest(false); setIdx((c) => Math.max(-1, c - 1)); }
+      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setPreviewBest(false); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -721,7 +724,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // Best move for the position being VIEWED, fetched automatically for every
   // ply during normal review — chess.com always shows this, not just when
   // asked. Cached per index so scrubbing back and forth doesn't refetch.
-  const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; san: string } | null>>({});
+  const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string } | null>>({});
   useEffect(() => {
     if (inExplore || inStory || inPractice) return;
     if (autoBest[idx] !== undefined) return;
@@ -731,9 +734,10 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       .then((d) => {
         if (cancelled) return;
         if (!d?.from || !d?.to) { setAutoBest((prev) => ({ ...prev, [idx]: null })); return; }
+        const promotion = d.promotion ?? "q";
         try {
-          const mv = new Chess(currentFen).move({ from: d.from, to: d.to, promotion: d.promotion ?? "q" });
-          setAutoBest((prev) => ({ ...prev, [idx]: mv ? { from: d.from, to: d.to, san: mv.san } : null }));
+          const mv = new Chess(currentFen).move({ from: d.from, to: d.to, promotion });
+          setAutoBest((prev) => ({ ...prev, [idx]: mv ? { from: d.from, to: d.to, promotion, san: mv.san } : null }));
         } catch {
           setAutoBest((prev) => ({ ...prev, [idx]: null }));
         }
@@ -741,6 +745,21 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       .catch(() => { if (!cancelled) setAutoBest((prev) => ({ ...prev, [idx]: null })); });
     return () => { cancelled = true; };
   }, [idx, inExplore, inStory, inPractice, currentFen, autoBest]);
+
+  // Tapping the best-move readout plays it out on the board (Lichess-style
+  // preview) instead of only pointing an arrow at it — the position itself
+  // updates so you can see the resulting structure, then the X restores the
+  // real position.
+  const [previewBest, setPreviewBest] = useState(false);
+  const previewMoveInfo = !inExplore && !inStory && !inPractice && previewBest ? autoBest[idx] : null;
+  const previewFen = useMemo(() => {
+    if (!previewMoveInfo) return null;
+    try {
+      const c = new Chess(currentFen);
+      const mv = c.move({ from: previewMoveInfo.from, to: previewMoveInfo.to, promotion: previewMoveInfo.promotion });
+      return mv ? c.fen() : null;
+    } catch { return null; }
+  }, [previewMoveInfo, currentFen]);
 
   // Coach comment (LLaMA) GROUNDED in the engine's best move — fetched once the
   // best move is known for the current moment. Cached per move index.
@@ -952,12 +971,30 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   </div>
                 </div>
               )}
+              {/* Best-move preview banner — shown while the board displays the
+                  hypothetical position after playing the suggested move. */}
+              {!inExplore && previewFen && previewMoveInfo && (
+                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
+                  style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
+                  <span className="flex items-center gap-1"><Target size={13} /> Mejor: {previewMoveInfo.san}</span>
+                  <button onClick={() => setPreviewBest(false)} title="Volver a la posición real" aria-label="Cerrar vista previa"
+                    className="px-1.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors">
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
               <ChessBoard
-                fen={inExplore ? currentExploreFen! : currentFen}
+                fen={inExplore ? currentExploreFen! : previewFen ?? currentFen}
                 orientation={boardOrientation}
-                lastMove={inExplore ? exploreLastMove : storyMomentSlide ? null : lastMove}
-                arrows={
+                lastMove={
                   inExplore
+                    ? exploreLastMove
+                    : previewMoveInfo
+                      ? { from: previewMoveInfo.from, to: previewMoveInfo.to }
+                      : storyMomentSlide ? null : lastMove
+                }
+                arrows={
+                  inExplore || previewMoveInfo
                     ? []
                     : storyMomentSlide
                       ? [
@@ -970,7 +1007,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 }
                 interactive={inExplore}
                 onMove={inExplore ? handleExploreMove : undefined}
-                lastMoveBadge={!inExplore && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
+                lastMoveBadge={!inExplore && !previewMoveInfo && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
                   ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
                   : null}
               />
@@ -1031,14 +1068,18 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
                 <Search size={18} />
               </button>
-              {/* Best move is now automatic (chess.com-style blue arrow on the
-                  board for every ply) — this is just the SAN readout, no
-                  click needed. */}
-              <div className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-                style={{ background: "oklch(0.61 0.22 285 / 0.10)", color: "var(--bv-purple)" }}>
+              {/* Best move draws automatically as a blue arrow. Tapping this
+                  readout also plays it out on the board (Lichess-style) so
+                  you can see the resulting position; the banner's X restores
+                  the real one. */}
+              <button
+                onClick={() => autoBest[idx] && setPreviewBest((p) => !p)}
+                disabled={!autoBest[idx]}
+                className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition active:scale-[0.98] disabled:opacity-60"
+                style={{ background: previewBest ? "var(--bv-purple)" : "oklch(0.61 0.22 285 / 0.10)", color: previewBest ? "#fff" : "var(--bv-purple)" }}>
                 <Target size={16} />
                 {autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : autoBest[idx] === null ? "Sin mejor jugada" : "Calculando..."}
-              </div>
+              </button>
               {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
                 <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
                   className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
