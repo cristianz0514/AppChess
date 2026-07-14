@@ -7,13 +7,20 @@ import { Chess, type Square } from "chess.js";
 // happened instead of describing it vaguely ("perdiste actividad").
 
 export interface DetectedMotif {
-  key: "fork" | "pin" | "skewer" | "discovered" | "hanging";
+  key: "fork" | "pin" | "skewer" | "discovered" | "hanging" | "hangs_own";
   label: string; // Spanish, ready to drop into a sentence — matches Lichess's
   // own puzzle-theme translations exactly (lichess.org/training/themes) so
   // this vocabulary lines up with what players already see there.
+  // Which piece/square, when the motif is about one specific piece (hanging
+  // and hangs_own) — lets the caller name it explicitly instead of leaving
+  // the model to guess (it reliably guesses wrong, e.g. blaming the piece
+  // that just moved when it's actually a DIFFERENT piece left undefended).
+  square?: string;
+  pieceName?: string; // Spanish piece name, ready to drop into a sentence
 }
 
 const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+const PIECE_NAME_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
 const KNIGHT_OFFSETS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
 const KING_OFFSETS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
 const BISHOP_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -110,6 +117,23 @@ function isSquareAttackedBy(chess: Chess, square: string, byColor: "w" | "b"): b
   return false;
 }
 
+// The mirror image of "hanging": after playing the move, is one of the
+// MOVER's OWN pieces (knight or up) now attacked with zero defenders? This
+// is the single most common real blunder (walking a piece into an attack,
+// or unguarding one by moving its defender away) — distinct from the other
+// motifs, which all describe threats the mover creates against the
+// opponent, not exposure the mover creates for themselves.
+function ownPieceHanging(chess: Chess, myColor: "w" | "b"): { square: string; type: string } | null {
+  const oppColor = myColor === "w" ? "b" : "w";
+  for (let f = 0; f < 8; f++) for (let r = 0; r < 8; r++) {
+    const s = toSquare(f, r)!;
+    const p = chess.get(s as Square);
+    if (!p || p.color !== myColor || PIECE_VALUE[p.type] < 3) continue;
+    if (isSquareAttackedBy(chess, s, oppColor) && !isSquareAttackedBy(chess, s, myColor)) return { square: s, type: p.type };
+  }
+  return null;
+}
+
 // Detects tactical motifs created BY playing `san` from `fenBefore`. Returns
 // an empty array if the move can't be replayed or nothing is detected —
 // callers should only mention what's actually here, never invent one.
@@ -142,7 +166,7 @@ export function detectMotifs(fenBefore: string, san: string): DetectedMotif[] {
   // flagging it as one reads as a false tactical claim to anyone who
   // actually knows the position.
   const hanging = enemyTargets.find((t) => PIECE_VALUE[t.piece.type] >= 3 && !isSquareAttackedBy(after, t.sq, oppColor));
-  if (hanging) motifs.push({ key: "hanging", label: "pieza colgada" });
+  if (hanging) motifs.push({ key: "hanging", label: "pieza colgada", square: hanging.sq, pieceName: PIECE_NAME_ES[hanging.piece.type] });
 
   // Pin (clavada) / skewer (pincho) — same ray-cast geometry, distinguished
   // by whether the piece behind the front one is the king or just cheaper.
@@ -157,6 +181,12 @@ export function detectMotifs(fenBefore: string, san: string): DetectedMotif[] {
     const moverGivesCheck = kingSq ? attackedSqs.includes(kingSq) : true;
     if (!moverGivesCheck) motifs.push({ key: "discovered", label: "ataque a la descubierta" });
   }
+
+  // Pieza propia colgada — checked last and independent of the move's own
+  // destination square, since it can come from the moved piece walking into
+  // an attack OR from a completely different piece losing its defender.
+  const selfHang = ownPieceHanging(after, myColor);
+  if (selfHang) motifs.push({ key: "hangs_own", label: "pieza propia colgada", square: selfHang.square, pieceName: PIECE_NAME_ES[selfHang.type] });
 
   return motifs;
 }

@@ -48,11 +48,27 @@ export async function POST(req: NextRequest) {
   // model guessing) — grounds the coach's vocabulary in the standard Spanish
   // terms (horquilla, clavada, ataque descubierto) instead of vague language,
   // and only when a pattern is ACTUALLY there to name.
+  //
+  // fork/pin/skewer/discovered/hanging all describe a threat the MOVER
+  // creates against the OPPONENT — they're never a self-inflicted problem,
+  // so a hit on the student's own move is not blame-worthy and must not be
+  // read as "why the move was bad". hangs_own is the opposite direction
+  // (the mover's own piece left undefended) and is the one genuine
+  // self-caused-problem signal — split it out so the prompt can't conflate
+  // the two.
   const playedMotifs = detectMotifs(fenBefore, san);
   const bestMotifs = bestMove ? detectMotifs(fenBefore, bestMove) : [];
+  const playedSelfHang = playedMotifs.find((m) => m.key === "hangs_own");
+  const playedThreats = playedMotifs.filter((m) => m.key !== "hangs_own");
+  const bestThreats = bestMotifs.filter((m) => m.key !== "hangs_own");
+  // Name the exact piece/square whenever we have one — otherwise the model
+  // has to guess which piece is involved, and it reliably guesses wrong
+  // (e.g. blaming the piece that just moved when a DIFFERENT piece is the
+  // one actually left hanging).
   const motifLine = [
-    playedMotifs.length ? `En la jugada del alumno (${san}) se detectó: ${playedMotifs.map((m) => m.label).join(", ")}.` : null,
-    bestMotifs.length ? `En la mejor jugada (${bestMove}) se detectó: ${bestMotifs.map((m) => m.label).join(", ")}.` : null,
+    playedSelfHang ? `La jugada del alumno (${san}) deja su ${playedSelfHang.pieceName} en ${playedSelfHang.square} sin ningún defensor (pieza propia colgada) — esta SÍ es un problema causado por su jugada, y esa es la pieza y casilla exactas, no otra.` : null,
+    bestThreats.length ? `La mejor jugada (${bestMove}) logra: ${bestThreats.map((m) => `${m.label}${m.square ? ` (sobre el ${m.pieceName} en ${m.square})` : ""}`).join(", ")} — esto es lo que el alumno dejó pasar.` : null,
+    playedThreats.length ? `Nota aparte (NO es la causa del error, es solo información): la jugada del alumno también genera ${playedThreats.map((m) => m.label).join(", ")} contra el rival.` : null,
   ].filter(Boolean).join(" ");
 
   const prompt = `Eres el entrenador virtual de un jugador de club, dentro de la revisión de su partida — el mismo momento en que Chess.com muestra a su "Coach" explicando por qué una jugada fue buena o mala. Escribe en español, con la voz de un coach real: directa, cercana, en frases completas y naturales — nunca un volcado de datos ni fragmentos cortados.
@@ -68,10 +84,10 @@ Evaluación antes (perspectiva del alumno): ${fmt(evalBefore)}
 Evaluación después de su jugada: ${fmt(evalAfter)}
 ${swingLine}
 Fase: ${phase}
-${motifLine ? `Patrones tácticos verificados (detectados por análisis de tablero, NO los inventes ni uses otros distintos a estos): ${motifLine}` : "No se detectó ningún patrón táctico estándar (horquilla/clavada/pincho/descubierta/pieza colgada) en esta jugada — no menciones ninguno."}
+${motifLine ? `Patrones tácticos verificados (detectados por análisis de tablero, NO los inventes ni uses otros distintos a estos): ${motifLine}` : "No se detectó ningún patrón táctico estándar (horquilla/clavada/pincho/descubierta/pieza colgada/pieza propia colgada) en esta jugada — no menciones ninguno."}
 
 Escribe 2 frases completas (no fragmentos), cada una de entre 10 y 20 palabras:
-- Primero decide CUÁL de estos dos casos es este, según los patrones verificados arriba: (a) el patrón está en la MEJOR jugada, no en la del alumno → el problema de ${san} es que no vio/jugó esa táctica que sí estaba disponible, dilo así directamente ("no aprovechaste...", "dejaste pasar..."); (b) el patrón está en la jugada del alumno → su propia jugada causó el problema (cede material/rey/etc.), descríbelo así. Si NO hay ningún patrón verificado, entonces sí elige la categoría posicional que de verdad aplica (seguridad del rey / una casilla o diagonal clave / desarrollo / tiempo / estructura de peones) — pero solo si es real, nunca inventada.
+- Primero decide CUÁL de estos casos aplica, según lo verificado arriba (en este orden de prioridad): (a) "pieza propia colgada" verificada → ESA es la causa real: la jugada del alumno deja su propia pieza sin defensa, dilo así directamente. (b) si no hay pieza propia colgada pero SÍ hay algo verificado en "la mejor jugada" → el problema de ${san} es que no vio/jugó esa táctica que sí estaba disponible ("no aprovechaste...", "dejaste pasar..."). (c) si no hay ningún patrón verificado en ninguno de los dos casos anteriores → elige la categoría posicional que de verdad aplica (seguridad del rey / una casilla o diagonal clave / desarrollo / tiempo / estructura de peones), pero solo si es real, nunca inventada. La "nota aparte" (si aparece) es solo contexto — NUNCA la uses como la causa del error.
 - Frase 1: el hecho concreto según el caso que identificaste arriba — arranca nombrando la pieza, la casilla o el patrón, no con "perdiste la oportunidad de..." ni otra frase hecha.
 - Frase 2: qué logra ${bestMove ?? "la mejor jugada"} en concreto que ${san} no logra — la lección puntual, no un consejo genérico de "desarrolla tus piezas" o "controla el centro" salvo que sea literalmente el punto.
 - Si hay un patrón táctico verificado arriba, NÓMBRALO con esa palabra exacta — es más preciso que describirlo en general. NUNCA inventes un defecto posicional (estructura de peones, flanco de rey, etc.) que no esté respaldado por los datos de arriba.
