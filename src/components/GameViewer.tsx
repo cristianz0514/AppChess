@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
+import { Piece } from "./pieces";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2 } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
@@ -27,6 +28,7 @@ interface MoveInfo {
   color: "w" | "b";
   from: string;
   to: string;
+  captured: string | null;     // piece type captured by this move (p/n/b/r/q), if any
   classification: string | null;
   centipawnLoss: number | null;
   evaluation: number | null;   // in pawns, white's perspective; ±9999 = mate
@@ -190,6 +192,7 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
       color: h.color as "w" | "b",
       from: h.from,
       to: h.to,
+      captured: h.captured ?? null,
       classification: db?.classification ?? null,
       centipawnLoss: db?.centipawn_loss ?? null,
       evaluation: db?.evaluation ?? null,
@@ -284,6 +287,49 @@ function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
         style={{ color: "var(--muted-foreground)", opacity: hasRealData ? 1 : 0.5 }}>
         {label}
       </span>
+    </div>
+  );
+}
+
+// Captured-material tray (chess.com/lichess standard) — small icons of every
+// piece each side has taken, plus the material lead. Was entirely absent;
+// the only material feedback lived in buried practice-mode text.
+const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+
+function CapturedTray({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
+  const byWhite: string[] = []; // pieces WHITE captured (black pieces taken off)
+  const byBlack: string[] = []; // pieces BLACK captured (white pieces taken off)
+  for (let i = 0; i <= idx && i < moves.length; i++) {
+    const m = moves[i];
+    if (!m.captured) continue;
+    (m.color === "w" ? byWhite : byBlack).push(m.captured);
+  }
+  if (byWhite.length === 0 && byBlack.length === 0) return null;
+
+  const byValueDesc = (a: string, b: string) => (PIECE_VALUE[b] ?? 0) - (PIECE_VALUE[a] ?? 0);
+  byWhite.sort(byValueDesc);
+  byBlack.sort(byValueDesc);
+  const diff = byWhite.reduce((s, p) => s + (PIECE_VALUE[p] ?? 0), 0)
+    - byBlack.reduce((s, p) => s + (PIECE_VALUE[p] ?? 0), 0);
+
+  return (
+    <div className="flex items-center justify-between px-0.5">
+      <div className="flex items-center">
+        {byWhite.map((p, i) => (
+          <span key={i} style={{ width: 13, height: 13, marginLeft: i > 0 ? -4 : 0 }}>
+            <Piece type={p as "p" | "n" | "b" | "r" | "q"} white={false} />
+          </span>
+        ))}
+        {diff > 0 && <span className="ml-1.5 text-[10px] font-bold text-muted-foreground">+{diff}</span>}
+      </div>
+      <div className="flex items-center">
+        {diff < 0 && <span className="mr-1.5 text-[10px] font-bold text-muted-foreground">+{-diff}</span>}
+        {byBlack.map((p, i) => (
+          <span key={i} style={{ width: 13, height: 13, marginLeft: i > 0 ? -4 : 0 }}>
+            <Piece type={p as "p" | "n" | "b" | "r" | "q"} white={true} />
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -851,7 +897,10 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
           {/* Board + eval bar (bar on top, board edge-to-edge) */}
           <div className="space-y-2 -mx-4" style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-            <div className="px-4"><EvalBar moves={moves} idx={inExplore ? -1 : idx} /></div>
+            <div className="px-4 space-y-1.5">
+              <EvalBar moves={moves} idx={inExplore ? -1 : idx} />
+              {!inExplore && <CapturedTray moves={moves} idx={idx} />}
+            </div>
             <div className="relative"
               onTouchStart={!inExplore ? onTouchStart : undefined}
               onTouchEnd={!inExplore ? onTouchEnd : undefined}>
