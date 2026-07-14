@@ -184,11 +184,6 @@ export async function analyzeGame(
   // Only upgrade moves that were already "best". A brilliant is a sound
   // sacrifice; a great is a strong best move that wins a clean piece.
   const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-  // "best" moves that capitalize on a big favorable swing (punishing the
-  // opponent's error) but don't qualify as "great" (e.g. a plain pawn grab,
-  // not a piece worth ≥3) — still worth a congratulatory comment instead of
-  // silence, just without relabeling the classification itself.
-  const punishingBest = new Set<number>();
   for (let i = 0; i < history.length; i++) {
     if (moves[i].classification !== "best") continue;
     const h = history[i];
@@ -216,9 +211,22 @@ export async function analyzeGame(
     const isRecapture = i > 0 && history[i - 1].captured != null && history[i - 1].to === h.to;
     if (wonPiece && !isRecapture && evalAfter - evalBefore >= 1.5) {
       moves[i].classification = "great";
-      continue;
     }
-    if (evalAfter - evalBefore >= 1.5) punishingBest.add(i);
+  }
+
+  // "best"/"excellent" moves that directly punish the OPPONENT's immediately
+  // preceding blunder/mistake — worth a congratulatory comment instead of
+  // silence, without relabeling the classification itself. Based on the
+  // already-finalized classification labels (deterministic) rather than a
+  // fresh eval-swing threshold: the swing from a blunder happens AT the
+  // blunder ply itself, not necessarily at the reply that punishes it, so a
+  // swing-based check on the reply's own ply unreliably misses this case.
+  const punishingBest = new Set<number>();
+  for (let i = 1; i < history.length; i++) {
+    const cls = moves[i].classification;
+    if (cls !== "best" && cls !== "excellent") continue;
+    const prevCls = moves[i - 1].classification;
+    if (prevCls === "blunder" || prevCls === "mistake") punishingBest.add(i);
   }
 
   await supabase.from("moves").delete().eq("game_id", gameId);
