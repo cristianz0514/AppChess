@@ -128,7 +128,15 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
 
               return (
                 <div key={node.id} className="absolute flex flex-col items-center gap-2"
-                  style={{ left: `${x}%`, top: `${y}px`, transform: "translate(-50%, -50%)" }}>
+                  style={{
+                    left: `${x}%`, top: `${y}px`,
+                    // Staggered pop-in as the path reveals itself — this page is
+                    // seen occasionally (not dozens of times a day like the
+                    // dashboard), so a bit of delight here doesn't get old.
+                    // Capped stagger so a 50-node world still settles quickly.
+                    animation: "puzzleNodePop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both",
+                    animationDelay: `${Math.min(i, 8) * 40}ms`,
+                  }}>
                   {isCurrent && (
                     <div className="absolute -top-11 flex flex-col items-center" style={{ animation: "puzzleBob 1.6s ease-in-out infinite" }}>
                       <div className="px-3.5 py-1.5 rounded-xl text-[10px] font-bold text-white whitespace-nowrap shadow-lg"
@@ -201,6 +209,10 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
       </div>
 
       <style>{`
+        @keyframes puzzleNodePop {
+          0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+          100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
         @keyframes puzzlePulse {
           0%, 100% { box-shadow: 0 0 0 0 oklch(0.61 0.22 285 / 0.35); }
           50% { box-shadow: 0 0 0 10px oklch(0.61 0.22 285 / 0); }
