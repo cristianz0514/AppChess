@@ -1,7 +1,10 @@
+import Groq from "groq-sdk";
 import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
 import { hasModernSchema } from "./dashboardData";
 import type { Insight } from "@/types";
+
+const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
 
@@ -240,11 +243,14 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   };
 }
 
-// ─── Facts (deterministic, no LLM) ──────────────────────────────────────────
+// ─── Facts (deterministic — the numbers are never left to an LLM) ───────────
 //
-// Instead of paraphrasing stats through an LLM (which can only reword numbers
-// and risks confidently-wrong chess advice), we surface the behavioral facts
-// DIRECTLY from the player's data — always correct, sharp, and actionable.
+// Every number in a message below comes straight from the player's own data,
+// computed in code — never from an LLM guess. That stays true even after
+// `deepenInsight` rewrites the wording: the model is handed the exact,
+// already-correct fact string and told to explain/expand it, not recompute
+// or invent new figures. This keeps the accuracy guarantee while fixing the
+// actual complaint (the fixed templates read as generic/robotic).
 
 interface Fact extends GeneratedInsight {
   weight: number; // higher = more prominent; used to pick and order the top few
@@ -344,6 +350,57 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
   return chosen.map(({ weight: _w, ...rest }) => rest);
 }
 
+// ─── Deepen (LLM rewrite of an already-correct fact) ────────────────────────
+//
+// The fixed templates read as generic/robotic — same phrasing every time,
+// no matter the player. This rewrites each one into a warmer, more specific
+// coach note, but the model NEVER sees raw numbers to compute on its own:
+// it's handed the finished, verified sentence and told to explain/expand it,
+// repeating every figure verbatim. Falls back to the original template on
+// any failure (missing key, timeout, empty response) — never blocks or
+// blanks out an insight just because the rewrite didn't work.
+const CATEGORY_LABEL_ES: Record<Insight["category"], string> = {
+  opening: "aperturas",
+  tactical: "táctica",
+  time_management: "manejo del reloj",
+  recurring_blunder: "errores recurrentes",
+};
+
+async function deepenInsight(fact: GeneratedInsight): Promise<string> {
+  if (!groq) return fact.message;
+  const prompt = `Eres el entrenador personal de un jugador de ajedrez de club, escribiendo una nota corta para su panel de progreso (categoría: ${CATEGORY_LABEL_ES[fact.category]}).
+
+Hecho verificado sobre este jugador (ya calculado, con datos reales de sus partidas — NO recalcules ni inventes ningún número distinto a los que aparecen aquí):
+"${fact.message}"
+
+Reescríbelo en EXACTAMENTE 2 frases completas (nunca 3, nunca fragmentos), cada una de 12 a 20 palabras:
+- Frase 1: repite el hecho con sus números EXACTOS (ni los redondees ni inventes otros) y explica el IMPACTO — qué le cuesta esto en partidas o puntos de rating. NO inventes una causa táctica o posicional específica (p. ej. "por debilidades en el control del centro", "porque pierdes el hilo") — esos datos no están verificados; quédate en el impacto, no en el diagnóstico de la causa.
+- Frase 2: una acción concreta y específica a este patrón exacto — prohibido "practica más", "ten cuidado", "revisa con calma" o cualquier consejo que serviría igual para cualquier otro problema.
+- Tono directo, cercano, de entrenador — no acusador ni condescendiente.
+- Prohibido inventar estadísticas, partidas, jugadas o causas concretas que no estén en el hecho verificado.
+- Solo el texto final, sin comillas ni encabezados.`;
+
+  try {
+    const res = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.5,
+      max_tokens: 160,
+    });
+    let text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
+    // Soft length cap at a word boundary — never surface a sentence cut off
+    // mid-word if the model overruns despite the length instruction above.
+    if (text.length > 320) {
+      const cut = text.slice(0, 320);
+      const lastSpace = cut.lastIndexOf(" ");
+      text = (lastSpace > 240 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
+    }
+    return text || fact.message;
+  } catch {
+    return fact.message;
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 interface GeneratedInsight {
@@ -356,10 +413,15 @@ export async function generateInsights(userId: string): Promise<void> {
   const snapshot = await buildSnapshot(userId);
   if (!snapshot) return;
 
-  // Facts are computed directly from the player's data — deterministic, always
-  // correct, and free (no LLM). See computeFacts for the rationale.
-  const insights = computeFacts(snapshot);
-  if (insights.length === 0) return;
+  // Facts are computed directly from the player's data — deterministic and
+  // always correct (see computeFacts) — then each one is deepened into a
+  // fuller, less templated coach note (see deepenInsight) before saving.
+  const facts = computeFacts(snapshot);
+  if (facts.length === 0) return;
+
+  const insights = await Promise.all(
+    facts.map(async (f) => ({ ...f, message: await deepenInsight(f) }))
+  );
 
   await supabase.from("insights").delete().eq("user_id", userId);
   await supabase.from("insights").insert(

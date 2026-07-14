@@ -2,6 +2,7 @@ import { Chess } from "chess.js";
 import Groq from "groq-sdk";
 import { analyzeAllFens, evaluatePosition, getTopLines } from "./stockfish";
 import { supabase } from "@/lib/supabase";
+import { detectMotifs } from "@/lib/tacticalMotifs";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -40,8 +41,11 @@ function describeMove(fen: string, san: string): string {
   } catch { return san; }
 }
 
-// One short coach sentence, grounded in concrete facts (best move, sacrifice /
-// captured material, eval swing) so it adds real value — not generic praise.
+// A short coach explanation, grounded in concrete facts (best move,
+// sacrifice / captured material, eval swing, tactical motifs, the
+// continuation line) so it explains the IDEA/plan, not just the punctual
+// fact — 2-3 sentences instead of one, since a single 20-word sentence
+// can't carry both "what happened" and "why it matters".
 async function coachComment(args: {
   fenBefore: string; san: string; bestMove: string | null; moveNumber: number;
   evalBefore: number; evalAfter: number; good: boolean; facts: string;
@@ -49,28 +53,28 @@ async function coachComment(args: {
   if (!groq) return null;
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
   const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
-  const RULES = `Reglas: usa SOLO los datos de los campos, no inventes nada más. Nombres de piezas y casillas siempre; PROHIBIDO usar notación tipo "Rb8"/"Bxd5" o casillas sueltas sin pieza — es una IA hablando con una persona. Cuando cites la jugada correcta o la respuesta del rival, repite la descripción TAL CUAL viene en los campos (no la reformules como "mover X"). PROHIBIDAS las frases de relleno: "mejorar la posición", "obtener ventaja", "no aprovechaste la oportunidad". No menciones cifras ni la palabra "evaluación". Español, tono de entrenador directo y sencillo. UNA sola frase, 14 a 26 palabras. Devuelve SOLO la frase, sin comillas.`;
+  const RULES = `Reglas: usa SOLO los datos de los campos, no inventes nada más — ni variantes, ni patrones tácticos, ni planes que no estén ahí. Si un campo dice "Patrón verificado", NÓMBRALO con esa palabra exacta (horquilla/clavada/pincho/pieza colgada/pieza propia colgada) — es más preciso que describirlo en general, y si NO hay ese campo, no menciones ningún patrón táctico por tu cuenta. Nombres de piezas y casillas siempre; PROHIBIDO usar notación tipo "Rb8"/"Bxd5" o casillas sueltas sin pieza — es una IA hablando con una persona. Cuando cites la jugada correcta o la respuesta del rival, repite la descripción TAL CUAL viene en los campos (no la reformules como "mover X"). PROHIBIDAS las frases de relleno: "mejorar la posición", "obtener ventaja", "no aprovechaste la oportunidad" (sin explicar qué oportunidad). No menciones cifras ni la palabra "evaluación". Español, tono de entrenador directo, cercano y con profundidad real — explica la IDEA o el plan detrás del hecho, no solo lo señales. 2 a 3 frases completas, cada una de 12 a 22 palabras. Devuelve SOLO el texto, sin comillas ni encabezados.`;
   const prompt = good
-    ? `Eres un entrenador de ajedrez explicando a tu alumno por qué acaba de hacer una gran jugada. Si hay una línea posterior en los datos, apóyate en ella para explicar la idea (qué consigue), no solo repitas el dato de material.
+    ? `Eres un entrenador de ajedrez explicando a tu alumno por qué acaba de hacer una gran jugada. Explica QUÉ consigue a fondo — no solo "gana material", sino qué hace esa ganancia con la posición (activa piezas, evita contrajuego, sentencia la partida, etc.) apoyándote en la línea posterior si está en los datos.
 ${facts}
 ${RULES}`
-    : `Eres un entrenador de ajedrez explicando a tu alumno un error que acaba de cometer. Menciona qué permite al rival (si hay ese dato) y cuál era la jugada correcta.
+    : `Eres un entrenador de ajedrez explicando a tu alumno un error que acaba de cometer. No te quedes en "permite esto" — explica POR QUÉ eso es grave (qué pieza/casilla/plan queda comprometido) y qué lograba la jugada correcta más allá de evitar el problema puntual.
 ${facts}
 ${RULES}`;
   try {
     const res = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.35,
-      max_tokens: 90,
+      temperature: 0.45,
+      max_tokens: 220,
     });
     let text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
     // Soft length cap only — do NOT split on the first "." (that would cut inside
     // decimals like "+1.5" and mangle the comment). Trim at a word boundary.
-    if (text.length > 160) {
-      const cut = text.slice(0, 160);
+    if (text.length > 340) {
+      const cut = text.slice(0, 340);
       const lastSpace = cut.lastIndexOf(" ");
-      text = (lastSpace > 120 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
+      text = (lastSpace > 260 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
     }
     return text || null;
   } catch {
@@ -367,9 +371,18 @@ export async function analyzeGame(
       else if (capturedName && capturedVal >= movedVal) material = `gana material: captura ${capturedName} con ${movedName}`;
       else if (capturedName) material = `captura ${capturedName}`;
 
+      // Rule-based tactical-pattern detection (real board geometry) — names
+      // the exact pattern (horquilla/clavada/pincho) when there genuinely is
+      // one, instead of the model vaguely describing "a good tactic".
+      const playedMotifs = detectMotifs(fenBefore, moves[i].move).filter((m) => m.key !== "hangs_own");
+      const motifLine = playedMotifs.length
+        ? `Patrón verificado: ${playedMotifs.map((m) => `${m.label}${m.square ? ` sobre el ${m.pieceName} en ${m.square}` : ""}`).join(", ")}.`
+        : null;
+
       const fieldLines: string[] = [`El motor confirma que es la mejor jugada de la posición.`];
       if (material) fieldLines.push(`Detalle de material: ${material}`);
       if (tactic) fieldLines.push(`Táctica: ${tactic}`);
+      if (motifLine) fieldLines.push(motifLine);
       if (contNat) fieldLines.push(`Después sigue esta línea: ${contNat}`);
       facts = fieldLines.join("\n");
     } else {
@@ -387,12 +400,44 @@ export async function analyzeGame(
             : `el rival responde con ${describeMove(fens[i], oppSan)}`;
         }
       } catch { /* ignore */ }
+
+      // What was the PLAN behind the correct move, not just its first move —
+      // the same depth signal already used in the "good" branch, so a
+      // blunder explanation can say "this also set up X", not just name it.
+      const contSans = mainSans.slice(1, 4);
+      let contNat: string | null = null;
+      if (bestSan && contSans.length) {
+        const cc = new Chess(fenBefore);
+        try { cc.move(bestSan); } catch { /* ignore */ }
+        const parts: string[] = [];
+        for (const s of contSans) { parts.push(describeMove(cc.fen(), s)); try { cc.move(s); } catch { break; } }
+        contNat = parts.join(", luego ");
+      }
+
+      // Rule-based tactical-pattern detection (real board geometry, not the
+      // model guessing) — same detector used in the Story Mode coach, now
+      // grounding the batch analysis too. fork/pin/skewer/discovered/hanging
+      // describe a threat the MOVER creates against the OPPONENT (never a
+      // self-inflicted problem); hangs_own is the mirror case (the mover's
+      // own piece left undefended) and IS a genuine self-caused issue.
+      const playedMotifs = detectMotifs(fenBefore, moves[i].move);
+      const bestMotifs = bestSan ? detectMotifs(fenBefore, bestSan) : [];
+      const playedSelfHang = playedMotifs.find((m) => m.key === "hangs_own");
+      const bestThreats = bestMotifs.filter((m) => m.key !== "hangs_own");
+      const motifLine = playedSelfHang
+        ? `Patrón verificado: la jugada del alumno deja su ${playedSelfHang.pieceName} en ${playedSelfHang.square} sin defensor (pieza propia colgada) — esta es la causa real del error.`
+        : bestThreats.length
+          ? `Patrón verificado en la jugada correcta: ${bestThreats.map((m) => `${m.label}${m.square ? ` sobre el ${m.pieceName} en ${m.square}` : ""}`).join(", ")} — esto es lo que el alumno dejó pasar.`
+          : null;
+
       // Labeled fields (not a run-on paragraph) — the LLM composes a cleaner,
       // less ambiguous sentence from clearly separated facts than from prose.
       const fieldLines: string[] = [];
       fieldLines.push(`Pieza que movió el alumno: ${ART_ES[h.piece] ?? movedName}${capturedName ? ` (capturó ${capturedName})` : ""}`);
       if (concede) fieldLines.push(`Lo que esto permite al rival: ${concede}`);
       if (bestSan) fieldLines.push(`La jugada correcta era: ${describeMove(fenBefore, bestSan)}`);
+      if (contNat) fieldLines.push(`El plan detrás de esa jugada correcta sigue así: ${contNat}`);
+      if (motifLine) fieldLines.push(motifLine);
       if (forcedMate) fieldLines.push(`Dato importante: el alumno tenía un jaque mate forzado a su favor y lo dejó pasar`);
       facts = fieldLines.join("\n");
     }
