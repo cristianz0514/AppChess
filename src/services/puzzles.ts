@@ -27,6 +27,11 @@ async function fetchOneLichessPuzzle(angle: "mateIn1" | "mateIn2"): Promise<{
     });
     if (!res.ok) return null;
     data = (await res.json()) as LichessPuzzleResponse;
+    // Lichess can return a 200 with an unexpected/error body (e.g. under rate
+    // limiting) — verify the shape before touching nested fields, since an
+    // uncaught TypeError here would crash the whole seeding request instead
+    // of just skipping this one attempt.
+    if (!data?.puzzle?.id || !data?.game?.pgn) return null;
   } catch {
     return null;
   }
