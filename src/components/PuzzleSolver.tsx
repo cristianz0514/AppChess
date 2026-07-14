@@ -13,6 +13,14 @@ function uciSquares(uci: string): { from: string; to: string } {
   return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
 }
 
+// Lichess UCI encodes a required promotion as a 5th character (e.g. "g7g8q").
+// Most of our mate puzzles promote to queen, but not all — validate whatever
+// the solution actually specifies instead of assuming "q".
+function uciPromotion(uci: string): "q" | "r" | "b" | "n" {
+  const p = uci[4];
+  return p === "r" || p === "b" || p === "n" ? p : "q";
+}
+
 interface Props {
   node: RoadTripNode;
   nextNodeId: string | null;
@@ -45,10 +53,14 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
 
   const mateWord = node.mateIn === 1 ? "1 jugada" : `${node.mateIn} jugadas`;
 
-  function handleMove(from: string, to: string) {
+  function handleMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
     if (status !== "playing" || autoPlaying) return;
-    const expected = uciSquares(node.solution[plyIndex]);
-    if (from !== expected.from || to !== expected.to) {
+    const solutionUci = node.solution[plyIndex];
+    const expected = uciSquares(solutionUci);
+    const expectedPromo = uciPromotion(solutionUci);
+    // A promotion move where the player picked a different piece than the
+    // solution requires is just as wrong as the wrong square would be.
+    if (from !== expected.from || to !== expected.to || (promotion && promotion !== expectedPromo)) {
       setWrongTries((n) => n + 1);
       setShake(true);
       setTimeout(() => setShake(false), 400);
@@ -58,7 +70,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
 
     const c = new Chess(fen);
     let mv;
-    try { mv = c.move({ from, to, promotion: "q" }); } catch { mv = null; }
+    try { mv = c.move({ from, to, promotion: expectedPromo }); } catch { mv = null; }
     if (!mv) { setWrongTries((n) => n + 1); return; }
 
     setFen(c.fen());
@@ -83,9 +95,10 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
     setAutoPlaying(true);
     setTimeout(() => {
       const c2 = new Chess(c.fen());
-      const oppSq = uciSquares(node.solution[afterPlayerIdx]);
+      const oppUci = node.solution[afterPlayerIdx];
+      const oppSq = uciSquares(oppUci);
       try {
-        const oppMv = c2.move({ from: oppSq.from, to: oppSq.to, promotion: "q" });
+        const oppMv = c2.move({ from: oppSq.from, to: oppSq.to, promotion: uciPromotion(oppUci) });
         if (oppMv) { setFen(c2.fen()); setLastMove(oppSq); }
       } catch { /* ignore */ }
       setPlyIndex(afterPlayerIdx + 1);

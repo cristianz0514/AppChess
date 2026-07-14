@@ -43,7 +43,7 @@ interface Props {
   lastMove?: { from: string; to: string } | null;
   arrows?: Arrow[];
   interactive?: boolean;
-  onMove?: (from: string, to: string) => void;
+  onMove?: (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => void;
   // Badge (emoji) shown over the destination square of the last move, chess.com style.
   lastMoveBadge?: { emoji: string; color: string } | null;
 }
@@ -58,6 +58,10 @@ export function ChessBoard({
   lastMoveBadge,
 }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
+  // Pawn reaching the last rank — chess.com/lichess both prompt for which
+  // piece to promote to; ours silently forced a queen every time. Holds the
+  // pending move until the player picks.
+  const [promoPending, setPromoPending] = useState<{ from: string; to: string; color: "white" | "black" } | null>(null);
   const board = parseFen(fen);
   const turnColor = fen.split(" ")[1] === "w" ? "white" : "black";
 
@@ -122,7 +126,7 @@ export function ChessBoard({
   }
 
   function handleClick(sq: string) {
-    if (!interactive || !onMove) return;
+    if (!interactive || !onMove || promoPending) return;
     const piece = (() => {
       const { col, row } = sqToColRow(sq, orientation);
       const file = orientation === "white" ? col : 7 - col;
@@ -137,9 +141,27 @@ export function ChessBoard({
     } else if (piece && pieceColor(piece) === turnColor) {
       setSelected(sq);
     } else {
-      onMove(selected, sq);
+      const movingPiece = (() => {
+        const { col, row } = sqToColRow(selected, orientation);
+        const file = orientation === "white" ? col : 7 - col;
+        const rank = orientation === "white" ? row : 7 - row;
+        return board[rank]?.[file] ?? null;
+      })();
+      const destRank = sq[1];
+      const isPromotion = movingPiece?.toLowerCase() === "p" && (destRank === "8" || destRank === "1");
+      if (isPromotion) {
+        setPromoPending({ from: selected, to: sq, color: turnColor });
+      } else {
+        onMove(selected, sq);
+      }
       setSelected(null);
     }
+  }
+
+  function choosePromotion(piece: "q" | "r" | "b" | "n") {
+    if (!promoPending || !onMove) return;
+    onMove(promoPending.from, promoPending.to, piece);
+    setPromoPending(null);
   }
 
   return (
@@ -312,6 +334,58 @@ export function ChessBoard({
           >
             {lastMoveBadge.emoji}
           </div>
+        );
+      })()}
+
+      {/* Promotion piece picker — a small popover of the 4 promotable pieces,
+          positioned over the destination square (chess.com/lichess convention). */}
+      {promoPending && (() => {
+        const { x, y } = sqToXYPct(promoPending.to, orientation);
+        const isWhite = promoPending.color === "white";
+        const choices: Array<"q" | "r" | "b" | "n"> = ["q", "r", "b", "n"];
+        return (
+          <>
+            <div
+              aria-hidden
+              onClick={() => setPromoPending(null)}
+              style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(20,18,30,0.15)" }}
+            />
+            <div
+              role="menu"
+              aria-label="Elige la pieza de coronación"
+              style={{
+                position: "absolute",
+                left: `${x}%`, top: `${y}%`,
+                transform: "translate(-50%, -50%)",
+                zIndex: 4,
+                display: "flex",
+                borderRadius: "9999px",
+                background: "var(--card, #fff)",
+                boxShadow: "0 12px 28px -8px rgba(38,36,46,0.35)",
+                padding: "2%",
+                gap: "1.5%",
+                animation: "bvBadgePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+              }}
+            >
+              {choices.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => choosePromotion(p)}
+                  aria-label={p}
+                  style={{
+                    width: "11cqi", height: "11cqi",
+                    borderRadius: "9999px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    padding: "8%",
+                  }}
+                >
+                  <Piece type={p} white={isWhite} />
+                </button>
+              ))}
+            </div>
+          </>
         );
       })()}
     </div>

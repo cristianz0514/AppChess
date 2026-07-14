@@ -58,11 +58,11 @@ interface PracticeResult {
   message: string;
 }
 
-function evaluatePracticeMove(fenBefore: string, from: string, to: string): PracticeResult {
+function evaluatePracticeMove(fenBefore: string, from: string, to: string, promotion: "q" | "r" | "b" | "n" = "q"): PracticeResult {
   const game = new Chess(fenBefore);
   let move;
   try {
-    move = game.move({ from, to, promotion: "q" });
+    move = game.move({ from, to, promotion });
   } catch {
     return { verdict: "illegal", message: "Movimiento ilegal en esta posición." };
   }
@@ -415,7 +415,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // Practice mode state
   const [practiceBlunderIdx, setPracticeBlunderIdx] = useState<number | null>(null);
   const [practiceResult, setPracticeResult] = useState<PracticeResult | null>(null);
-  const [practiceMovePlayed, setPracticeMovePlayed] = useState<{ from: string; to: string } | null>(null);
+  const [practiceMovePlayed, setPracticeMovePlayed] = useState<{ from: string; to: string; promotion?: "q" | "r" | "b" | "n" } | null>(null);
   const inPractice = practiceBlunderIdx !== null;
 
   const firstBlunderIdx = jumpToBlunder
@@ -458,12 +458,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     setPracticeMovePlayed(null);
   }
 
-  function handlePracticeMove(from: string, to: string) {
+  function handlePracticeMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
     if (!practiceFen || practiceResult) return;
-    const result = evaluatePracticeMove(practiceFen, from, to);
+    const result = evaluatePracticeMove(practiceFen, from, to, promotion);
     setPracticeResult(result);
     if (result.verdict !== "illegal") {
-      setPracticeMovePlayed({ from, to });
+      setPracticeMovePlayed({ from, to, promotion });
     }
   }
 
@@ -494,11 +494,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     setExploreIdx(0);
   }
 
-  function handleExploreMove(from: string, to: string) {
+  function handleExploreMove(from: string, to: string, promotion: "q" | "r" | "b" | "n" = "q") {
     const fen = exploreFens[exploreIdx];
     const chess = new Chess(fen);
     try {
-      const m = chess.move({ from, to, promotion: "q" });
+      const m = chess.move({ from, to, promotion });
       if (!m) return;
       playSound(m.san.includes("x") ? "capture" : /[+#]/.test(m.san) ? "check" : "move");
     } catch { return; }
@@ -1080,7 +1080,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               fen={practiceResult && practiceMovePlayed
                 ? (() => {
                     const g = new Chess(practiceFen);
-                    try { g.move({ from: practiceMovePlayed.from, to: practiceMovePlayed.to, promotion: "q" }); } catch {}
+                    try { g.move({ from: practiceMovePlayed.from, to: practiceMovePlayed.to, promotion: practiceMovePlayed.promotion ?? "q" }); } catch {}
                     return g.fen();
                   })()
                 : practiceFen
