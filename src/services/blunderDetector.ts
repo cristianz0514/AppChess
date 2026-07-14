@@ -130,6 +130,10 @@ export async function analyzeGame(
   const whiteEval: (number | null)[] = evals.map((r, i) => (r ? toWhite(r.score, i) : null));
 
   // Builds the moves array (loss + classification) from the current whiteEval.
+  // `ply` (the absolute 0-indexed move index) is the only unbiased per-row
+  // key — move_number+SAN collides whenever both colors play the same SAN
+  // at the same move_number (e.g. a recapture), which used to silently
+  // attach one ply's data to the wrong one downstream.
   const buildMoves = (): Omit<Move, "id">[] =>
     history.map((move, i) => {
       // A move that delivers checkmate is the best possible outcome — never an
@@ -137,11 +141,11 @@ export async function analyzeGame(
       // it as a blunder, so short-circuit here.
       if (move.san.includes("#")) {
         const whiteMated = i % 2 === 0;
-        return { game_id: gameId, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: whiteMated ? 9999 : -9999, centipawn_loss: 0, classification: "best" };
+        return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: whiteMated ? 9999 : -9999, centipawn_loss: 0, classification: "best" };
       }
       const cur = whiteEval[i];
       if (cur === null) {
-        return { game_id: gameId, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: null, centipawn_loss: null, classification: null };
+        return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: null, centipawn_loss: null, classification: null };
       }
       const prev = i === 0 ? 0 : whiteEval[i - 1];
       const whiteJustMoved = i % 2 === 0;
@@ -150,7 +154,7 @@ export async function analyzeGame(
         const drop = whiteJustMoved ? prev - cur : cur - prev;
         centipawnLoss = Math.min(2000, Math.max(0, Math.round(drop * 100)));
       }
-      return { game_id: gameId, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(centipawnLoss) };
+      return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(centipawnLoss) };
     });
 
   // ── Pass 2: deepen only the worst positions ────────────────────────────────
@@ -211,7 +215,14 @@ export async function analyzeGame(
   }
 
   await supabase.from("moves").delete().eq("game_id", gameId);
-  await supabase.from("moves").insert(moves.map((m) => ({ ...m })));
+  {
+    const { error } = await supabase.from("moves").insert(moves.map((m) => ({ ...m })));
+    // `ply` may not exist yet on databases that haven't run the migration —
+    // degrade gracefully instead of failing the whole analysis pass.
+    if (error) {
+      await supabase.from("moves").insert(moves.map(({ ply: _ply, ...rest }) => rest));
+    }
+  }
 
   const analyzed = moves.filter((m) => m.centipawn_loss !== null);
   const blunders    = analyzed.filter((m) => m.classification === "blunder").length;
@@ -371,8 +382,17 @@ export async function analyzeGame(
 
     if (text) {
       try {
-        await supabase.from("moves").update({ explanation: text })
-          .eq("game_id", gameId).eq("move_number", moves[i].move_number).eq("move", moves[i].move);
+        // Match by `ply` (unambiguous) rather than move_number+SAN, which
+        // collides whenever both colors play the same SAN at the same
+        // move_number (e.g. a recapture) and silently overwrote the wrong
+        // row's explanation. Falls back to the old match on databases that
+        // haven't run the `ply` migration yet.
+        const { error } = await supabase.from("moves").update({ explanation: text })
+          .eq("game_id", gameId).eq("ply", i);
+        if (error) {
+          await supabase.from("moves").update({ explanation: text })
+            .eq("game_id", gameId).eq("move_number", moves[i].move_number).eq("move", moves[i].move);
+        }
       } catch { /* column may not exist yet */ }
     }
     // Keep the event loop responsive between heavy calls on the free tier.

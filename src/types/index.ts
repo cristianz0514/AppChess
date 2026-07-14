@@ -31,6 +31,11 @@ export interface Move {
   centipawn_loss: number | null;
   classification: "brilliant" | "great" | "best" | "excellent" | "good" | "inaccuracy" | "mistake" | "blunder" | null;
   explanation?: string | null;
+  // 0-indexed absolute ply within the game — the only truly unique key per
+  // move, since move_number+SAN collides whenever White and Black play the
+  // same SAN at the same move_number (e.g. a recapture like "dxe5"/"dxe5").
+  // Optional: absent on rows analyzed before this column existed.
+  ply?: number | null;
 }
 
 export interface Insight {

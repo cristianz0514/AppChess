@@ -32,26 +32,37 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   const stats = await getDashboardStats(game.user_id).catch(() => null);
   const avgAccuracy = stats?.avgAccuracy ?? null;
 
-  // Include the AI coach explanation when the column exists; fall back cleanly
-  // to the base columns if it doesn't (older schema).
+  // Include the AI coach explanation and `ply` (unambiguous per-move key)
+  // when those columns exist; fall back cleanly to the base columns on
+  // older schemas that haven't run those migrations yet.
   let moves: Array<Record<string, unknown>> | null = null;
   let explanationColumn = false;
   {
-    const withExpl = await supabase
+    const withPly = await supabase
       .from("moves")
-      .select("move_number, move, classification, centipawn_loss, evaluation, explanation")
+      .select("move_number, move, classification, centipawn_loss, evaluation, explanation, ply")
       .eq("game_id", id)
       .order("move_number", { ascending: true });
-    if (withExpl.error) {
-      const base = await supabase
+    if (!withPly.error) {
+      moves = withPly.data;
+      explanationColumn = true;
+    } else {
+      const withExpl = await supabase
         .from("moves")
-        .select("move_number, move, classification, centipawn_loss, evaluation")
+        .select("move_number, move, classification, centipawn_loss, evaluation, explanation")
         .eq("game_id", id)
         .order("move_number", { ascending: true });
-      moves = base.data;
-    } else {
-      moves = withExpl.data;
-      explanationColumn = true;
+      if (withExpl.error) {
+        const base = await supabase
+          .from("moves")
+          .select("move_number, move, classification, centipawn_loss, evaluation")
+          .eq("game_id", id)
+          .order("move_number", { ascending: true });
+        moves = base.data;
+      } else {
+        moves = withExpl.data;
+        explanationColumn = true;
+      }
     }
   }
 
@@ -62,6 +73,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
     centipawn_loss: number | null;
     evaluation: number | null;
     explanation?: string | null;
+    ply?: number | null;
   }>;
 
   // A game analyzed before the coach existed: it has moves but no AI comments.

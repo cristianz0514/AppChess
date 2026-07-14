@@ -16,19 +16,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing data" }, { status: 400 });
   }
 
-  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, phase, gameId } = body;
+  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, phase, gameId, ply } = body;
 
-  // 1. Cache lookup.
+  // 1. Cache lookup. Matching by (move_number, move) is AMBIGUOUS: White's and
+  // Black's move at the same move_number can share the exact same SAN (e.g.
+  // both play "dxe5" on a recapture, or "Nxg4" on either side of a trade) —
+  // that collision silently attached one ply's classification/explanation to
+  // the OTHER ply too. `ply` (the 0-indexed absolute move index, unique per
+  // game) is the real key; fall back to the old ambiguous match only for
+  // games analyzed before the `ply` column existed.
   if (gameId) {
     try {
-      const { data } = await supabase
-        .from("moves")
-        .select("explanation")
-        .eq("game_id", gameId)
-        .eq("move_number", moveNumber)
-        .eq("move", san)
-        .limit(1)
-        .maybeSingle();
+      const query = supabase.from("moves").select("explanation").eq("game_id", gameId);
+      const { data } = typeof ply === "number"
+        ? await query.eq("ply", ply).limit(1).maybeSingle()
+        : await query.eq("move_number", moveNumber).eq("move", san).limit(1).maybeSingle();
       if (data?.explanation) return NextResponse.json({ text: data.explanation, cached: true });
     } catch { /* column may not exist yet */ }
   }
@@ -107,8 +109,9 @@ Escribe 2 frases completas (no fragmentos), cada una de entre 10 y 20 palabras:
 
     if (gameId) {
       try {
-        await supabase.from("moves").update({ explanation: text })
-          .eq("game_id", gameId).eq("move_number", moveNumber).eq("move", san);
+        const upd = supabase.from("moves").update({ explanation: text }).eq("game_id", gameId);
+        if (typeof ply === "number") await upd.eq("ply", ply);
+        else await upd.eq("move_number", moveNumber).eq("move", san);
       } catch { /* column may not exist yet */ }
     }
     return NextResponse.json({ text });

@@ -19,6 +19,7 @@ interface DbMove {
   centipawn_loss?: number | null;
   evaluation?: number | null;
   explanation?: string | null;
+  ply?: number | null;    // 0-indexed absolute move index — the real unique key
 }
 
 interface MoveInfo {
@@ -171,20 +172,35 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
   try { master.loadPgn(pgn); } catch { return []; }
   const history = master.history({ verbose: true });
 
-  // Match each ply to its DB row by (move_number, SAN) — a stable, unique key.
-  // Matching by array index is fragile: the DB may return tied move_numbers in
-  // any order (an explanation UPDATE can even reorder rows), which would attach
-  // classifications and AI comments to the WRONG move ("out of context").
-  const byKey = new Map<string, DbMove>();
-  for (const m of dbMoves) if (m.move) byKey.set(`${m.move_number}|${m.move}`, m);
+  // Primary match: `ply` (0-indexed absolute move index) is the only truly
+  // unique key per row. Matching by (move_number, SAN) alone is AMBIGUOUS —
+  // White's and Black's move at the same move_number can share the exact
+  // same SAN (a recapture like "dxe5"/"dxe5", or "Nxg4" on either side of a
+  // trade), which used to silently attach one ply's classification/eval/
+  // explanation to the OTHER ply too (a Map keyed by move_number+SAN can
+  // only hold one of the two colliding rows). Only present on games
+  // analyzed after the `ply` migration.
+  const byPly = new Map<number, DbMove>();
+  for (const m of dbMoves) if (typeof m.ply === "number") byPly.set(m.ply, m);
+
+  // Fallback for pre-migration rows: bucket candidates by (move_number, SAN)
+  // and consume them in encountered order, so a genuine collision at least
+  // spreads the two real DB rows across the two plies instead of one row
+  // winning for both and the other being silently discarded.
+  const buckets = new Map<string, DbMove[]>();
+  for (const m of dbMoves) {
+    if (typeof m.ply === "number" || !m.move) continue;
+    const key = `${m.move_number}|${m.move}`;
+    const list = buckets.get(key);
+    if (list) list.push(m); else buckets.set(key, [m]);
+  }
 
   const game = new Chess();
   return history.map((h, i) => {
     game.move(h.san);
     const moveNumber = Math.floor(i / 2) + 1;
-    // Prefer the stable (move_number, SAN) match; fall back to index if the DB
-    // rows lack SAN (older query) so nothing breaks.
-    const db = byKey.get(`${moveNumber}|${h.san}`) ?? dbMoves[i];
+    let db = byPly.get(i);
+    if (!db) db = buckets.get(`${moveNumber}|${h.san}`)?.shift() ?? dbMoves[i];
     return {
       san: h.san,
       fen: game.fen(),
@@ -781,7 +797,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         fenBefore, san: cm.move.san, bestMove: best, moveNumber: cm.move.moveNumber,
-        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase, gameId,
+        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase, gameId, ply: cm.idx,
       }),
     })
       .then((r) => (r.ok ? r.json() : null))
@@ -1032,11 +1048,25 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 title="Anterior" aria-label="Jugada anterior">
                 <ChevronLeft size={20} />
               </button>
+              {/* While previewing the best move, the board shows a position ONE
+                  ply ahead of `idx` — showing the real move counter here would
+                  contradict what's on the board (the exact "traslape"/overlap
+                  confusion reported: the text claims one move while the board
+                  shows another). Swap it for a clear preview label instead. */}
               <div className="flex-1 max-w-[140px] text-center leading-tight">
-                <p className="text-base font-bold font-mono">
-                  {idx < 0 ? "Inicio" : `${moves[idx].moveNumber}${moves[idx].color === "w" ? "." : "…"} ${moves[idx].san}`}
-                </p>
-                <p className="text-[10px] text-muted-foreground tabular-nums">{idx + 2}/{moves.length + 1}</p>
+                {previewMoveInfo ? (
+                  <>
+                    <p className="text-base font-bold font-mono" style={{ color: "var(--bv-purple)" }}>Vista previa</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{previewMoveInfo.san}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-base font-bold font-mono">
+                      {idx < 0 ? "Inicio" : `${moves[idx].moveNumber}${moves[idx].color === "w" ? "." : "…"} ${moves[idx].san}`}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground tabular-nums">{idx + 2}/{moves.length + 1}</p>
+                  </>
+                )}
               </div>
               <button
                 onClick={() => go(idx + 1)} disabled={idx >= moves.length - 1}
