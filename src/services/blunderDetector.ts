@@ -184,6 +184,11 @@ export async function analyzeGame(
   // Only upgrade moves that were already "best". A brilliant is a sound
   // sacrifice; a great is a strong best move that wins a clean piece.
   const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+  // "best" moves that capitalize on a big favorable swing (punishing the
+  // opponent's error) but don't qualify as "great" (e.g. a plain pawn grab,
+  // not a piece worth ≥3) — still worth a congratulatory comment instead of
+  // silence, just without relabeling the classification itself.
+  const punishingBest = new Set<number>();
   for (let i = 0; i < history.length; i++) {
     if (moves[i].classification !== "best") continue;
     const h = history[i];
@@ -211,7 +216,9 @@ export async function analyzeGame(
     const isRecapture = i > 0 && history[i - 1].captured != null && history[i - 1].to === h.to;
     if (wonPiece && !isRecapture && evalAfter - evalBefore >= 1.5) {
       moves[i].classification = "great";
+      continue;
     }
+    if (evalAfter - evalBefore >= 1.5) punishingBest.add(i);
   }
 
   await supabase.from("moves").delete().eq("game_id", gameId);
@@ -250,12 +257,16 @@ export async function analyzeGame(
 
   const notable = moves
     .map((m, i) => ({ i, cls: m.classification, loss: m.centipawn_loss ?? 0 }))
-    .filter((m) => m.cls && EXPLAIN_CLASSES.has(m.cls))
+    .filter((m) => (m.cls && EXPLAIN_CLASSES.has(m.cls)) || punishingBest.has(m.i))
     // Skip trivial inaccuracies (e.g. +3.5→+3.0): a comment there is just noise.
     .filter((m) => m.cls !== "inaccuracy" || m.loss >= 80);
   const weight: Record<string, number> = { blunder: 5, mistake: 4, brilliant: 4, great: 3, inaccuracy: 1 };
   const chosen = notable
-    .sort((a, b) => (weight[b.cls!] - weight[a.cls!]) || (b.loss - a.loss))
+    .sort((a, b) => {
+      const wa = punishingBest.has(a.i) ? 2 : (weight[a.cls!] ?? 0);
+      const wb = punishingBest.has(b.i) ? 2 : (weight[b.cls!] ?? 0);
+      return (wb - wa) || (b.loss - a.loss);
+    })
     .slice(0, MAX_EXPLAIN)
     .map((m) => m.i)
     .sort((a, b) => a - b);
@@ -267,7 +278,10 @@ export async function analyzeGame(
     const moverWhite = i % 2 === 0;
     const evalAfter = whiteEval[i] == null ? 0 : (moverWhite ? whiteEval[i]! : -whiteEval[i]!);
     const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
-    const good = moves[i].classification === "brilliant" || moves[i].classification === "great";
+    // "best"-but-punishing moves get the same celebratory framing as
+    // brilliant/great — they deserve credit for capitalizing on the
+    // opponent's error, not silence just because the label stayed "best".
+    const good = moves[i].classification === "brilliant" || moves[i].classification === "great" || punishingBest.has(i);
 
     // Helper: turn a UCI line into readable SAN from a position.
     const pvToSan = (fromFen: string, pv: string[]): string[] => {
