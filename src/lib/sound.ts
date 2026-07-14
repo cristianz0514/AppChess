@@ -2,7 +2,7 @@
 // offline, tiny. Deliberately few and subtle: move, capture, check, error,
 // brilliant. Triggered only by user interaction so autoplay policies are happy.
 
-type SoundName = "move" | "capture" | "check" | "error" | "brilliant";
+type SoundName = "move" | "capture" | "check" | "error" | "brilliant" | "promote";
 
 let ctx: AudioContext | null = null;
 let muted = false;
@@ -119,6 +119,12 @@ export function play(name: SoundName) {
         tone(audio, { freq: 523, type: "sine", start: 0.00, dur: 0.12, gain: 0.10 });
         tone(audio, { freq: 659, type: "sine", start: 0.09, dur: 0.12, gain: 0.10 });
         tone(audio, { freq: 784, type: "sine", start: 0.18, dur: 0.16, gain: 0.11 });
+        break;
+      case "promote":
+        // A little fanfare, distinct from "brilliant" — quicker, only 2 notes,
+        // reserved for the specific moment a pawn becomes a new piece.
+        tone(audio, { freq: 440, type: "triangle", start: 0.00, dur: 0.09, gain: 0.10 });
+        tone(audio, { freq: 660, type: "triangle", start: 0.07, dur: 0.14, gain: 0.11 });
         break;
     }
   } catch { /* audio best-effort */ }

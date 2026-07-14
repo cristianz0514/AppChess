@@ -500,7 +500,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     try {
       const m = chess.move({ from, to, promotion });
       if (!m) return;
-      playSound(m.san.includes("x") ? "capture" : /[+#]/.test(m.san) ? "check" : "move");
+      playSound(m.san.includes("=") ? "promote" : m.san.includes("x") ? "capture" : /[+#]/.test(m.san) ? "check" : "move");
     } catch { return; }
     const newFen = chess.fen();
     const slicedFens = exploreFens.slice(0, exploreIdx + 1);
@@ -596,6 +596,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     const cls = currentMove.classification;
     if (cls === "blunder" || cls === "mistake") playSound("error");
     else if (cls === "brilliant" || cls === "great") playSound("brilliant");
+    else if (san.includes("=")) playSound("promote");
     else if (/[+#]/.test(san)) playSound("check");
     else if (san.includes("x")) playSound("capture");
     else playSound("move");

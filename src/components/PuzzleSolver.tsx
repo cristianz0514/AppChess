@@ -78,7 +78,9 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
     setShowHintSq(null);
 
     const afterPlayerIdx = plyIndex + 1;
-    if (afterPlayerIdx >= node.solution.length) {
+    const isLastStep = afterPlayerIdx >= node.solution.length;
+    if (!isLastStep && mv.san.includes("=")) playSound("promote");
+    if (isLastStep) {
       setStatus("solved");
       playSound("brilliant");
       fetch("/api/puzzles/attempt", {
