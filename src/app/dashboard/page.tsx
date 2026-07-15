@@ -262,8 +262,15 @@ export default async function DashboardPage({ searchParams }: Props) {
           <InsightsCard insights={[]} username={username} />
         )}
 
-        {/* ── ELO Evolution ───────────────────────────────────── */}
-        <EloEvolutionChart history={eloHistory} />
+        {/* ── ELO Evolution ─────────────────────────────────────
+             Extra top margin: this is a genuinely new module (a chart,
+             not another stat card), so it needs more separation from
+             what precedes it than the uniform space-y-4 between closely
+             related cards gives it — spacing between groups should
+             exceed spacing within a group. */}
+        <div className="pt-2">
+          <EloEvolutionChart history={eloHistory} />
+        </div>
 
         {/* ── Recent Performance ──────────────────────────────── */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -289,9 +296,12 @@ export default async function DashboardPage({ searchParams }: Props) {
           </div>
         </div>
 
-        {/* ── Openings ────────────────────────────────────────── */}
+        {/* ── Openings ─────────────────────────────────────────
+             Same reasoning as the ELO chart above: a new topic (openings)
+             after the unrelated "Rendimiento Reciente" card deserves more
+             separation than the within-group spacing. */}
         {openings.length > 0 && (
-          <div className="space-y-3">
+          <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
                 Aperturas
