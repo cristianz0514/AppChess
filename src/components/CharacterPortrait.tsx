@@ -3,13 +3,26 @@
 // illustration, not a photorealistic likeness of a real person. Falls back to
 // nothing gracefully if an image is ever missing since the browser just shows
 // the colored circle behind it.
-export type PortraitVariant = "judit-child" | "zsofia" | "laszlo" | "karoly";
+export type PortraitVariant =
+  | "judit-child" | "zsofia" | "laszlo" | "karoly"
+  | "eszter" | "nagy" | "rival-internacional" | "drimer"
+  | "larisa" | "varga" | "suarez" | "petrov" | "halasz" | "ivanov";
 
 const IMAGE_SRC: Record<PortraitVariant, string> = {
   "judit-child": "/campeones/judit.png",
   "zsofia": "/campeones/zsofia.png",
   "laszlo": "/campeones/laszlo.png",
   "karoly": "/campeones/karoly.png",
+  "eszter": "/campeones/eszter.png",
+  "nagy": "/campeones/nagy.png",
+  "rival-internacional": "/campeones/rival-internacional.png",
+  "drimer": "/campeones/drimer.png",
+  "larisa": "/campeones/larisa.png",
+  "varga": "/campeones/varga.png",
+  "suarez": "/campeones/suarez.png",
+  "petrov": "/campeones/petrov.png",
+  "halasz": "/campeones/halasz.png",
+  "ivanov": "/campeones/ivanov.png",
 };
 
 const ALT_TEXT: Record<PortraitVariant, string> = {
@@ -17,6 +30,16 @@ const ALT_TEXT: Record<PortraitVariant, string> = {
   "zsofia": "Zsófia",
   "laszlo": "László",
   "karoly": "Károly",
+  "eszter": "Eszter",
+  "nagy": "Nagy",
+  "rival-internacional": "Rival internacional",
+  "drimer": "GM Dolfi Drimer",
+  "larisa": "Larisa",
+  "varga": "GM Varga",
+  "suarez": "GM Suárez",
+  "petrov": "GM Petrov",
+  "halasz": "GM Halász",
+  "ivanov": "GM Ivanov",
 };
 
 export function CharacterPortrait({
