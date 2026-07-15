@@ -45,6 +45,33 @@ export interface Champion {
   chapters: Chapter[];
 }
 
+// The full 15-chapter arc for Judit, agreed with the user: ELO capped at
+// 1900 (not the initially-proposed 2200), curve gentle through chapter 5
+// then crossing into genuinely-hard territory from chapter 6 on (smaller
+// numeric jumps near the top reflect that gaining ELO gets harder in real
+// chess, not less dramatic). THIS IS THE SINGLE PLACE TO EDIT THE CURVE —
+// change a row here and, for already-built chapters, the live Chapter
+// below picks it up automatically since it reads eloTarget from this array
+// instead of hardcoding its own number. Rows without a built chapter yet
+// are the confirmed plan, not yet wired into CHAMPIONS.
+export const JUDIT_ROADMAP: { id: string; title: string; eloTarget: number; opponent: string; note: string }[] = [
+  { id: "mi-primera-partida", title: "Capítulo 1 · Mi primera partida", eloTarget: 200, opponent: "Zsófia, tu hermana mayor", note: "Primera partida en casa, 5 años" },
+  { id: "el-primer-rival", title: "Capítulo 2 · El primer rival de verdad", eloTarget: 350, opponent: "Károly, niño de club", note: "Primer torneo fuera de casa" },
+  { id: "torneo-infantil", title: "Capítulo 3 · El torneo infantil", eloTarget: 500, opponent: "rival de su categoría", note: "Primer torneo infantil oficial" },
+  { id: "vencer-a-un-adulto", title: "Capítulo 4 · Vencer a un adulto", eloTarget: 650, opponent: "adulto de club", note: "Primera victoria contra un adulto" },
+  { id: "la-nina-que-vence-a-un-maestro", title: "Capítulo 5 · La niña que vence a un Maestro", eloTarget: 800, opponent: "Maestro de club", note: "A los 9 años vence a su primer Maestro (hecho real)" },
+  { id: "el-primer-viaje", title: "Capítulo 6 · El primer viaje", eloTarget: 950, opponent: "rival internacional", note: "Su primer torneo fuera de Hungría — arranca la dificultad real" },
+  { id: "vencer-a-un-gran-maestro", title: "Capítulo 7 · Vencer a un Gran Maestro", eloTarget: 1100, opponent: "GM Dolfi Drimer", note: "1986, 10 años: la más joven en vencer a un GM" },
+  { id: "las-hermanas-polgar", title: "Capítulo 8 · Las Hermanas Polgár", eloTarget: 1250, opponent: "selección rival", note: "Olimpiada de Ajedrez 1988, oro por equipos, 12 años" },
+  { id: "la-maestra-internacional", title: "Capítulo 9 · La Maestra Internacional", eloTarget: 1400, opponent: "GM de torneo", note: "Norma de MI, mejor mujer del mundo" },
+  { id: "contra-los-grandes", title: "Capítulo 10 · Contra los grandes", eloTarget: 1500, opponent: "GM de élite", note: "Primeras partidas serias contra GMs adultos" },
+  { id: "la-carrera-contra-el-record", title: "Capítulo 11 · La carrera contra el récord", eloTarget: 1600, opponent: "GM de norma", note: "Persiguiendo el récord de GM más joven de la historia" },
+  { id: "gran-maestra-a-los-15", title: "Capítulo 12 · Gran Maestra a los 15", eloTarget: 1700, opponent: "GM final de norma", note: "1991: rompe el récord de Bobby Fischer" },
+  { id: "entrar-al-top-mundial", title: "Capítulo 13 · Entrar al top mundial", eloTarget: 1780, opponent: "ex-campeón mundial", note: "Primeras victorias contra ex-campeones mundiales" },
+  { id: "la-numero-8-del-mundo", title: "Capítulo 14 · La número 8 del mundo", eloTarget: 1850, opponent: "GM de élite", note: "2005: llega a ser #8 del ranking mundial" },
+  { id: "el-dia-que-vencio-al-mejor-del-mundo", title: "Capítulo 15 · El día que venció al mejor del mundo", eloTarget: 1900, opponent: "Garry Kaspárov", note: "2002: vence a Kaspárov siendo #1 del mundo" },
+];
+
 export const CHAMPIONS: Champion[] = [
   {
     id: "judit-polgar",
@@ -58,7 +85,7 @@ export const CHAMPIONS: Champion[] = [
       {
         id: "mi-primera-partida",
         title: "Capítulo 1 · Mi primera partida",
-        eloTarget: 200,
+        eloTarget: JUDIT_ROADMAP[0].eloTarget,
         opponentName: "Zsófia, tu hermana mayor",
         opponentPortrait: "zsofia",
         playerPortrait: "judit-child",
