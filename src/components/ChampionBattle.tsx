@@ -97,7 +97,10 @@ export function ChampionBattle({ playerColor, opponentName, eloTarget, onGameOve
           </p>
         )}
       </div>
-      <div className="rounded-xl overflow-hidden">
+      {/* Edge-to-edge like the game-review board — a bigger board reads
+          clearer during a live game than one boxed in by the scene's own
+          padding, and ChessBoard already rounds its own corners. */}
+      <div className="-mx-4 overflow-hidden">
         <ChessBoard
           fen={fen}
           orientation={playerColor}
