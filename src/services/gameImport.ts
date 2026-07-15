@@ -43,7 +43,13 @@ export async function importGames(username: string, onProgress?: ImportProgress)
       });
       ({ error } = await supabase.from("games").upsert(legacy, { onConflict: "chess_game_id" }));
     }
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Never surface a raw Postgres/Supabase driver message to the user —
+      // it's technical, often in English, and can expose schema details.
+      // Log it for debugging; show a plain-language Spanish message instead.
+      console.error("[gameImport] upsert failed:", error.message);
+      throw new Error("No pudimos guardar tus partidas. Inténtalo de nuevo en unos minutos.");
+    }
     onProgress?.("Guardando tus partidas…", Math.floor(i / CHUNK) + 1, totalChunks);
   }
 
@@ -68,7 +74,7 @@ async function getOrCreateUser(username: string): Promise<string> {
     .select("id")
     .single();
 
-  if (error || !created) throw new Error("Failed to create user");
+  if (error || !created) throw new Error("No pudimos crear tu perfil. Inténtalo de nuevo.");
   return created.id;
 }
 
