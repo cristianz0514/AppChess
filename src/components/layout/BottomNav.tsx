@@ -25,13 +25,17 @@ export function BottomNav() {
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.map((item) => {
           if (!item) {
-            // The centerpiece action — Practica el Mate is the app's core
-            // feature, so it gets the most prominent slot, not a buried menu item.
-            const onPractice = pathname === "/practica-mate";
+            // The centerpiece action — training modes are the app's core
+            // feature, so this gets the most prominent slot, not a buried
+            // menu item. Opens the hub (Practica el Mate / Nacimiento de un
+            // Campeón) instead of jumping straight into one mode.
+            const onTraining = pathname.startsWith("/entrenamiento")
+              || pathname.startsWith("/practica-mate")
+              || pathname.startsWith("/campeones");
             return (
               <div key="fab" className="flex items-center justify-center flex-1">
-                <Link href="/practica-mate" className="-mt-5 active:scale-95 transition-transform" aria-label="Practica el Mate">
-                  <KnightBadge active={onPractice} />
+                <Link href="/entrenamiento" className="-mt-5 active:scale-95 transition-transform" aria-label="Entrenamiento">
+                  <KnightBadge active={onTraining} />
                 </Link>
               </div>
             );

@@ -8,6 +8,8 @@
 // invocations, and all evaluations are serialized through a single promise chain
 // because there is only one engine.
 
+import { Chess } from "chess.js";
+
 interface EvalResult {
   score: number;      // pawns, side-to-move perspective; ±9999 = mate
   mate: number | null;
@@ -140,6 +142,64 @@ export async function getBestMove(fen: string, depth = 12): Promise<{ from: stri
     engine.listener = (line: string) => {
       if (line.startsWith("bestmove")) finish(line.split(" ")[1] ?? null);
     };
+    engine.sendCommand("position fen " + fen);
+    engine.sendCommand("go depth " + depth);
+  }));
+}
+
+// Approximates a target ELO for "Nacimiento de un Campeón"'s play-vs-AI
+// battles. Stockfish's own Skill Level / UCI_Elo floor (~1320 for UCI_Elo)
+// can't reach the very low ratings this feature needs (a chapter's opening
+// rival is ELO 200) — this is a deliberate, documented approximation, not a
+// scientific ELO simulator: low tiers combine a shallow search with a
+// chance of a genuinely random legal move, which is closer to how a true
+// beginner actually plays (inconsistent, occasional one-move blunders)
+// than any fixed low search depth alone would be.
+function strengthForElo(elo: number): { skillLevel: number; depth: number; blunderChance: number } {
+  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.45 };
+  if (elo <= 600)  return { skillLevel: 1,  depth: 2,  blunderChance: 0.25 };
+  if (elo <= 900)  return { skillLevel: 3,  depth: 3,  blunderChance: 0.12 };
+  if (elo <= 1200) return { skillLevel: 6,  depth: 5,  blunderChance: 0.05 };
+  if (elo <= 1600) return { skillLevel: 10, depth: 7,  blunderChance: 0 };
+  if (elo <= 2000) return { skillLevel: 15, depth: 9,  blunderChance: 0 };
+  return                  { skillLevel: 20, depth: 12, blunderChance: 0 };
+}
+
+export async function getMoveAtElo(fen: string, elo: number): Promise<{ from: string; to: string; promotion?: string } | null> {
+  const { skillLevel, depth, blunderChance } = strengthForElo(elo);
+
+  if (Math.random() < blunderChance) {
+    const chess = new Chess(fen);
+    const legal = chess.moves({ verbose: true });
+    if (legal.length > 0) {
+      const m = legal[Math.floor(Math.random() * legal.length)];
+      return { from: m.from, to: m.to, promotion: m.promotion };
+    }
+  }
+
+  const engine = await getEngine();
+  return runExclusive(() => new Promise<{ from: string; to: string; promotion?: string } | null>((resolve) => {
+    let settled = false;
+    const finish = (uciMove: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      engine.listener = null;
+      // Reset to full strength so a later full-strength call (analysis,
+      // best-move lookup elsewhere) never inherits a weakened engine.
+      engine.sendCommand("setoption name Skill Level value 20");
+      if (!uciMove || uciMove === "(none)") { resolve(null); return; }
+      resolve({
+        from: uciMove.slice(0, 2),
+        to: uciMove.slice(2, 4),
+        promotion: uciMove.length > 4 ? uciMove.slice(4, 5) : undefined,
+      });
+    };
+    const timer = setTimeout(() => finish(null), 4000);
+    engine.listener = (line: string) => {
+      if (line.startsWith("bestmove")) finish(line.split(" ")[1] ?? null);
+    };
+    engine.sendCommand("setoption name Skill Level value " + skillLevel);
     engine.sendCommand("position fen " + fen);
     engine.sendCommand("go depth " + depth);
   }));

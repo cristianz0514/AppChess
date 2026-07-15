@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard",      label: "Inicio",           icon: LayoutDashboard },
-  { href: "/practica-mate",  label: "Practica el Mate", icon: Target },
+  { href: "/entrenamiento",  label: "Entrenamiento",    icon: Target },
   { href: "/openings",       label: "Aperturas",        icon: BookOpen },
   { href: "/blunders",       label: "Partidas",         icon: Swords },
   { href: "/insights",       label: "Coach IA",         icon: Brain },
@@ -23,22 +23,29 @@ export function Sidebar() {
         <span className="text-primary text-sm"> IA</span>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-0.5">
-        {navItems.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-              pathname === href
-                ? "font-semibold"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-            )}
-            style={pathname === href ? { background: "oklch(0.61 0.22 285 / 0.12)", color: "var(--bv-purple)" } : {}}
-          >
-            <Icon size={16} strokeWidth={pathname === href ? 2.2 : 1.8} />
-            {label}
-          </Link>
-        ))}
+        {navItems.map(({ href, label, icon: Icon }) => {
+          // "Entrenamiento" covers its two sub-modes too, so it stays
+          // highlighted while inside Practica el Mate or Campeones.
+          const active = href === "/entrenamiento"
+            ? pathname.startsWith("/entrenamiento") || pathname.startsWith("/practica-mate") || pathname.startsWith("/campeones")
+            : pathname === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                active
+                  ? "font-semibold"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              )}
+              style={active ? { background: "oklch(0.61 0.22 285 / 0.12)", color: "var(--bv-purple)" } : {}}
+            >
+              <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
+              {label}
+            </Link>
+          );
+        })}
       </nav>
       <div className="p-3 border-t border-border">
         <Link href="/"
