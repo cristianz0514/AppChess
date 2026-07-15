@@ -3,18 +3,20 @@
 // illustration, not a photorealistic likeness of a real person. Falls back to
 // nothing gracefully if an image is ever missing since the browser just shows
 // the colored circle behind it.
-export type PortraitVariant = "judit-child" | "zsofia" | "laszlo";
+export type PortraitVariant = "judit-child" | "zsofia" | "laszlo" | "karoly";
 
 const IMAGE_SRC: Record<PortraitVariant, string> = {
   "judit-child": "/campeones/judit.png",
   "zsofia": "/campeones/zsofia.png",
   "laszlo": "/campeones/laszlo.png",
+  "karoly": "/campeones/karoly.png",
 };
 
 const ALT_TEXT: Record<PortraitVariant, string> = {
   "judit-child": "Judit de niña",
   "zsofia": "Zsófia",
   "laszlo": "László",
+  "karoly": "Károly",
 };
 
 export function CharacterPortrait({
