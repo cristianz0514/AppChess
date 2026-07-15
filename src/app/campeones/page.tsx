@@ -33,11 +33,15 @@ export default async function ChampionsPage() {
 
         <div className="space-y-3">
           {CHAMPIONS.map((champion) => {
-            const firstChapter = champion.chapters[0];
             const completedCount = champion.chapters.filter(
               (c) => progress.get(`${champion.id}/${c.id}`)?.result === "win",
             ).length;
             const allDone = champion.chapters.length > 0 && completedCount === champion.chapters.length;
+            // First not-yet-won chapter, or the last one once everything is
+            // won (so replaying still lands somewhere sensible).
+            const nextChapter =
+              champion.chapters.find((c) => progress.get(`${champion.id}/${c.id}`)?.result !== "win") ??
+              champion.chapters[champion.chapters.length - 1];
 
             const content = (
               <>
@@ -64,10 +68,10 @@ export default async function ChampionsPage() {
             );
             const className = "flex items-center gap-4 p-4 rounded-2xl border transition active:scale-[0.98]";
             const style = { borderColor: "var(--border)", background: "var(--card)" };
-            return champion.locked || !firstChapter ? (
+            return champion.locked || !nextChapter ? (
               <div key={champion.id} className={`${className} opacity-70`} style={style}>{content}</div>
             ) : (
-              <Link key={champion.id} href={`/campeones/${champion.id}/${firstChapter.id}`} className={className} style={style}>
+              <Link key={champion.id} href={`/campeones/${champion.id}/${nextChapter.id}`} className={className} style={style}>
                 {content}
               </Link>
             );

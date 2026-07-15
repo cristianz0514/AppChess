@@ -2,10 +2,14 @@
 // public/campeones/, cropped to remove a baked-in mockup caption that
 // would've clashed with our own dialogue UI) so the story feels like it's
 // happening somewhere, not floating on a blank card.
-export type SceneVariant = "living-room";
+export type SceneVariant = "living-room" | "club";
 
 const IMAGE_SRC: Record<SceneVariant, string> = {
   "living-room": "/campeones/sala.jpg",
+  // Pending art asset — see docs/campeones-stitch-prompts/checklist-completo.md
+  // (capítulo 2, `club.jpg`). Drop the generated file in public/campeones/
+  // once it's ready; no code change needed.
+  "club": "/campeones/club.jpg",
 };
 
 export function SceneBackground({ variant }: { variant: SceneVariant }) {
