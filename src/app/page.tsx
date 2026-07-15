@@ -103,7 +103,10 @@ export default function Home() {
           Descubre dónde se te <span style={{ color: "var(--bv-purple)" }}>escapan</span> las partidas
         </h1>
 
-        <p className="text-sm text-muted-foreground max-w-xs leading-relaxed mb-8">
+        {/* This is the sentence a first-time visitor reads to decide whether
+            to trust the app with their username — reading content, not a UI
+            label, so it gets the 16px+ body-text minimum instead of text-sm. */}
+        <p className="text-base text-muted-foreground max-w-sm leading-relaxed mb-8">
           Conecta tu cuenta de Chess.com y Stockfish analiza cada jugada — errores graves, momentos clave y qué debiste jugar.
         </p>
 
@@ -118,7 +121,7 @@ export default function Home() {
             autoCapitalize="none"
             autoCorrect="off"
             disabled={loading}
-            className="w-full px-4 py-3 rounded-2xl border text-sm outline-none transition"
+            className="bv-username-input w-full px-4 py-3 rounded-2xl border text-sm outline-none transition"
             style={{
               background: "var(--card)",
               borderColor: "var(--border)",
@@ -193,6 +196,15 @@ export default function Home() {
         ))}
       </div>
 
+      <style>{`
+        /* Tailwind's focus:border-[...]/focus:ring-[...] arbitrary-value
+           utilities weren't taking effect here (a nesting/escaping edge
+           case with bracketed arbitrary values) — plain CSS sidesteps it. */
+        .bv-username-input:focus {
+          border-color: oklch(0.61 0.22 285) !important;
+          box-shadow: 0 0 0 3px oklch(0.61 0.22 285 / 0.25);
+        }
+      `}</style>
     </main>
   );
 }
