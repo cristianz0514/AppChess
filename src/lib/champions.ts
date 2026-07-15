@@ -7,10 +7,16 @@
 // explicit "hechos reales, diálogo dramatizado" disclaimer for exactly
 // this reason.
 
+import type { PortraitVariant } from "@/components/CharacterPortrait";
+import type { SceneVariant } from "@/components/SceneBackground";
+
 export interface DialogueLine {
   speaker: string;
   text: string;
   side: "player" | "other"; // which side of the screen the bubble sits on
+  // Omitted = a narration/scene-setting line (no portrait, no bubble —
+  // rendered as an italic caption instead of a character talking).
+  portrait?: PortraitVariant;
 }
 
 export interface Chapter {
@@ -18,8 +24,10 @@ export interface Chapter {
   title: string;
   eloTarget: number;
   opponentName: string;
-  opponentInitials: string;
+  opponentPortrait: PortraitVariant;
+  playerPortrait: PortraitVariant;
   playerColor: "white" | "black";
+  scene: SceneVariant;
   intro: DialogueLine[];
   outroWin: DialogueLine[];
   outroLoseOrDraw: DialogueLine[];
@@ -52,25 +60,27 @@ export const CHAMPIONS: Champion[] = [
         title: "Capítulo 1 · Mi primera partida",
         eloTarget: 200,
         opponentName: "Zsófia, tu hermana mayor",
-        opponentInitials: "ZS",
+        opponentPortrait: "zsofia",
+        playerPortrait: "judit-child",
         playerColor: "white",
+        scene: "living-room",
         intro: [
           { speaker: "Narrador", text: "Budapest, principios de los años 80. En casa de los Polgár, el ajedrez no es un juego — es la lengua en la que se habla en familia.", side: "other" },
-          { speaker: "László (papá)", text: "Judit, tienes cinco años y ya sabes mover las piezas. Hoy juegas tu primera partida de verdad. Contra tu hermana.", side: "other" },
-          { speaker: "Zsófia", text: "No te voy a dejar ganar solo porque eres la pequeña.", side: "other" },
-          { speaker: "Judit", text: "No necesito que me dejes. Solo necesito el primer movimiento.", side: "player" },
-          { speaker: "László (papá)", text: "Así se habla. Recuerda: cada pieza que mueves tiene un plan. Encuéntralo.", side: "other" },
+          { speaker: "László (papá)", text: "Judit, tienes cinco años y ya sabes mover las piezas. Hoy juegas tu primera partida de verdad. Contra tu hermana.", side: "other", portrait: "laszlo" },
+          { speaker: "Zsófia", text: "No te voy a dejar ganar solo porque eres la pequeña.", side: "other", portrait: "zsofia" },
+          { speaker: "Judit", text: "No necesito que me dejes. Solo necesito el primer movimiento.", side: "player", portrait: "judit-child" },
+          { speaker: "László (papá)", text: "Así se habla. Recuerda: cada pieza que mueves tiene un plan. Encuéntralo.", side: "other", portrait: "laszlo" },
         ],
         outroWin: [
-          { speaker: "Zsófia", text: "…¿Cómo viste eso? Ni siquiera yo lo vi venir.", side: "other" },
-          { speaker: "László (papá)", text: "Esta niña ve el tablero distinto al resto de nosotros.", side: "other" },
-          { speaker: "Judit", text: "Quiero jugar otra vez. Y otra. Y otra.", side: "player" },
+          { speaker: "Zsófia", text: "…¿Cómo viste eso? Ni siquiera yo lo vi venir.", side: "other", portrait: "zsofia" },
+          { speaker: "László (papá)", text: "Esta niña ve el tablero distinto al resto de nosotros.", side: "other", portrait: "laszlo" },
+          { speaker: "Judit", text: "Quiero jugar otra vez. Y otra. Y otra.", side: "player", portrait: "judit-child" },
           { speaker: "Narrador", text: "Fue la primera de miles de partidas. Once años después, Judit se convertiría en la Gran Maestra más joven de la historia — un récord que Bobby Fischer tuvo por más de dos décadas.", side: "other" },
         ],
         outroLoseOrDraw: [
-          { speaker: "Zsófia", text: "Bien jugado — pero todavía te falta para ganarme.", side: "other" },
-          { speaker: "László (papá)", text: "Perder una partida no te hace peor jugadora. Te hace estudiar más la siguiente.", side: "other" },
-          { speaker: "Judit", text: "Otra vez. Esta vez la gano.", side: "player" },
+          { speaker: "Zsófia", text: "Bien jugado — pero todavía te falta para ganarme.", side: "other", portrait: "zsofia" },
+          { speaker: "László (papá)", text: "Perder una partida no te hace peor jugadora. Te hace estudiar más la siguiente.", side: "other", portrait: "laszlo" },
+          { speaker: "Judit", text: "Otra vez. Esta vez la gano.", side: "player", portrait: "judit-child" },
         ],
       },
     ],

@@ -87,17 +87,17 @@ export function ChampionBattle({ playerColor, opponentName, eloTarget, onGameOve
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between px-1">
-        <p className="text-xs font-semibold" style={{ color: "var(--muted-foreground)" }}>
+        <p className="text-xs font-semibold" style={{ color: "rgba(255,255,255,.7)" }}>
           Vs {opponentName} · ELO {eloTarget}
         </p>
         {thinking && (
-          <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "var(--bv-purple)" }}>
+          <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "oklch(0.75 0.15 285)" }}>
             <span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin inline-block" />
             Pensando…
           </p>
         )}
       </div>
-      <div className="-mx-4">
+      <div className="rounded-xl overflow-hidden">
         <ChessBoard
           fen={fen}
           orientation={playerColor}
