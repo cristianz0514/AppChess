@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
+import { getUsername } from "@/lib/getUsername";
+import { getUserId } from "@/services/dashboardData";
 import { findChapter } from "@/lib/champions";
 import { ChapterExperience } from "@/components/ChapterExperience";
 
@@ -9,6 +11,10 @@ interface Props {
 }
 
 export default async function ChampionChapterPage({ params }: Props) {
+  const username = await getUsername();
+  const userId = await getUserId(username);
+  if (!userId) notFound();
+
   const { personaje, capitulo } = await params;
   const found = findChapter(personaje, capitulo);
   if (!found) notFound();
@@ -24,7 +30,7 @@ export default async function ChampionChapterPage({ params }: Props) {
       </header>
 
       <main className="flex-1 pt-20 px-4 max-w-lg mx-auto w-full overflow-y-auto pb-8">
-        <ChapterExperience champion={found.champion} chapter={found.chapter} />
+        <ChapterExperience champion={found.champion} chapter={found.chapter} userId={userId} />
       </main>
     </div>
   );

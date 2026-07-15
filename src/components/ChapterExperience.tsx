@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { RotateCcw, Sparkles } from "lucide-react";
 import type { Champion, Chapter } from "@/lib/champions";
@@ -11,6 +11,7 @@ import { SceneBackground } from "./SceneBackground";
 interface Props {
   champion: Champion;
   chapter: Chapter;
+  userId: string;
 }
 
 type Stage = "intro" | "battle" | "outro" | "done";
@@ -22,18 +23,33 @@ const FAMILY_COLOR = "oklch(0.5 0.05 50)";
 
 // Orchestrates one chapter's flow: intro dialogue -> live battle -> outro
 // dialogue (branches on the result) -> completion screen with a replay
-// option. Fully client-side / stateless across visits for this first
-// chapter — no progress is persisted yet.
-export function ChapterExperience({ champion, chapter }: Props) {
+// option. Progress is saved once per chapter reach of "done" (whatever the
+// result — a later retry-and-win overwrites an earlier loss, see
+// championProgress.ts), not on every attempt.
+export function ChapterExperience({ champion, chapter, userId }: Props) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("intro");
   const [result, setResult] = useState<BattleResult | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const savedFor = useRef<number | null>(null);
 
   function handleGameOver(r: BattleResult) {
     setResult(r);
     setStage("outro");
   }
+
+  // Fires once per attempt when the player reaches the completion screen —
+  // guarded by `savedFor` so re-rendering "done" (e.g. React strict-mode
+  // double-invoke, or revisiting state) never double-POSTs.
+  useEffect(() => {
+    if (stage !== "done" || !result || savedFor.current === attempt) return;
+    savedFor.current = attempt;
+    fetch("/api/champions/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, championId: champion.id, chapterId: chapter.id, result }),
+    }).catch(() => {});
+  }, [stage, result, attempt, userId, champion.id, chapter.id]);
 
   function playAgain() {
     setResult(null);

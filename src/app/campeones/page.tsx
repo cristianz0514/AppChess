@@ -1,11 +1,21 @@
 import Link from "next/link";
-import { ChevronLeft, Lock } from "lucide-react";
+import { notFound } from "next/navigation";
+import { ChevronLeft, Lock, CheckCircle2 } from "lucide-react";
+import { getUsername } from "@/lib/getUsername";
+import { getUserId } from "@/services/dashboardData";
+import { getChampionProgress } from "@/services/championProgress";
 import { CHAMPIONS } from "@/lib/champions";
 import { ChampionAvatar } from "@/components/ChampionAvatar";
 
 export const metadata = { title: "Nacimiento de un Campeón" };
 
-export default function ChampionsPage() {
+export default async function ChampionsPage() {
+  const username = await getUsername();
+  const userId = await getUserId(username);
+  if (!userId) notFound();
+
+  const progress = await getChampionProgress(userId);
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       <header className="fixed top-0 w-full z-50 flex items-center gap-3 px-4 h-16 border-b"
@@ -24,15 +34,30 @@ export default function ChampionsPage() {
         <div className="space-y-3">
           {CHAMPIONS.map((champion) => {
             const firstChapter = champion.chapters[0];
+            const completedCount = champion.chapters.filter(
+              (c) => progress.get(`${champion.id}/${c.id}`)?.result === "win",
+            ).length;
+            const allDone = champion.chapters.length > 0 && completedCount === champion.chapters.length;
+
             const content = (
               <>
                 <ChampionAvatar initials={champion.initials} color={champion.color} size={64} locked={champion.locked} />
                 <div className="flex-1 min-w-0">
                   <p className="text-base font-bold font-display">{champion.name}</p>
                   <p className="text-xs text-muted-foreground">{champion.years}</p>
-                  <p className="text-xs mt-1" style={{ color: champion.locked ? "var(--muted-foreground)" : champion.color }}>
-                    {champion.locked ? "Próximamente" : champion.tagline}
-                  </p>
+                  {champion.locked ? (
+                    <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>Próximamente</p>
+                  ) : allDone ? (
+                    <p className="text-xs mt-1 flex items-center gap-1 font-semibold" style={{ color: "var(--bv-green)" }}>
+                      <CheckCircle2 size={13} /> Completado
+                    </p>
+                  ) : completedCount > 0 ? (
+                    <p className="text-xs mt-1 font-semibold" style={{ color: champion.color }}>
+                      {completedCount}/{champion.chapters.length} capítulos
+                    </p>
+                  ) : (
+                    <p className="text-xs mt-1" style={{ color: champion.color }}>{champion.tagline}</p>
+                  )}
                 </div>
                 {champion.locked && <Lock size={16} className="text-muted-foreground shrink-0" />}
               </>
