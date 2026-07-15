@@ -171,7 +171,7 @@ export function ChessBoard({
   return (
     <div
       className="w-full aspect-square rounded-xl select-none relative overflow-hidden"
-      style={{ border: "2px solid var(--border)", containerType: "inline-size" }}
+      style={{ border: "2px solid var(--border)", containerType: "inline-size", background: "#dcd6f2" }}
     >
       {/* Board grid */}
       <div
@@ -194,8 +194,12 @@ export function ChessBoard({
 
             // Light board — white + soft lavender. Last-move highlight is a warm
             // YELLOW (not purple) so it never blends into the lavender squares.
+            // Pre-blended, fully opaque hex (not rgba over the square's own
+            // base) — the board has no opaque backdrop of its own behind the
+            // squares, so a semi-transparent highlight let the scene image
+            // behind it show through the moment a piece moved.
             let bg = isDark ? "#dcd6f2" : "#faf9ff";
-            if (isHighlighted) bg = isDark ? "rgba(255,193,7,0.55)" : "rgba(255,205,40,0.5)";
+            if (isHighlighted) bg = isDark ? "#efca71" : "#fde394";
             // Selected piece: bright amber + inset ring — unmistakable.
             if (isSelected) bg = "#ffd23f";
 
