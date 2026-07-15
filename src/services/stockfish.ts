@@ -161,12 +161,14 @@ function strengthForElo(elo: number): { skillLevel: number; depth: number; blund
   // playing far stronger than a real ELO ~200 beginner (a five-year-old who
   // just learned how pieces move). Raised the low-tier blunder chances so
   // random legal moves dominate there instead of engine search.
-  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.75 };
-  if (elo <= 600)  return { skillLevel: 1,  depth: 1,  blunderChance: 0.5 };
-  if (elo <= 900)  return { skillLevel: 2,  depth: 2,  blunderChance: 0.3 };
-  if (elo <= 1200) return { skillLevel: 4,  depth: 4,  blunderChance: 0.12 };
-  if (elo <= 1600) return { skillLevel: 8,  depth: 6,  blunderChance: 0.04 };
-  if (elo <= 2000) return { skillLevel: 14, depth: 9,  blunderChance: 0 };
+  // Second tuning pass after playtesting: 200 still played too strong even at
+  // a 75% blunder chance, and 1700 (chapter 12) felt slightly under-strength.
+  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.9 };
+  if (elo <= 600)  return { skillLevel: 1,  depth: 1,  blunderChance: 0.6 };
+  if (elo <= 900)  return { skillLevel: 2,  depth: 2,  blunderChance: 0.35 };
+  if (elo <= 1200) return { skillLevel: 4,  depth: 4,  blunderChance: 0.15 };
+  if (elo <= 1600) return { skillLevel: 9,  depth: 6,  blunderChance: 0.05 };
+  if (elo <= 2000) return { skillLevel: 17, depth: 11, blunderChance: 0 };
   return                  { skillLevel: 20, depth: 12, blunderChance: 0 };
 }
 

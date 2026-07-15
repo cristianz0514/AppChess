@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Zap, Home, Star, LayoutList, X } from "lucide-react";
+import { Zap, Home, Star, LayoutList, X, Share } from "lucide-react";
 import { trackSession, shouldShowPrompt, dismissPrompt } from "@/lib/installTracking";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -16,14 +16,38 @@ const BENEFITS = [
   { icon: LayoutList, label: "Revisión de partidas"   },
 ];
 
+function isStandalone(): boolean {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    // iOS Safari's legacy, non-standard flag — not in the DOM lib types.
+    (navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
 export function InstallPrompt() {
   const promptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = useState(false);
+  // iOS Safari never fires `beforeinstallprompt` (Apple hasn't implemented
+  // that API) — the banner used to only listen for it, so on iPhone/iPad it
+  // silently never appeared at all. There's no programmatic install prompt
+  // there either, so this path shows manual Share-sheet instructions instead.
+  // Lazy initializer (not an effect + setState) — this only ever needs to be
+  // computed once, from a browser global that's simply absent during SSR.
+  const [isIOS] = useState(() =>
+    typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window)
+  );
 
   useEffect(() => {
     trackSession();
 
-    if (window.matchMedia("(display-mode: standalone)").matches) return;
+    if (isStandalone()) return;
+
+    // iOS has no `beforeinstallprompt` to wait for, so gate on the same
+    // session/games thresholds directly instead.
+    if (isIOS) {
+      if (shouldShowPrompt()) setTimeout(() => setVisible(true), 2500);
+      return;
+    }
 
     function onBeforeInstall(e: Event) {
       e.preventDefault();
@@ -43,7 +67,7 @@ export function InstallPrompt() {
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
     };
-  }, []);
+  }, [isIOS]);
 
   async function handleInstall() {
     const prompt = promptRef.current;
@@ -83,29 +107,46 @@ export function InstallPrompt() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-4">
-          {BENEFITS.map(({ icon: Icon, label }) => (
-            <div key={label} className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Icon size={13} className="text-foreground/80 shrink-0" />
-              {label}
+        {isIOS ? (
+          <>
+            <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+              Toca <Share size={12} className="inline -mt-0.5 mx-0.5" /> <strong>Compartir</strong> en
+              Safari y luego <strong>&quot;Agregar a inicio&quot;</strong> para instalarla.
+            </p>
+            <button
+              onClick={handleDismiss}
+              className="w-full bg-foreground text-background text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
+            >
+              Entendido
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-4">
+              {BENEFITS.map(({ icon: Icon, label }) => (
+                <div key={label} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Icon size={13} className="text-foreground/80 shrink-0" />
+                  {label}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={handleInstall}
-            className="flex-1 bg-foreground text-background text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
-          >
-            Instalar app
-          </button>
-          <button
-            onClick={handleDismiss}
-            className="flex-1 text-xs text-muted-foreground py-2 rounded-xl border border-border hover:bg-accent/50 active:bg-accent/70 transition-colors"
-          >
-            Ahora no
-          </button>
-        </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleInstall}
+                className="flex-1 bg-foreground text-background text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
+              >
+                Instalar app
+              </button>
+              <button
+                onClick={handleDismiss}
+                className="flex-1 text-xs text-muted-foreground py-2 rounded-xl border border-border hover:bg-accent/50 active:bg-accent/70 transition-colors"
+              >
+                Ahora no
+              </button>
+            </div>
+          </>
+        )}
 
       </div>
     </div>

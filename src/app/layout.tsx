@@ -40,6 +40,13 @@ export const metadata: Metadata = {
     title: "AnaliChess IA",
     statusBarStyle: "default",
   },
+  // iOS ignores the manifest's icons entirely for "Add to Home Screen" — it
+  // needs its own apple-touch-icon link, which was missing (the app had icon
+  // files but no <link rel="apple-touch-icon">, so iOS fell back to a page
+  // screenshot instead of the real icon).
+  icons: {
+    apple: "/icons/icon-152x152.png",
+  },
   openGraph: {
     title: "AnaliChess IA — Tu entrenador de ajedrez con IA",
     description:
