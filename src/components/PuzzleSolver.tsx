@@ -117,6 +117,19 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
   return (
     <div className="space-y-3 pb-6">
       <div className="text-center px-1">
+        {/* Which color the player is solving as isn't obvious from board
+            orientation alone — about half these puzzles have Black to move,
+            so say it explicitly instead of making the player infer it. */}
+        <div className="flex items-center justify-center gap-1.5 mb-1.5">
+          <span aria-hidden className="inline-block w-3 h-3 rounded-full border"
+            style={{
+              background: solverOrientation === "white" ? "#fff" : "#1a1a1a",
+              borderColor: "var(--border)",
+            }} />
+          <span className="text-[11px] font-bold tracking-[0.1em] uppercase" style={{ color: "var(--muted-foreground)" }}>
+            Juegas con {solverOrientation === "white" ? "blancas" : "negras"}
+          </span>
+        </div>
         <h1 className="font-display text-2xl font-bold text-balance">
           {status === "solved" ? "¡Jaque mate!" : `Buscas mate en ${mateWord}`}
         </h1>
