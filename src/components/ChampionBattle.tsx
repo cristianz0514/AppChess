@@ -151,19 +151,22 @@ export function ChampionBattle({ playerColor, opponentName, eloTarget, onGameOve
           Vs {opponentName} · ELO {eloTarget}
         </p>
         {/* Whose turn it is was previously only implied by board interactivity
-            — nothing told the player who was supposed to move. */}
-        {!over && (
-          thinking ? (
-            <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "oklch(0.75 0.15 285)" }}>
-              <span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin inline-block" />
-              Pensando…
-            </p>
-          ) : (
-            <p className="text-xs font-semibold" style={{ color: isPlayerTurn ? "oklch(0.75 0.17 145)" : "rgba(255,255,255,.55)" }}>
-              {isPlayerTurn ? "Tu turno" : `Turno de ${opponentName}`}
-            </p>
-          )
-        )}
+            — nothing told the player who was supposed to move, and nothing
+            announced the change for screen reader users either. */}
+        <div aria-live="polite" aria-atomic="true">
+          {!over && (
+            thinking ? (
+              <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "oklch(0.75 0.15 285)" }}>
+                <span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin inline-block" />
+                Pensando…
+              </p>
+            ) : (
+              <p className="text-xs font-semibold" style={{ color: isPlayerTurn ? "oklch(0.75 0.17 145)" : "rgba(255,255,255,.55)" }}>
+                {isPlayerTurn ? "Tu turno" : `Turno de ${opponentName}`}
+              </p>
+            )
+          )}
+        </div>
       </div>
       <CapturedTray byWhite={captured.byWhite} byBlack={captured.byBlack} />
       {/* Edge-to-edge like the game-review board — a bigger board reads

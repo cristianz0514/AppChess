@@ -39,15 +39,21 @@ export function DialogueBox({ lines, playerPortrait, playerColor, otherColor, on
     >
       {/* Keyed by idx so each new line mounts fresh and replays the entrance
           animation — advancing the conversation should feel like someone
-          new steps up to speak, not a static text swap. */}
-      <div key={idx} style={{ animation: "bvFadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+          new steps up to speak, not a static text swap. aria-live: advancing
+          the dialogue was silent for screen readers before — nothing
+          announced that a new line had appeared. */}
+      <div key={idx} aria-live="polite" aria-atomic="true" style={{ animation: "bvFadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
         {isNarration ? (
           <p className="font-display italic text-sm leading-relaxed text-center px-2" style={{ color: "rgba(255,255,255,.85)" }}>
             {line.text}
           </p>
         ) : (
-          <div className={`flex items-start gap-3 ${isPlayer ? "flex-row-reverse" : ""}`}>
-            <CharacterPortrait variant={line.portrait!} bgColor={isPlayer ? playerColor : otherColor} size={40} idle />
+          <div className={`flex items-center gap-3 ${isPlayer ? "flex-row-reverse" : ""}`}>
+            {/* Bigger on purpose — big enough to actually read a character's
+                expression and costume detail, not just recognize a color
+                blob. Costs the text column some width; that's fine, it wraps
+                to more lines instead. */}
+            <CharacterPortrait variant={line.portrait!} bgColor={isPlayer ? playerColor : otherColor} size={88} idle />
             <div className={`flex-1 min-w-0 ${isPlayer ? "text-right" : ""}`}>
               <p className="text-[11px] font-bold tracking-wide uppercase mb-1" style={{ color: "rgba(255,255,255,.55)" }}>
                 {line.speaker}

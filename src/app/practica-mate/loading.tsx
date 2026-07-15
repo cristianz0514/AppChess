@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { BackButton } from "@/components/BackButton";
 
 // Matches the real page's dedicated shell (no AppLayout) so there's no
 // header/layout flash when the real content streams in.
@@ -8,9 +8,7 @@ export default function Loading() {
       <header className="fixed top-0 w-full z-50 flex items-center px-4 h-16 border-b"
         style={{ background: "var(--background)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-3">
-          <div className="p-2 -ml-2 rounded-full text-muted-foreground">
-            <ChevronLeft size={20} />
-          </div>
+          <BackButton />
           <span className="font-bold text-base tracking-tight">Practica el Mate</span>
         </div>
       </header>

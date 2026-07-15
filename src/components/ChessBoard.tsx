@@ -3,6 +3,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import { Piece } from "./pieces";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 function parseFen(fen: string): Array<Array<string | null>> {
   const board: Array<Array<string | null>> = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -66,6 +67,9 @@ export function ChessBoard({
   // piece to promote to; ours silently forced a queen every time. Holds the
   // pending move until the player picks.
   const [promoPending, setPromoPending] = useState<{ from: string; to: string; color: "white" | "black" } | null>(null);
+  // Same gap as the result modal: nothing moved focus into the picker, Tab
+  // could escape to the board behind it, Escape did nothing.
+  const promoPanelRef = useFocusTrap<HTMLDivElement>(!!promoPending, () => setPromoPending(null));
   const board = parseFen(fen);
   const turnColor = fen.split(" ")[1] === "w" ? "white" : "black";
 
@@ -257,7 +261,10 @@ export function ChessBoard({
                   <span style={{
                     position: "absolute", top: 2, left: 3,
                     fontSize: "2.2cqi",
-                    color: isDark ? "#8b82ad" : "#c9c2e0",
+                    // One color that clears 4.5:1 on both square tones (was
+                    // 1.63:1 / 2.54:1 — barely visible, and this app's
+                    // audience is often still learning file/rank notation).
+                    color: "#5b5480",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {orientation === "white" ? 8 - rowIdx : rowIdx + 1}
@@ -267,7 +274,10 @@ export function ChessBoard({
                   <span style={{
                     position: "absolute", bottom: 2, right: 3,
                     fontSize: "2.2cqi",
-                    color: isDark ? "#8b82ad" : "#c9c2e0",
+                    // One color that clears 4.5:1 on both square tones (was
+                    // 1.63:1 / 2.54:1 — barely visible, and this app's
+                    // audience is often still learning file/rank notation).
+                    color: "#5b5480",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {String.fromCharCode(97 + (orientation === "white" ? colIdx : 7 - colIdx))}
@@ -357,11 +367,23 @@ export function ChessBoard({
       })()}
 
       {/* Promotion piece picker — a small popover of the 4 promotable pieces,
-          positioned over the destination square (chess.com/lichess convention). */}
+          positioned over the destination square (chess.com/lichess convention).
+          Vertical stack, not a horizontal row: a promotion always lands on the
+          board's very first or last rank, so a row centered on that square
+          routinely pushed a piece (often the queen, first in the list) past
+          the board edge — clipped by the board's own overflow:hidden and
+          impossible to click. A column only needs to worry about the same
+          edge in one axis, and we anchor it to grow INTO the board (down from
+          a top-rank square, up from a bottom-rank one) instead of centering
+          on the square, so all 4 choices always stay on-board. */}
       {promoPending && (() => {
         const { x, y } = sqToXYPct(promoPending.to, orientation);
         const isWhite = promoPending.color === "white";
         const choices: Array<"q" | "r" | "b" | "n"> = ["q", "r", "b", "n"];
+        const growsDown = y < 50; // promotion rank is in the board's top half
+        // Clamp horizontal center so the column (11cqi wide) never crosses
+        // the left/right edge on the a- or h-file.
+        const clampedX = Math.min(94.5, Math.max(5.5, x));
         return (
           <>
             <div
@@ -370,14 +392,17 @@ export function ChessBoard({
               style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(20,18,30,0.15)" }}
             />
             <div
+              ref={promoPanelRef}
               role="menu"
               aria-label="Elige la pieza de coronación"
               style={{
                 position: "absolute",
-                left: `${x}%`, top: `${y}%`,
-                transform: "translate(-50%, -50%)",
+                left: `${clampedX}%`,
+                ...(growsDown ? { top: `${y}%` } : { bottom: `${100 - y}%` }),
+                transform: "translateX(-50%)",
                 zIndex: 4,
                 display: "flex",
+                flexDirection: "column",
                 borderRadius: "9999px",
                 background: "var(--card, #fff)",
                 boxShadow: "0 12px 28px -8px rgba(38,36,46,0.35)",

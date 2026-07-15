@@ -4,12 +4,17 @@
 // nothing gracefully if an image is ever missing since the browser just shows
 // the colored circle behind it.
 export type PortraitVariant =
-  | "judit-child" | "zsofia" | "laszlo" | "karoly"
+  | "judit-child" | "judit-teen" | "judit-adulta" | "judit-victoria" | "judit-derrota"
+  | "zsofia" | "laszlo" | "karoly"
   | "eszter" | "nagy" | "maestro" | "rival-internacional" | "drimer"
   | "larisa" | "varga" | "suarez" | "petrov" | "halasz" | "ivanov";
 
 const IMAGE_SRC: Record<PortraitVariant, string> = {
   "judit-child": "/campeones/judit.png",
+  "judit-teen": "/campeones/judit-teen.png",
+  "judit-adulta": "/campeones/judit-adulta.png",
+  "judit-victoria": "/campeones/judit-victoria.png",
+  "judit-derrota": "/campeones/judit-derrota.png",
   "zsofia": "/campeones/zsofia.png",
   "laszlo": "/campeones/laszlo.png",
   "karoly": "/campeones/karoly.png",
@@ -28,6 +33,10 @@ const IMAGE_SRC: Record<PortraitVariant, string> = {
 
 const ALT_TEXT: Record<PortraitVariant, string> = {
   "judit-child": "Judit de niña",
+  "judit-teen": "Judit adolescente",
+  "judit-adulta": "Judit adulta, Gran Maestra",
+  "judit-victoria": "Judit celebrando la victoria",
+  "judit-derrota": "Judit frustrada tras la derrota",
   "zsofia": "Zsófia",
   "laszlo": "László",
   "karoly": "Károly",

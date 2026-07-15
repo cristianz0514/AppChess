@@ -4,9 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { RotateCcw, Sparkles, Trophy, XCircle, Handshake, Search } from "lucide-react";
 import type { Champion, Chapter } from "@/lib/champions";
+import type { PortraitVariant } from "./CharacterPortrait";
+import { CharacterPortrait } from "./CharacterPortrait";
 import { DialogueBox } from "./DialogueBox";
 import { ChampionBattle, type BattleResult } from "./ChampionBattle";
 import { SceneBackground } from "./SceneBackground";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 interface Props {
   champion: Champion;
@@ -30,6 +33,13 @@ const RESULT_COPY: Record<BattleResult, { title: string; color: string; Icon: ty
   draw: { title: "Tablas — casi.",       color: "var(--bv-orange)", Icon: Handshake },
 };
 
+// Dedicated win/lose expression art (vs. the generic trophy/X icon) — only
+// exists for the child-era Judit portrait so far, so this stays a lookup
+// rather than a blanket assumption every playerPortrait has a pair.
+const EXPRESSION_PORTRAIT: Partial<Record<PortraitVariant, { win: PortraitVariant; loss: PortraitVariant }>> = {
+  "judit-child": { win: "judit-victoria", loss: "judit-derrota" },
+};
+
 // Full-screen modal shown the instant a battle ends — before the story moves
 // on, so the result actually registers, and with a way to send this exact
 // game into the app's own analysis tool instead of it just vanishing.
@@ -48,6 +58,13 @@ function ResultModal({
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(false);
   const { title, color, Icon } = RESULT_COPY[result];
+  const expressionSet = EXPRESSION_PORTRAIT[chapter.playerPortrait];
+  const expressionVariant = result === "win" ? expressionSet?.win : result === "loss" ? expressionSet?.loss : undefined;
+  // Was a plain div with role="dialog" and no actual focus behavior — Tab
+  // could leave the modal for the (still-mounted) board behind it, nothing
+  // moved focus in on open, Escape did nothing, and closing never gave focus
+  // back to whatever had it before.
+  const panelRef = useFocusTrap<HTMLDivElement>(true, onContinue);
 
   async function handleAnalyze() {
     setAnalyzeError(false);
@@ -76,15 +93,22 @@ function ResultModal({
       aria-label={title}
     >
       <div
+        ref={panelRef}
         className="w-full max-w-sm rounded-3xl p-6 text-center space-y-4"
         style={{ background: "var(--card)", border: "1px solid var(--border)" }}
       >
-        <div
-          className="mx-auto flex items-center justify-center rounded-full"
-          style={{ width: 64, height: 64, background: `color-mix(in oklch, ${color} 20%, transparent)` }}
-        >
-          <Icon size={32} style={{ color }} />
-        </div>
+        {expressionVariant ? (
+          <div className="mx-auto" style={{ width: 112, height: 112 }}>
+            <CharacterPortrait variant={expressionVariant} bgColor={`color-mix(in oklch, ${color} 20%, transparent)`} size={112} />
+          </div>
+        ) : (
+          <div
+            className="mx-auto flex items-center justify-center rounded-full"
+            style={{ width: 64, height: 64, background: `color-mix(in oklch, ${color} 20%, transparent)` }}
+          >
+            <Icon size={32} style={{ color }} />
+          </div>
+        )}
         <div>
           <h2 className="font-display text-xl font-bold">{title}</h2>
           <p className="text-sm text-muted-foreground mt-1">Vs {chapter.opponentName} · ELO {chapter.eloTarget}</p>

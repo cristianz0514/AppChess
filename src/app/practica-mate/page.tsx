@@ -1,10 +1,10 @@
-import Link from "next/link";
-import { ChevronLeft, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
 import { getRoadTrip } from "@/services/puzzleProgress";
 import { PuzzleRoadTrip } from "@/components/PuzzleRoadTrip";
 import { PracticeSeeder, BackgroundSeeder, AutoMineMates } from "@/components/PracticeSeeder";
+import { BackButton } from "@/components/BackButton";
 import { FAST_TARGET, MATE_LEVELS, type MateIn } from "@/lib/puzzleConstants";
 
 export const metadata = { title: "Practica el Mate" };
@@ -32,9 +32,7 @@ export default async function PracticeMatePage() {
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 border-b"
         style={{ background: "var(--background)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="p-2 -ml-2 rounded-full transition-colors hover:bg-muted">
-            <ChevronLeft size={20} />
-          </Link>
+          <BackButton href="/dashboard" />
           <span className="font-bold text-base tracking-tight">Practica el Mate</span>
         </div>
         {totalNodes > 0 && (

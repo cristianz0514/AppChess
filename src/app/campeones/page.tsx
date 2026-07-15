@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, Lock, CheckCircle2 } from "lucide-react";
+import { Lock, CheckCircle2 } from "lucide-react";
+import { BackButton } from "@/components/BackButton";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
 import { getChampionProgress } from "@/services/championProgress";
@@ -20,9 +21,7 @@ export default async function ChampionsPage() {
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       <header className="fixed top-0 w-full z-50 flex items-center gap-3 px-4 h-16 border-b"
         style={{ background: "var(--background)", borderColor: "var(--border)" }}>
-        <Link href="/entrenamiento" className="p-2 -ml-2 rounded-full transition-colors hover:bg-muted">
-          <ChevronLeft size={20} />
-        </Link>
+        <BackButton href="/entrenamiento" />
         <span className="font-bold text-base tracking-tight">Nacimiento de un Campeón</span>
       </header>
 
@@ -51,11 +50,14 @@ export default async function ChampionsPage() {
                       <CheckCircle2 size={13} /> Completado
                     </p>
                   ) : completedCount > 0 ? (
-                    <p className="text-xs mt-1 font-semibold" style={{ color: champion.color }}>
+                    // Not champion.color: it's an arbitrary per-champion brand
+                    // hue never checked against 4.5:1 on white as body text —
+                    // measured Judit's own at 4.0:1, a real contrast failure.
+                    <p className="text-xs mt-1 font-semibold" style={{ color: "var(--muted-foreground)" }}>
                       {completedCount}/{champion.chapters.length} capítulos
                     </p>
                   ) : (
-                    <p className="text-xs mt-1" style={{ color: champion.color }}>{champion.tagline}</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>{champion.tagline}</p>
                   )}
                 </div>
                 {champion.locked && <Lock size={16} className="text-muted-foreground shrink-0" />}

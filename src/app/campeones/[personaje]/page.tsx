@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
+import { BackButton } from "@/components/BackButton";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
 import { getChampionProgress } from "@/services/championProgress";
@@ -25,9 +26,7 @@ export default async function ChampionChaptersPage({ params }: Props) {
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       <header className="fixed top-0 w-full z-50 flex items-center gap-3 px-4 h-16 border-b"
         style={{ background: "var(--background)", borderColor: "var(--border)" }}>
-        <Link href="/campeones" className="p-2 -ml-2 rounded-full transition-colors hover:bg-muted">
-          <ChevronLeft size={20} />
-        </Link>
+        <BackButton href="/campeones" />
         <span className="font-bold text-base tracking-tight">{champion.name}</span>
       </header>
 
