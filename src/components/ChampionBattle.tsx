@@ -85,7 +85,7 @@ export function ChampionBattle({ playerColor, opponentName, eloTarget, onGameOve
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" style={{ animation: "bvFadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
       <div className="flex items-center justify-between px-1">
         <p className="text-xs font-semibold" style={{ color: "rgba(255,255,255,.7)" }}>
           Vs {opponentName} · ELO {eloTarget}

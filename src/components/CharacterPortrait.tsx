@@ -16,16 +16,20 @@ const VARIANTS: Record<PortraitVariant, {
 };
 
 export function CharacterPortrait({
-  variant, bgColor, size = 44,
+  variant, bgColor, size = 44, idle = false,
 }: {
   variant: PortraitVariant;
   bgColor: string;
   size?: number;
+  // A slow, subtle breathing loop — the difference between a character and
+  // a static sticker. Off by default (e.g. the roster/select screens want a
+  // still badge); the dialogue box turns it on for whoever's talking.
+  idle?: boolean;
 }) {
   const v = VARIANTS[variant];
   return (
     <div
-      className="relative flex items-center justify-center rounded-full shrink-0 overflow-hidden"
+      className={`relative flex items-center justify-center rounded-full shrink-0 overflow-hidden ${idle ? "bv-portrait-idle" : ""}`}
       style={{
         width: size, height: size,
         background: bgColor,

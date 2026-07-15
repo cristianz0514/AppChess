@@ -164,6 +164,20 @@
   100% { transform: translateY(0);    opacity: 1; }
 }
 
+/* Subtle "breathing" loop for whichever character portrait is currently
+   talking in Nacimiento de un Campeón — the difference between a character
+   and a static sticker. Looping motion, so it's the one animation in this
+   file that respects prefers-reduced-motion instead of just being a
+   one-shot entrance. */
+@keyframes bvPortraitIdle {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50%      { transform: scale(1.02) translateY(-1px); }
+}
+.bv-portrait-idle { animation: bvPortraitIdle 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .bv-portrait-idle { animation: none; }
+}
+
 /* Indeterminate progress bar — used before we know a real total (e.g. while
    verifying the username, before the month count is known). */
 @keyframes bvIndeterminate {

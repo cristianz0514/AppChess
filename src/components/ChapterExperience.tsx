@@ -85,6 +85,7 @@ export function ChapterExperience({ champion, chapter }: Props) {
                 style={{
                   background: result === "win" ? "oklch(0.77 0.17 177 / 0.85)" : "oklch(0.70 0.18 50 / 0.85)",
                   color: "#1a1208",
+                  animation: "bvFadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both",
                 }}>
                 {result === "win" ? "¡Ganaste la partida!" : result === "draw" ? "Tablas — casi." : "Esta vez no."}
               </div>
@@ -99,7 +100,7 @@ export function ChapterExperience({ champion, chapter }: Props) {
           )}
 
           {stage === "done" && (
-            <div className="space-y-3">
+            <div className="space-y-3" style={{ animation: "bvFadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
               {result !== "win" && (
                 <button onClick={playAgain}
                   className="w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-[0.98] backdrop-blur-sm"
