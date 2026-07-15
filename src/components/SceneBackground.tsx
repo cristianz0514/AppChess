@@ -2,10 +2,16 @@
 // public/campeones/, cropped to remove a baked-in mockup caption that
 // would've clashed with our own dialogue UI) so the story feels like it's
 // happening somewhere, not floating on a blank card.
-export type SceneVariant = "living-room";
+export type SceneVariant =
+  | "living-room" | "torneo-infantil" | "olimpiada" | "premiacion" | "sala-elite" | "exhibicion-mundial";
 
 const IMAGE_SRC: Record<SceneVariant, string> = {
   "living-room": "/campeones/sala.jpg",
+  "torneo-infantil": "/campeones/torneo-infantil.jpg",
+  "olimpiada": "/campeones/olimpiada.jpg",
+  "premiacion": "/campeones/premiacion.jpg",
+  "sala-elite": "/campeones/sala-elite.jpg",
+  "exhibicion-mundial": "/campeones/exhibicion-mundial.jpg",
 };
 
 export function SceneBackground({ variant }: { variant: SceneVariant }) {
