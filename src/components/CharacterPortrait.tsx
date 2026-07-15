@@ -5,7 +5,7 @@
 // the colored circle behind it.
 export type PortraitVariant =
   | "judit-child" | "zsofia" | "laszlo" | "karoly"
-  | "eszter" | "nagy" | "rival-internacional" | "drimer"
+  | "eszter" | "nagy" | "maestro" | "rival-internacional" | "drimer"
   | "larisa" | "varga" | "suarez" | "petrov" | "halasz" | "ivanov";
 
 const IMAGE_SRC: Record<PortraitVariant, string> = {
@@ -15,6 +15,7 @@ const IMAGE_SRC: Record<PortraitVariant, string> = {
   "karoly": "/campeones/karoly.png",
   "eszter": "/campeones/eszter.png",
   "nagy": "/campeones/nagy.png",
+  "maestro": "/campeones/maestro.png",
   "rival-internacional": "/campeones/rival-internacional.png",
   "drimer": "/campeones/drimer.png",
   "larisa": "/campeones/larisa.png",
@@ -32,6 +33,7 @@ const ALT_TEXT: Record<PortraitVariant, string> = {
   "karoly": "Károly",
   "eszter": "Eszter",
   "nagy": "Nagy",
+  "maestro": "Maestro de club",
   "rival-internacional": "Rival internacional",
   "drimer": "GM Dolfi Drimer",
   "larisa": "Larisa",

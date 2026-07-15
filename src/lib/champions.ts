@@ -191,6 +191,30 @@ export const CHAMPIONS: Champion[] = [
         ],
       },
       {
+        id: "la-nina-que-vence-a-un-maestro",
+        title: "Capítulo 5 · La niña que vence a un Maestro",
+        eloTarget: JUDIT_ROADMAP[4].eloTarget,
+        opponentName: "Maestro de club",
+        opponentPortrait: "maestro",
+        playerPortrait: "judit-child",
+        playerColor: "white",
+        scene: "club",
+        intro: [
+          { speaker: "Narrador", text: "A sus nueve años, Judit se sienta frente a un Maestro con título oficial — la clase de rival contra el que la mayoría de los niños de club nunca llega a jugar.", side: "other" },
+          { speaker: "Maestro", text: "He entrenado a decenas de jugadores. Curiosidad me trae a esta mesa, no preocupación.", side: "other", portrait: "maestro" },
+          { speaker: "Judit", text: "Entonces que la curiosidad no le quite concentración.", side: "player", portrait: "judit-child" },
+        ],
+        outroWin: [
+          { speaker: "Maestro", text: "…Con nueve años acaba de vencer a un Maestro. Recuerde esta partida — yo la voy a recordar.", side: "other", portrait: "maestro" },
+          { speaker: "László (papá)", text: "Esto ya no es una promesa, Judit. Es un hecho.", side: "other", portrait: "laszlo" },
+          { speaker: "Judit", text: "Entonces sigamos construyendo hechos.", side: "player", portrait: "judit-child" },
+        ],
+        outroLoseOrDraw: [
+          { speaker: "Maestro", text: "El título no es solo un papel. Hoy se lo demostré.", side: "other", portrait: "maestro" },
+          { speaker: "Judit", text: "Y yo aprendí exactamente dónde me falta.", side: "player", portrait: "judit-child" },
+        ],
+      },
+      {
         id: "el-primer-viaje",
         title: "Capítulo 6 · El primer viaje",
         eloTarget: JUDIT_ROADMAP[5].eloTarget,
