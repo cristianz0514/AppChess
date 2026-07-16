@@ -448,6 +448,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     : -1;
 
   const [idx, setIdx] = useState(firstBlunderIdx >= 0 ? firstBlunderIdx : moves.length - 1);
+  // The coach line was clamped to 2 lines forever so the board never shifts
+  // while scrubbing through moves — but a real 2-3 sentence AI comment
+  // routinely runs longer than that and got cut off mid-sentence. Tap to
+  // expand it instead: compact (and stable) by default, full text on demand.
+  // Collapses again on the next move so it doesn't stay expanded forever.
+  const [commentExpanded, setCommentExpanded] = useState(false);
+  useEffect(() => { setCommentExpanded(false); }, [idx]);
 
   const startFen    = new Chess().fen();
   const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
@@ -892,7 +899,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         <>
 
 
-          {/* Coach line — precomputed AI comment inline; fixed height so the board never shifts */}
+          {/* Coach line — precomputed AI comment inline. Was clamped to 2 lines
+              with a fixed height so the board never jumps while scrubbing
+              through moves, but a real 2-3 sentence coach comment routinely
+              ran to 40-60 words — well past what 2 lines at text-xs can hold
+              — and got cut off mid-sentence. Tap it to expand: stays compact
+              (and the board stays put) by default, full text on demand;
+              collapses again on the next move via the effect above. */}
           {!inExplore && (() => {
             const c = moveComment(currentMove);
             const cls = currentMove?.classification ?? null;
@@ -909,29 +922,35 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `Mantienes ventaja (${to}).` : curE <= -1 ? `Sigues peor (${to}).` : `Equilibrio (${to}).`;
             }
             const color = c?.color ?? "var(--muted-foreground)";
+            const commentText = ai || computed || (currentMove ? "" : "Usa las flechas para revisar la partida.");
             return (
-              <div className="flex items-start gap-2 h-16 shrink-0">
+              <div className={`flex items-start gap-2 ${commentExpanded ? "min-h-16" : "h-16"} shrink-0`}>
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white mt-0.5"
                   style={{ background: color }}>
                   {cls ? CLASS_EMOJI[cls] : "•"}
                 </div>
-                <div className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => commentText && setCommentExpanded((v) => !v)}
+                  className="flex-1 min-w-0 text-left"
+                  aria-expanded={commentExpanded}
+                >
                   <p className="text-sm font-bold truncate" style={{ color }}>
                     {currentMove
                       ? <><span className="font-mono">{currentMove.san}</span>{c ? ` — ${c.label}` : ""}</>
                       : "Posición inicial"}
                   </p>
                   {ai ? (
-                    <p className="text-xs leading-snug line-clamp-2 flex items-start gap-1 text-foreground">
+                    <p className={`text-xs leading-snug flex items-start gap-1 text-foreground ${commentExpanded ? "" : "line-clamp-2"}`}>
                       <Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
                       <span>{ai}</span>
                     </p>
                   ) : (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {computed || (currentMove ? "" : "Usa las flechas para revisar la partida.")}
+                    <p className={`text-xs text-muted-foreground ${commentExpanded ? "" : "line-clamp-2"}`}>
+                      {commentText}
                     </p>
                   )}
-                </div>
+                </button>
               </div>
             );
           })()}
@@ -962,9 +981,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   </div>
                 </div>
               )}
-              {/* Explore mode banner */}
+              {/* Explore mode banner — was `absolute top-0`, floating on top of
+                  the board instead of sitting above it, so it covered the top
+                  rank. Normal flow now: it pushes the board down instead of
+                  overlaying it. */}
               {inExplore && (
-                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
+                <div className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
                   style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
                   <span className="flex items-center gap-1"><Search size={13} /> Exploración libre</span>
                   <div className="flex items-center gap-1">
@@ -988,9 +1010,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 </div>
               )}
               {/* Best-move preview banner — shown while the board displays the
-                  hypothetical position after playing the suggested move. */}
+                  hypothetical position after playing the suggested move.
+                  Same fix as the explore banner: normal flow instead of an
+                  absolute overlay sitting on top of the board. */}
               {!inExplore && previewFen && previewMoveInfo && (
-                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
+                <div className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
                   style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
                   <span className="flex items-center gap-1"><Target size={13} /> Mejor: {previewMoveInfo.san}</span>
                   <button onClick={() => setPreviewBest(false)} title="Volver a la posición real" aria-label="Cerrar vista previa"
