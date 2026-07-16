@@ -17,6 +17,10 @@ export interface DialogueLine {
   // Omitted = a narration/scene-setting line (no portrait, no bubble —
   // rendered as an italic caption instead of a character talking).
   portrait?: PortraitVariant;
+  // A one-off illustration shown above a narration line — for the handful of
+  // moments with real standalone art (a newspaper clipping, a chess clock)
+  // instead of a character portrait. Path under /public/campeones/.
+  image?: string;
 }
 
 export interface Chapter {
@@ -94,13 +98,13 @@ export const CHAMPIONS: Champion[] = [
         intro: [
           { speaker: "Narrador", text: "Budapest, principios de los años 80. En casa de los Polgár, el ajedrez no es un juego — es la lengua en la que se habla en familia.", side: "other" },
           { speaker: "László (papá)", text: "Judit, tienes cinco años y ya sabes mover las piezas. Hoy juegas tu primera partida de verdad. Contra tu hermana.", side: "other", portrait: "laszlo" },
-          { speaker: "Zsófia", text: "No te voy a dejar ganar solo porque eres la pequeña.", side: "other", portrait: "zsofia" },
+          { speaker: "Zsófia", text: "No te voy a dejar ganar solo porque eres la pequeña.", side: "other", portrait: "zsofia-guino" },
           { speaker: "Judit", text: "No necesito que me dejes. Solo necesito el primer movimiento.", side: "player", portrait: "judit-child" },
-          { speaker: "László (papá)", text: "Así se habla. Recuerda: cada pieza que mueves tiene un plan. Encuéntralo.", side: "other", portrait: "laszlo" },
+          { speaker: "László (papá)", text: "Así se habla. Recuerda: cada pieza que mueves tiene un plan. Encuéntralo.", side: "other", portrait: "laszlo-pensativo" },
         ],
         outroWin: [
-          { speaker: "Zsófia", text: "…¿Cómo viste eso? Ni siquiera yo lo vi venir.", side: "other", portrait: "zsofia" },
-          { speaker: "László (papá)", text: "Esta niña ve el tablero distinto al resto de nosotros.", side: "other", portrait: "laszlo" },
+          { speaker: "Zsófia", text: "…¿Cómo viste eso? Ni siquiera yo lo vi venir.", side: "other", portrait: "zsofia-sorpresa" },
+          { speaker: "László (papá)", text: "Esta niña ve el tablero distinto al resto de nosotros.", side: "other", portrait: "laszlo-orgulloso" },
           { speaker: "Judit", text: "Quiero jugar otra vez. Y otra. Y otra.", side: "player", portrait: "judit-child" },
           { speaker: "Narrador", text: "Fue la primera de miles de partidas. Once años después, Judit se convertiría en la Gran Maestra más joven de la historia — un récord que Bobby Fischer tuvo por más de dos décadas.", side: "other" },
         ],
@@ -128,7 +132,7 @@ export const CHAMPIONS: Champion[] = [
         ],
         outroWin: [
           { speaker: "Károly", text: "…No entiendo cómo una niña de seis años juega así.", side: "other", portrait: "karoly" },
-          { speaker: "László (papá)", text: "Te dije que no era por cariño. Es real.", side: "other", portrait: "laszlo" },
+          { speaker: "László (papá)", text: "Te dije que no era por cariño. Es real.", side: "other", portrait: "laszlo-orgulloso" },
           { speaker: "Judit", text: "Quiero jugar contra el siguiente.", side: "player", portrait: "judit-child" },
           { speaker: "Narrador", text: "La noticia corrió rápido por el club: había una niña que vencía a rivales con el doble de experiencia que ella.", side: "other" },
         ],
@@ -278,7 +282,7 @@ export const CHAMPIONS: Champion[] = [
         ],
         outroWin: [
           { speaker: "Larisa", text: "…Eras la rival más fuerte que he enfrentado en un equipo.", side: "other", portrait: "larisa" },
-          { speaker: "Narrador", text: "Hungría venció a la Unión Soviética y se llevó el oro por equipos — con Judit, de doce años, jugando un papel decisivo.", side: "other" },
+          { speaker: "Narrador", text: "Hungría venció a la Unión Soviética y se llevó el oro por equipos — con Judit, de doce años, jugando un papel decisivo.", side: "other", image: "/campeones/periodico-polgar.jpg" },
           { speaker: "Judit", text: "Ganamos juntas. Así se siente mejor.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
@@ -343,7 +347,7 @@ export const CHAMPIONS: Champion[] = [
         playerColor: "black",
         scene: "torneo-internacional",
         intro: [
-          { speaker: "Narrador", text: "El récord de Gran Maestro más joven de la historia lleva más de veinte años en manos de Bobby Fischer. Judit está a un paso de romperlo.", side: "other" },
+          { speaker: "Narrador", text: "El récord de Gran Maestro más joven de la historia lleva más de veinte años en manos de Bobby Fischer. Judit está a un paso de romperlo.", side: "other", image: "/campeones/reloj-ajedrez.jpg" },
           { speaker: "GM Petrov", text: "Sabe lo que está en juego en esta partida, ¿verdad?", side: "other", portrait: "petrov" },
           { speaker: "Judit", text: "Lo sé. Por eso no pienso dejarlo pasar.", side: "player", portrait: "judit-teen" },
         ],

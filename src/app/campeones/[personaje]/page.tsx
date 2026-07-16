@@ -31,6 +31,12 @@ export default async function ChampionChaptersPage({ params }: Props) {
       </header>
 
       <main className="flex-1 pt-24 px-4 max-w-lg mx-auto w-full pb-8 space-y-4">
+        {/* Budapest at dusk — this is where the story starts, before any of
+            the tournament halls the chapters actually happen in. */}
+        <div className="-mx-4 -mt-2 mb-1 overflow-hidden" style={{ maxHeight: 130 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- small, fixed local asset */}
+          <img src="/campeones/budapest-atardecer.jpg" alt="" className="w-full h-full object-cover" />
+        </div>
         <p className="text-sm text-muted-foreground text-center text-balance">{champion.tagline}</p>
         <p className="text-xs text-center rounded-lg px-3 py-2" style={{ background: "var(--card)", color: "var(--muted-foreground)" }}>
           Todos los capítulos están habilitados temporalmente para validarlos. Más adelante se

@@ -5,7 +5,8 @@
 // the colored circle behind it.
 export type PortraitVariant =
   | "judit-child" | "judit-teen" | "judit-adulta" | "judit-victoria" | "judit-derrota"
-  | "zsofia" | "laszlo" | "karoly"
+  | "zsofia" | "zsofia-guino" | "zsofia-sorpresa"
+  | "laszlo" | "laszlo-orgulloso" | "laszlo-pensativo" | "karoly"
   | "eszter" | "nagy" | "maestro" | "rival-internacional" | "drimer"
   | "larisa" | "varga" | "suarez" | "petrov" | "halasz" | "ivanov";
 
@@ -16,7 +17,11 @@ const IMAGE_SRC: Record<PortraitVariant, string> = {
   "judit-victoria": "/campeones/judit-victoria.png",
   "judit-derrota": "/campeones/judit-derrota.png",
   "zsofia": "/campeones/zsofia.png",
+  "zsofia-guino": "/campeones/zsofia-guino.png",
+  "zsofia-sorpresa": "/campeones/zsofia-sorpresa.png",
   "laszlo": "/campeones/laszlo.png",
+  "laszlo-orgulloso": "/campeones/laszlo-orgulloso.png",
+  "laszlo-pensativo": "/campeones/laszlo-pensativo.png",
   "karoly": "/campeones/karoly.png",
   "eszter": "/campeones/eszter.png",
   "nagy": "/campeones/nagy.png",
@@ -38,7 +43,11 @@ const ALT_TEXT: Record<PortraitVariant, string> = {
   "judit-victoria": "Judit celebrando la victoria",
   "judit-derrota": "Judit frustrada tras la derrota",
   "zsofia": "Zsófia",
+  "zsofia-guino": "Zsófia, guiño confiado",
+  "zsofia-sorpresa": "Zsófia, sorprendida",
   "laszlo": "László",
+  "laszlo-orgulloso": "László, orgulloso",
+  "laszlo-pensativo": "László, pensativo",
   "karoly": "Károly",
   "eszter": "Eszter",
   "nagy": "Nagy",

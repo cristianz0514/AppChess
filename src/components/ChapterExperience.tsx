@@ -209,7 +209,6 @@ export function ChapterExperience({ champion, chapter, userId }: Props) {
           {stage === "intro" && (
             <DialogueBox
               lines={chapter.intro}
-              playerPortrait={chapter.playerPortrait}
               playerColor={champion.color}
               otherColor={FAMILY_COLOR}
               onDone={() => setStage("battle")}
@@ -231,7 +230,6 @@ export function ChapterExperience({ champion, chapter, userId }: Props) {
           {stage === "outro" && (
             <DialogueBox
               lines={outroLines}
-              playerPortrait={chapter.playerPortrait}
               playerColor={champion.color}
               otherColor={FAMILY_COLOR}
               onDone={() => setStage("done")}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Lock, CheckCircle2 } from "lucide-react";
+import { Lock } from "lucide-react";
 import { BackButton } from "@/components/BackButton";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
@@ -26,6 +26,12 @@ export default async function ChampionsPage() {
       </header>
 
       <main className="flex-1 pt-24 px-4 max-w-lg mx-auto w-full pb-8 space-y-4">
+        {/* A pawn's shadow already shaped like a queen — the whole mode in one
+            image, better than any copy could say it. */}
+        <div className="-mx-4 -mt-2 mb-1 overflow-hidden" style={{ maxHeight: 160 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- small, fixed local asset */}
+          <img src="/campeones/hero-sombra-reina.jpg" alt="" className="w-full h-full object-cover" style={{ objectPosition: "center 30%" }} />
+        </div>
         <p className="text-sm text-muted-foreground text-center text-balance">
           Elige una leyenda y revive su historia — desde sus primeras partidas hasta la cima del ajedrez mundial.
         </p>
@@ -46,8 +52,10 @@ export default async function ChampionsPage() {
                   {champion.locked ? (
                     <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>Próximamente</p>
                   ) : allDone ? (
-                    <p className="text-xs mt-1 flex items-center gap-1 font-semibold" style={{ color: "var(--bv-green)" }}>
-                      <CheckCircle2 size={13} /> Completado
+                    <p className="text-xs mt-1 flex items-center gap-1.5 font-semibold" style={{ color: "var(--bv-green)" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- small, fixed local asset */}
+                      <img src="/campeones/medalla-oro.png" alt="" width={16} height={16} className="shrink-0" />
+                      Completado
                     </p>
                   ) : completedCount > 0 ? (
                     // Not champion.color: it's an arbitrary per-champion brand
