@@ -131,13 +131,13 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "László (papá)", text: "Concéntrate. Aquí todos han jugado más partidas que tú. Tu ventaja es que piensas distinto.", side: "other", portrait: "laszlo" },
         ],
         outroWin: [
-          { speaker: "Károly", text: "…No entiendo cómo una niña de seis años juega así.", side: "other", portrait: "karoly" },
+          { speaker: "Károly", text: "…No entiendo cómo una niña de seis años juega así.", side: "other", portrait: "karoly-sorpresa" },
           { speaker: "László (papá)", text: "Te dije que no era por cariño. Es real.", side: "other", portrait: "laszlo-orgulloso" },
           { speaker: "Judit", text: "Quiero jugar contra el siguiente.", side: "player", portrait: "judit-child" },
           { speaker: "Narrador", text: "La noticia corrió rápido por el club: había una niña que vencía a rivales con el doble de experiencia que ella.", side: "other" },
         ],
         outroLoseOrDraw: [
-          { speaker: "Károly", text: "Jugaste mejor de lo que esperaba. Pero esta vez gano yo.", side: "other", portrait: "karoly" },
+          { speaker: "Károly", text: "Jugaste mejor de lo que esperaba. Pero esta vez gano yo.", side: "other", portrait: "karoly-satisfecho" },
           { speaker: "László (papá)", text: "Aquí nadie te regala nada — por eso cuenta más cuando ganes.", side: "other", portrait: "laszlo" },
           { speaker: "Judit", text: "La próxima vez no tendrás esa suerte.", side: "player", portrait: "judit-child" },
         ],
@@ -158,12 +158,12 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Los que hagan falta para ganar este.", side: "player", portrait: "judit-child" },
         ],
         outroWin: [
-          { speaker: "Eszter", text: "…No esperaba perder contra alguien más pequeña que yo.", side: "other", portrait: "eszter" },
+          { speaker: "Eszter", text: "…No esperaba perder contra alguien más pequeña que yo.", side: "other", portrait: "eszter-sorpresa" },
           { speaker: "László (papá)", text: "El tamaño nunca fue el problema, ¿verdad?", side: "other", portrait: "laszlo" },
           { speaker: "Judit", text: "Nunca lo fue.", side: "player", portrait: "judit-child" },
         ],
         outroLoseOrDraw: [
-          { speaker: "Eszter", text: "Fue muy cerrada. Casi me ganas.", side: "other", portrait: "eszter" },
+          { speaker: "Eszter", text: "Fue muy cerrada. Casi me ganas.", side: "other", portrait: "eszter-satisfecho" },
           { speaker: "László (papá)", text: "Casi no cuenta en el torneo, pero sí cuenta para la próxima vez.", side: "other", portrait: "laszlo" },
           { speaker: "Judit", text: "La próxima vez no habrá 'casi'.", side: "player", portrait: "judit-child" },
         ],
@@ -184,12 +184,12 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Yo también quiero que juegue en serio.", side: "player", portrait: "judit-child" },
         ],
         outroWin: [
-          { speaker: "Nagy", text: "…Llevo veinte años jugando. Nunca había visto algo así.", side: "other", portrait: "nagy" },
+          { speaker: "Nagy", text: "…Llevo veinte años jugando. Nunca había visto algo así.", side: "other", portrait: "nagy-sorpresa" },
           { speaker: "László (papá)", text: "Ahora ya lo sabe: aquí no hay favores, solo ajedrez.", side: "other", portrait: "laszlo" },
           { speaker: "Judit", text: "Gracias por no dejarme ganar.", side: "player", portrait: "judit-child" },
         ],
         outroLoseOrDraw: [
-          { speaker: "Nagy", text: "La experiencia todavía cuenta para algo, pequeña.", side: "other", portrait: "nagy" },
+          { speaker: "Nagy", text: "La experiencia todavía cuenta para algo, pequeña.", side: "other", portrait: "nagy-satisfecho" },
           { speaker: "László (papá)", text: "Por ahora. No por mucho tiempo, me parece.", side: "other", portrait: "laszlo" },
           { speaker: "Judit", text: "La próxima vez la experiencia no le va a alcanzar.", side: "player", portrait: "judit-child" },
         ],
@@ -209,12 +209,12 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Entonces que la curiosidad no le quite concentración.", side: "player", portrait: "judit-child" },
         ],
         outroWin: [
-          { speaker: "Maestro", text: "…Con nueve años acaba de vencer a un Maestro. Recuerde esta partida — yo la voy a recordar.", side: "other", portrait: "maestro" },
+          { speaker: "Maestro", text: "…Con nueve años acaba de vencer a un Maestro. Recuerde esta partida — yo la voy a recordar.", side: "other", portrait: "maestro-sorpresa" },
           { speaker: "László (papá)", text: "Esto ya no es una promesa, Judit. Es un hecho.", side: "other", portrait: "laszlo" },
           { speaker: "Judit", text: "Entonces sigamos construyendo hechos.", side: "player", portrait: "judit-child" },
         ],
         outroLoseOrDraw: [
-          { speaker: "Maestro", text: "El título no es solo un papel. Hoy se lo demostré.", side: "other", portrait: "maestro" },
+          { speaker: "Maestro", text: "El título no es solo un papel. Hoy se lo demostré.", side: "other", portrait: "maestro-satisfecho" },
           { speaker: "Judit", text: "Y yo aprendí exactamente dónde me falta.", side: "player", portrait: "judit-child" },
         ],
       },
@@ -257,12 +257,12 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Entonces esta partida es nueva para los dos.", side: "player", portrait: "judit-teen" },
         ],
         outroWin: [
-          { speaker: "GM Drimer", text: "…Felicidades. Acaba de vencer a un Gran Maestro con diez años.", side: "other", portrait: "drimer" },
+          { speaker: "GM Drimer", text: "…Felicidades. Acaba de vencer a un Gran Maestro con diez años.", side: "other", portrait: "drimer-sorpresa" },
           { speaker: "Narrador", text: "Judit se convirtió en la jugadora más joven de la historia en vencer a un Gran Maestro en una partida oficial.", side: "other" },
           { speaker: "Judit", text: "No va a ser la última vez.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
-          { speaker: "GM Drimer", text: "El título de Gran Maestro no es solo un nombre. Hoy lo sintió en el tablero.", side: "other", portrait: "drimer" },
+          { speaker: "GM Drimer", text: "El título de Gran Maestro no es solo un nombre. Hoy lo sintió en el tablero.", side: "other", portrait: "drimer-satisfecho" },
           { speaker: "Judit", text: "Y ahora sé exactamente lo que tengo que superar.", side: "player", portrait: "judit-teen" },
         ],
       },
@@ -281,12 +281,12 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Todo récord tiene una primera vez en que se rompe.", side: "player", portrait: "judit-teen" },
         ],
         outroWin: [
-          { speaker: "Larisa", text: "…Eras la rival más fuerte que he enfrentado en un equipo.", side: "other", portrait: "larisa" },
+          { speaker: "Larisa", text: "…Eras la rival más fuerte que he enfrentado en un equipo.", side: "other", portrait: "larisa-sorpresa" },
           { speaker: "Narrador", text: "Hungría venció a la Unión Soviética y se llevó el oro por equipos — con Judit, de doce años, jugando un papel decisivo.", side: "other", image: "/campeones/periodico-polgar.jpg" },
           { speaker: "Judit", text: "Ganamos juntas. Así se siente mejor.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
-          { speaker: "Larisa", text: "El equipo soviético sigue siendo el equipo soviético. Pero fue una partida difícil.", side: "other", portrait: "larisa" },
+          { speaker: "Larisa", text: "El equipo soviético sigue siendo el equipo soviético. Pero fue una partida difícil.", side: "other", portrait: "larisa-satisfecho" },
           { speaker: "Judit", text: "Difícil hoy. La próxima vez, distinto.", side: "player", portrait: "judit-teen" },
         ],
       },
@@ -305,12 +305,12 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Entonces los dos tenemos algo que perder.", side: "player", portrait: "judit-teen" },
         ],
         outroWin: [
-          { speaker: "GM Varga", text: "…La vergüenza ya no importa. Lo que acabo de ver sí.", side: "other", portrait: "varga" },
+          { speaker: "GM Varga", text: "…La vergüenza ya no importa. Lo que acabo de ver sí.", side: "other", portrait: "varga-sorpresa" },
           { speaker: "Narrador", text: "Con esta norma, Judit se convirtió en la mejor jugadora del mundo por su edad.", side: "other" },
           { speaker: "Judit", text: "Esto es solo el principio de lo que quiero lograr.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
-          { speaker: "GM Varga", text: "Esta vez me salvé. La próxima, no le prometo nada.", side: "other", portrait: "varga" },
+          { speaker: "GM Varga", text: "Esta vez me salvé. La próxima, no le prometo nada.", side: "other", portrait: "varga-satisfecho" },
           { speaker: "Judit", text: "No hace falta que me lo prometa. Yo se lo voy a demostrar.", side: "player", portrait: "judit-teen" },
         ],
       },
@@ -329,11 +329,11 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "'Debería' es una palabra peligrosa antes de jugar conmigo.", side: "player", portrait: "judit-teen" },
         ],
         outroWin: [
-          { speaker: "GM Suárez", text: "…Retiro lo de 'trámite'.", side: "other", portrait: "suarez" },
+          { speaker: "GM Suárez", text: "…Retiro lo de 'trámite'.", side: "other", portrait: "suarez-sorpresa" },
           { speaker: "Judit", text: "Aceptado.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
-          { speaker: "GM Suárez", text: "La experiencia contra los grandes se gana perdiendo contra ellos primero.", side: "other", portrait: "suarez" },
+          { speaker: "GM Suárez", text: "La experiencia contra los grandes se gana perdiendo contra ellos primero.", side: "other", portrait: "suarez-satisfecho" },
           { speaker: "Judit", text: "Entonces ya empecé a ganarla.", side: "player", portrait: "judit-teen" },
         ],
       },
@@ -352,12 +352,12 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Lo sé. Por eso no pienso dejarlo pasar.", side: "player", portrait: "judit-teen" },
         ],
         outroWin: [
-          { speaker: "GM Petrov", text: "…Acabo de ser parte de un récord histórico. Del lado equivocado.", side: "other", portrait: "petrov" },
+          { speaker: "GM Petrov", text: "…Acabo de ser parte de un récord histórico. Del lado equivocado.", side: "other", portrait: "petrov-sorpresa" },
           { speaker: "Narrador", text: "Judit quedó a un solo resultado de romper el récord de Bobby Fischer como el Gran Maestro más joven de la historia.", side: "other" },
           { speaker: "Judit", text: "Un paso más.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
-          { speaker: "GM Petrov", text: "El récord va a tener que esperar un poco más.", side: "other", portrait: "petrov" },
+          { speaker: "GM Petrov", text: "El récord va a tener que esperar un poco más.", side: "other", portrait: "petrov-satisfecho" },
           { speaker: "Judit", text: "Esperar no es lo mismo que no llegar.", side: "player", portrait: "judit-teen" },
         ],
       },
@@ -376,7 +376,7 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Entonces vamos a escribirlo.", side: "player", portrait: "judit-teen" },
         ],
         outroWin: [
-          { speaker: "GM Halász", text: "…Felicidades, Gran Maestra Polgár. Ya nadie le puede quitar eso.", side: "other", portrait: "halasz" },
+          { speaker: "GM Halász", text: "…Felicidades, Gran Maestra Polgár. Ya nadie le puede quitar eso.", side: "other", portrait: "halasz-sorpresa" },
           { speaker: "Narrador", text: "A los 15 años y 4 meses, Judit Polgár rompió el récord de Bobby Fischer y se convirtió en la Gran Maestra más joven de la historia.", side: "other" },
           { speaker: "Judit", text: "Esto no es el final. Apenas estoy empezando.", side: "player", portrait: "judit-teen" },
         ],

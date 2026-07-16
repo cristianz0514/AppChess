@@ -4,7 +4,7 @@
 // happening somewhere, not floating on a blank card.
 export type SceneVariant =
   | "living-room" | "club" | "torneo-infantil" | "torneo-internacional"
-  | "olimpiada" | "premiacion" | "exhibicion-mundial";
+  | "olimpiada" | "premiacion" | "sala-elite" | "exhibicion-mundial";
 
 const IMAGE_SRC: Record<SceneVariant, string> = {
   "living-room": "/campeones/sala.jpg",
@@ -13,9 +13,8 @@ const IMAGE_SRC: Record<SceneVariant, string> = {
   "torneo-internacional": "/campeones/torneo-internacional.jpg",
   "olimpiada": "/campeones/olimpiada.jpg",
   "premiacion": "/campeones/premiacion.jpg",
+  "sala-elite": "/campeones/sala-elite.jpg",
   "exhibicion-mundial": "/campeones/exhibicion-mundial.jpg",
-  // sala-elite (cap. 13/14) todavía no se ha generado — ver
-  // docs/campeones-stitch-prompts/checklist-completo.md.
 };
 
 export function SceneBackground({ variant }: { variant: SceneVariant }) {
