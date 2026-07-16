@@ -366,70 +366,55 @@ export function ChessBoard({
         );
       })()}
 
-      {/* Promotion piece picker — a small popover of the 4 promotable pieces,
-          positioned over the destination square (chess.com/lichess convention).
-          Vertical stack, not a horizontal row: a promotion always lands on the
-          board's very first or last rank, so a row centered on that square
-          routinely pushed a piece (often the queen, first in the list) past
-          the board edge — clipped by the board's own overflow:hidden and
-          impossible to click. A column only needs to worry about the same
-          edge in one axis, and we anchor it to grow INTO the board (down from
-          a top-rank square, up from a bottom-rank one) instead of centering
-          on the square, so all 4 choices always stay on-board. */}
+      {/* Promotion piece picker. Two earlier attempts anchored this to the
+          destination square (a horizontal row, then a vertical column that
+          "grows into the board") and both still overflowed for someone
+          playing it for real — percentage positioning pinned to one tiny
+          square is fragile across screen sizes/aspect ratios in a way that
+          's hard to fully verify without live devices. A centered, fixed
+          overlay sidesteps the whole class of bug: it can't run off the
+          board because it's no longer positioned relative to the board at
+          all, and a promotion is rare/important enough to deserve full
+          attention rather than a popover hugging a corner square anyway. */}
       {promoPending && (() => {
-        const { x, y } = sqToXYPct(promoPending.to, orientation);
         const isWhite = promoPending.color === "white";
-        const choices: Array<"q" | "r" | "b" | "n"> = ["q", "r", "b", "n"];
-        const growsDown = y < 50; // promotion rank is in the board's top half
-        // Clamp horizontal center so the column (11cqi wide) never crosses
-        // the left/right edge on the a- or h-file.
-        const clampedX = Math.min(94.5, Math.max(5.5, x));
+        const choices: Array<{ p: "q" | "r" | "b" | "n"; label: string }> = [
+          { p: "q", label: "Dama" }, { p: "r", label: "Torre" }, { p: "b", label: "Alfil" }, { p: "n", label: "Caballo" },
+        ];
         return (
-          <>
-            <div
-              aria-hidden
-              onClick={() => setPromoPending(null)}
-              style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(20,18,30,0.15)" }}
-            />
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(10,9,15,0.6)", backdropFilter: "blur(3px)", animation: "bvFadeInUp 0.2s ease-out both" }}
+            onClick={() => setPromoPending(null)}
+          >
             <div
               ref={promoPanelRef}
               role="menu"
               aria-label="Elige la pieza de coronación"
-              style={{
-                position: "absolute",
-                left: `${clampedX}%`,
-                ...(growsDown ? { top: `${y}%` } : { bottom: `${100 - y}%` }),
-                transform: "translateX(-50%)",
-                zIndex: 4,
-                display: "flex",
-                flexDirection: "column",
-                borderRadius: "9999px",
-                background: "var(--card, #fff)",
-                boxShadow: "0 12px 28px -8px rgba(38,36,46,0.35)",
-                padding: "2%",
-                gap: "1.5%",
-                animation: "bvBadgePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both",
-              }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-3xl p-4 text-center w-full"
+              style={{ background: "var(--card, #fff)", border: "1px solid var(--border, transparent)", animation: "bvBadgePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both", maxWidth: 320 }}
             >
-              {choices.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => choosePromotion(p)}
-                  aria-label={p}
-                  style={{
-                    width: "11cqi", height: "11cqi",
-                    borderRadius: "9999px",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                    padding: "8%",
-                  }}
-                >
-                  <Piece type={p} white={isWhite} />
-                </button>
-              ))}
+              <p className="text-sm font-bold mb-3" style={{ color: "var(--foreground, #1a1a1a)" }}>¿En qué corona el peón?</p>
+              {/* Fixed px widths here overflowed a 320px-wide screen (iPhone
+                  SE-class) once the card's own padding was accounted for —
+                  flex-1 buttons share whatever room is actually left instead. */}
+              <div className="flex gap-1.5">
+                {choices.map(({ p, label }) => (
+                  <button
+                    key={p}
+                    onClick={() => choosePromotion(p)}
+                    aria-label={label}
+                    className="flex-1 min-w-0 flex flex-col items-center gap-1 rounded-2xl transition active:scale-95"
+                    style={{ padding: "8px 2px", border: "1px solid var(--border, #e5e5e5)", background: "var(--background, #f7f7f7)" }}
+                  >
+                    <span style={{ width: 32, height: 32 }}><Piece type={p} white={isWhite} /></span>
+                    <span className="text-[9px] font-semibold" style={{ color: "var(--muted-foreground, #666)" }}>{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </>
+          </div>
         );
       })()}
 
