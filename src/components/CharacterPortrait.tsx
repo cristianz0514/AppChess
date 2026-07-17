@@ -17,7 +17,7 @@ export type PortraitVariant =
   | "varga" | "varga-sorpresa" | "varga-satisfecho"
   | "suarez" | "suarez-sorpresa" | "suarez-satisfecho"
   | "petrov" | "petrov-sorpresa" | "petrov-satisfecho"
-  | "halasz" | "halasz-sorpresa"
+  | "halasz" | "halasz-sorpresa" | "halasz-satisfecho"
   | "ivanov"
   | "karpov" | "kasparov";
 
@@ -65,6 +65,7 @@ const IMAGE_SRC: Record<PortraitVariant, string> = {
   "petrov-satisfecho": "/campeones/petrov-satisfecho.png",
   "halasz": "/campeones/halasz.png",
   "halasz-sorpresa": "/campeones/halasz-sorpresa.png",
+  "halasz-satisfecho": "/campeones/halasz-satisfecho.png",
   "ivanov": "/campeones/ivanov.png",
   "karpov": "/campeones/karpov.png",
   "kasparov": "/campeones/kasparov.png",
@@ -114,6 +115,7 @@ const ALT_TEXT: Record<PortraitVariant, string> = {
   "petrov-satisfecho": "GM Petrov, satisfecho tras ganar",
   "halasz": "GM Halász",
   "halasz-sorpresa": "GM Halász, sorprendido tras perder",
+  "halasz-satisfecho": "GM Halász, satisfecho tras ganar",
   "ivanov": "GM Ivanov",
   "karpov": "Anatoli Kárpov",
   "kasparov": "Garry Kaspárov",

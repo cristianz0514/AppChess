@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { RotateCcw, Sparkles, Trophy, XCircle, Handshake, Search } from "lucide-react";
 import type { Champion, Chapter } from "@/lib/champions";
@@ -190,8 +190,31 @@ export function ChapterExperience({ champion, chapter, userId }: Props) {
 
   const outroLines = result === "win" ? chapter.outroWin : chapter.outroLoseOrDraw;
 
+  // The dialogue box only ever mounts ONE line's <img> at a time (see
+  // DialogueBox), so a character speaking for the first time — often deep
+  // into the outro, well after the intro already downloaded — used to pop
+  // its portrait in visibly, sometimes not even finishing before the player
+  // taps past it. Preloading every portrait this chapter could show (intro +
+  // BOTH outro branches, since the result isn't known yet + the win/loss
+  // expression swap) the moment the chapter mounts gives the browser the
+  // entire "reading the intro" window to fetch them in the background.
+  const allPortraits = useMemo(() => {
+    const set = new Set<PortraitVariant>();
+    for (const line of [...chapter.intro, ...chapter.outroWin, ...chapter.outroLoseOrDraw]) {
+      if (line.portrait) set.add(line.portrait);
+    }
+    const expressionSet = EXPRESSION_PORTRAIT[chapter.playerPortrait];
+    if (expressionSet) { set.add(expressionSet.win); set.add(expressionSet.loss); }
+    return [...set];
+  }, [chapter]);
+
   return (
     <div className="space-y-3">
+      <div aria-hidden style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", opacity: 0, pointerEvents: "none" }}>
+        {allPortraits.map((variant) => (
+          <CharacterPortrait key={variant} variant={variant} bgColor="transparent" size={1} />
+        ))}
+      </div>
       <div className="text-center px-1 space-y-1">
         <p className="text-[11px] font-bold tracking-[0.14em] uppercase" style={{ color: champion.color }}>
           {champion.name}

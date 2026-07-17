@@ -381,7 +381,7 @@ export const CHAMPIONS: Champion[] = [
           { speaker: "Judit", text: "Esto no es el final. Apenas estoy empezando.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
-          { speaker: "GM Halász", text: "El récord sigue esperando a alguien. Hoy no fue el día.", side: "other", portrait: "halasz" },
+          { speaker: "GM Halász", text: "El récord sigue esperando a alguien. Hoy no fue el día.", side: "other", portrait: "halasz-satisfecho" },
           { speaker: "Judit", text: "Habrá otro día. Y otra partida.", side: "player", portrait: "judit-teen" },
         ],
       },
