@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Chess, type Square } from "chess.js";
 import { Piece } from "./pieces";
 import { useFocusTrap } from "@/lib/useFocusTrap";
@@ -371,12 +372,17 @@ export function ChessBoard({
           "grows into the board") and both still overflowed for someone
           playing it for real — percentage positioning pinned to one tiny
           square is fragile across screen sizes/aspect ratios in a way that
-          's hard to fully verify without live devices. A centered, fixed
-          overlay sidesteps the whole class of bug: it can't run off the
-          board because it's no longer positioned relative to the board at
-          all, and a promotion is rare/important enough to deserve full
-          attention rather than a popover hugging a corner square anyway. */}
-      {promoPending && (() => {
+          's hard to fully verify without live devices. A third attempt made
+          it a `position: fixed` overlay, which should center on the
+          viewport — except the board's own root div sets `containerType:
+          "inline-size"` (for the `cqi` units used everywhere above) AND
+          `overflow: hidden`, and CSS containment ALSO establishes the
+          containing block for `fixed` descendants, same as `transform` or
+          `filter` would. So the picker was centering on (and getting
+          clipped by) the board's own small box, not the screen. Portaling
+          it to `document.body` moves it fully outside that subtree — a
+          real `position: fixed` there has nothing left to contain it. */}
+      {promoPending && typeof document !== "undefined" && createPortal((() => {
         const isWhite = promoPending.color === "white";
         const choices: Array<{ p: "q" | "r" | "b" | "n"; label: string }> = [
           { p: "q", label: "Dama" }, { p: "r", label: "Torre" }, { p: "b", label: "Alfil" }, { p: "n", label: "Caballo" },
@@ -416,7 +422,7 @@ export function ChessBoard({
             </div>
           </div>
         );
-      })()}
+      })(), document.body)}
 
       <style>{`
         @keyframes bvHintPulse {

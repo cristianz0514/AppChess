@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
 import { Piece } from "./pieces";
@@ -125,6 +125,20 @@ export function ChampionBattle({ playerColor, opponentName, eloTarget, onGameOve
       setThinking(false);
     }
   }
+
+  // White always moves first — when the player is black, the rival needs to
+  // open the game, but the only other call site for requestRivalMove was
+  // inside handleMove, which never fires until the PLAYER makes a move. With
+  // no move ever reaching the player first, the board just sat there frozen.
+  // Guarded by a ref (not state) so React's dev-mode double-invoke of effects
+  // can't ever request the opening move twice.
+  const openingMoveRequested = useRef(false);
+  useEffect(() => {
+    if (playerColor !== "black" || openingMoveRequested.current) return;
+    openingMoveRequested.current = true;
+    requestRivalMove(gameRef.current.fen());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once on mount for a black-side game; requestRivalMove/gameRef are stable for the component's lifetime
+  }, [playerColor]);
 
   function handleMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
     if (over || thinking) return;
