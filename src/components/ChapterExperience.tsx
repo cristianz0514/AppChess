@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { RotateCcw, Sparkles, Trophy, XCircle, Handshake, Search } from "lucide-react";
+import { RotateCcw, Sparkles, Trophy, XCircle, Handshake, Search, ChevronRight } from "lucide-react";
 import type { Champion, Chapter } from "@/lib/champions";
 import type { PortraitVariant } from "./CharacterPortrait";
 import { CharacterPortrait } from "./CharacterPortrait";
@@ -190,6 +190,13 @@ export function ChapterExperience({ champion, chapter, userId }: Props) {
 
   const outroLines = result === "win" ? chapter.outroWin : chapter.outroLoseOrDraw;
 
+  // "Continuar" used to always dump the player back on the chapter list,
+  // even right after winning — forcing an extra tap to reopen the list and
+  // find the (now-unlocked) next chapter. When there IS a next chapter and
+  // this one was won, jump straight into it instead.
+  const chapterIndex = champion.chapters.findIndex((c) => c.id === chapter.id);
+  const nextChapter = chapterIndex >= 0 ? champion.chapters[chapterIndex + 1] : undefined;
+
   // The dialogue box only ever mounts ONE line's <img> at a time (see
   // DialogueBox), so a character speaking for the first time — often deep
   // into the outro, well after the intro already downloaded — used to pop
@@ -268,12 +275,29 @@ export function ChapterExperience({ champion, chapter, userId }: Props) {
                   <RotateCcw size={16} /> Intentar de nuevo
                 </button>
               )}
-              <button
-                onClick={() => router.push("/campeones")}
-                className="w-full py-3.5 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
-                style={{ background: champion.color }}>
-                <Sparkles size={16} /> Volver a Campeones
-              </button>
+              {result === "win" && nextChapter ? (
+                <>
+                  <button
+                    onClick={() => router.push(`/campeones/${champion.id}/${nextChapter.id}`)}
+                    className="w-full py-3.5 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+                    style={{ background: champion.color }}>
+                    Siguiente capítulo <ChevronRight size={16} />
+                  </button>
+                  <button
+                    onClick={() => router.push("/campeones")}
+                    className="w-full py-3 rounded-2xl font-semibold text-sm border transition-transform active:scale-[0.98]"
+                    style={{ borderColor: "rgba(255,255,255,.3)", color: "#fff" }}>
+                    Volver a Campeones
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => router.push("/campeones")}
+                  className="w-full py-3.5 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+                  style={{ background: champion.color }}>
+                  <Sparkles size={16} /> Volver a Campeones
+                </button>
+              )}
             </div>
           )}
         </div>
