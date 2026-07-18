@@ -845,7 +845,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   ];
 
   return (
-    <div className="flex flex-col gap-3 pt-2 pb-2">
+    <div className="flex flex-col gap-2 pt-1 pb-1">
 
       {gameAnalyzed && (
         <ReviewSummaryModal
@@ -891,7 +891,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             const color = c?.color ?? "var(--muted-foreground)";
             const commentText = ai || computed || (currentMove ? "" : "Usa las flechas para revisar la partida.");
             return (
-              <div className={`flex items-start gap-2 ${commentExpanded ? "min-h-16" : "h-16"} shrink-0`}>
+              <div className={`flex items-start gap-2 ${commentExpanded ? "min-h-20" : "h-20"} shrink-0`}>
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white mt-0.5"
                   style={{ background: color }}>
                   {cls ? CLASS_EMOJI[cls] : "•"}
@@ -907,13 +907,18 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                       ? <><span className="font-mono">{currentMove.san}</span>{c ? ` — ${c.label}` : ""}</>
                       : "Posición inicial"}
                   </p>
+                  {/* Was h-16/line-clamp-2 — freed up room elsewhere (tighter
+                      spacing throughout this view) goes straight here, since
+                      the AI's real 2-3 sentence comments were the thing
+                      actually needing space. One more line visible by
+                      default now; still taps to expand for the rest. */}
                   {ai ? (
-                    <p className={`text-xs leading-snug flex items-start gap-1 text-foreground ${commentExpanded ? "" : "line-clamp-2"}`}>
+                    <p className={`text-xs leading-snug flex items-start gap-1 text-foreground ${commentExpanded ? "" : "line-clamp-3"}`}>
                       <Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
                       <span>{ai}</span>
                     </p>
                   ) : (
-                    <p className={`text-xs text-muted-foreground ${commentExpanded ? "" : "line-clamp-2"}`}>
+                    <p className={`text-xs text-muted-foreground ${commentExpanded ? "" : "line-clamp-3"}`}>
                       {commentText}
                     </p>
                   )}
@@ -1024,7 +1029,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
           {/* Nav - arrows with the current move in the CENTER (chess.com style) */}
           {!inExplore && (
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-1.5">
               <button
                 onClick={() => go(-1)} disabled={idx <= -1}
                 className="w-10 h-11 flex items-center justify-center rounded-xl border transition active:scale-95 disabled:opacity-30"
@@ -1078,7 +1083,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
           {/* Action row - compact; opens overlays, never shifts the board */}
           {!inExplore && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button onClick={() => setFlipped((f) => !f)} title="Girar tablero" aria-label="Girar tablero"
                 className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
                 style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
@@ -1112,23 +1117,26 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 </button>
               )}
               {/* Resumen + sonido used to sit in a header row above the coach
-                  comment — moved here, bottom-right, now that shrinking
-                  "Mejor" (above) freed the room for them. The spacer pushes
-                  both to the end of the row instead of trailing right after
-                  Practicar. */}
-              <div className="flex-1" />
+                  comment — moved here, bottom-right of the action row, once
+                  shrinking "Mejor" (above) freed the room for them. No
+                  spacer anymore — a `flex-1` gap here read as wasted empty
+                  space on rows without "Practicar", so everything just packs
+                  together in order instead; Resumen/sonido still end up
+                  trailing at the row's end. Resumen dropped its text label —
+                  the bar-chart icon reads fine on its own alongside every
+                  other icon-only button in this row. */}
               {gameAnalyzed && (
-                <button onClick={() => setShowSummary(true)}
-                  className="h-11 flex items-center gap-1 px-2.5 rounded-xl border text-[11px] font-bold shrink-0"
+                <button onClick={() => setShowSummary(true)} title="Resumen" aria-label="Resumen"
+                  className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
                   style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
-                  <BarChart2 size={12} /> Resumen
+                  <BarChart2 size={16} />
                 </button>
               )}
               <button
                 onClick={() => { const on = !toggleMuted(); setSoundOn(on); if (on) playSound("move"); }}
                 aria-label={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
                 title={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
-                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-colors hover:bg-muted/40 shrink-0"
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-colors hover:bg-muted/40"
                 style={{ borderColor: "var(--border)", color: soundOn ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
                 {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
               </button>
