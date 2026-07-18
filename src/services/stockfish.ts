@@ -151,29 +151,37 @@ export async function getBestMove(fen: string, depth = 12): Promise<{ from: stri
 // battles. Stockfish's own Skill Level / UCI_Elo floor (~1320 for UCI_Elo)
 // can't reach the very low ratings this feature needs (a chapter's opening
 // rival is ELO 200) — this is a deliberate, documented approximation, not a
-// scientific ELO simulator: low tiers combine a shallow search with a
-// chance of a genuinely random legal move, which is closer to how a true
-// beginner actually plays (inconsistent, occasional one-move blunders)
-// than any fixed low search depth alone would be.
-function strengthForElo(elo: number): { skillLevel: number; depth: number; blunderChance: number } {
-  // Even "Skill Level 0, depth 1" still has Stockfish's own material/tactical
-  // eval behind it, so it reliably spots hanging pieces and simple tactics —
-  // playing far stronger than a real ELO ~200 beginner (a five-year-old who
-  // just learned how pieces move). Raised the low-tier blunder chances so
-  // random legal moves dominate there instead of engine search.
-  // Second tuning pass after playtesting: 200 still played too strong even at
-  // a 75% blunder chance, and 1700 (chapter 12) felt slightly under-strength.
-  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.9 };
-  if (elo <= 600)  return { skillLevel: 1,  depth: 1,  blunderChance: 0.6 };
-  if (elo <= 900)  return { skillLevel: 2,  depth: 2,  blunderChance: 0.35 };
-  if (elo <= 1200) return { skillLevel: 4,  depth: 4,  blunderChance: 0.15 };
-  if (elo <= 1600) return { skillLevel: 9,  depth: 6,  blunderChance: 0.05 };
-  if (elo <= 2000) return { skillLevel: 17, depth: 11, blunderChance: 0 };
-  return                  { skillLevel: 20, depth: 12, blunderChance: 0 };
+// scientific ELO simulator.
+//
+// Revised after a real report that the ELO 950 rival "lost very easily" —
+// the original model only had two states: the engine's actual best move at
+// a given depth (which, at depth ≥2, reliably spots hanging pieces and
+// short tactics — much stronger than a real ~950 player), OR a fully random
+// legal move (which can hang a whole piece or walk into mate — far more
+// catastrophic than how a real ~950 player actually errs). With blunderChance
+// applied PER PLY, it also compounded: at the old 900-1200 tier (0.15/ply),
+// a ~25-move game had a ~99% chance of at least one blunder and ~4 EXPECTED
+// blunders — so the rival was either playing well or collapsing randomly
+// several times a game, never just "mediocre." Fixed with a third tier,
+// suboptimalChance, that occasionally substitutes a plausible-but-not-best
+// engine alternative (via a MultiPV search) instead of the true best move —
+// modeling "misjudged, not blind" the way real imperfect play actually
+// looks — and blunderChance was brought down enough that it no longer
+// compounds to a near-certain pile of blunders per game. The <=300 tier is
+// untouched — it was already playtested and tuned separately, and is not
+// what was reported as wrong.
+function strengthForElo(elo: number): { skillLevel: number; depth: number; blunderChance: number; suboptimalChance: number } {
+  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.9,  suboptimalChance: 0 };
+  if (elo <= 600)  return { skillLevel: 1,  depth: 1,  blunderChance: 0.35, suboptimalChance: 0.25 };
+  if (elo <= 900)  return { skillLevel: 2,  depth: 2,  blunderChance: 0.15, suboptimalChance: 0.30 };
+  if (elo <= 1200) return { skillLevel: 4,  depth: 4,  blunderChance: 0.06, suboptimalChance: 0.30 };
+  if (elo <= 1600) return { skillLevel: 9,  depth: 6,  blunderChance: 0.05, suboptimalChance: 0.15 };
+  if (elo <= 2000) return { skillLevel: 17, depth: 11, blunderChance: 0,    suboptimalChance: 0.08 };
+  return                  { skillLevel: 20, depth: 12, blunderChance: 0,    suboptimalChance: 0 };
 }
 
 export async function getMoveAtElo(fen: string, elo: number): Promise<{ from: string; to: string; promotion?: string } | null> {
-  const { skillLevel, depth, blunderChance } = strengthForElo(elo);
+  const { skillLevel, depth, blunderChance, suboptimalChance } = strengthForElo(elo);
 
   if (Math.random() < blunderChance) {
     const chess = new Chess(fen);
@@ -184,29 +192,59 @@ export async function getMoveAtElo(fen: string, elo: number): Promise<{ from: st
     }
   }
 
+  // A "reasonable but not best" tier, between the engine's true best move and
+  // an outright random blunder — real sub-2000 play is mostly this, not a
+  // coin flip between perfect and clueless. Sampled from a MultiPV search's
+  // 2nd-4th lines rather than the top one.
+  const wantsSuboptimal = suboptimalChance > 0 && Math.random() < suboptimalChance;
+  const multipv = wantsSuboptimal ? 4 : 1;
+
   const engine = await getEngine();
   return runExclusive(() => new Promise<{ from: string; to: string; promotion?: string } | null>((resolve) => {
     let settled = false;
-    const finish = (uciMove: string | null) => {
+    const altLines = new Map<number, string>(); // multipv index -> first UCI move of its pv
+    let bestUci: string | null = null;
+
+    const finish = () => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       engine.listener = null;
-      // Reset to full strength so a later full-strength call (analysis,
-      // best-move lookup elsewhere) never inherits a weakened engine.
+      // Reset to full strength/single-line so a later full-strength call
+      // (analysis, best-move lookup elsewhere) never inherits a weakened
+      // or multi-line engine.
       engine.sendCommand("setoption name Skill Level value 20");
-      if (!uciMove || uciMove === "(none)") { resolve(null); return; }
+      engine.sendCommand("setoption name MultiPV value 1");
+
+      let chosenUci = bestUci;
+      if (wantsSuboptimal) {
+        const alternatives = [...altLines.entries()].filter(([k]) => k > 1).map(([, v]) => v);
+        if (alternatives.length > 0) {
+          chosenUci = alternatives[Math.floor(Math.random() * alternatives.length)];
+        }
+      }
+
+      if (!chosenUci || chosenUci === "(none)") { resolve(null); return; }
       resolve({
-        from: uciMove.slice(0, 2),
-        to: uciMove.slice(2, 4),
-        promotion: uciMove.length > 4 ? uciMove.slice(4, 5) : undefined,
+        from: chosenUci.slice(0, 2),
+        to: chosenUci.slice(2, 4),
+        promotion: chosenUci.length > 4 ? chosenUci.slice(4, 5) : undefined,
       });
     };
-    const timer = setTimeout(() => finish(null), 4000);
+    // MultiPV searches take a bit longer than single-line — give them more room.
+    const timer = setTimeout(finish, wantsSuboptimal ? 7000 : 4000);
     engine.listener = (line: string) => {
-      if (line.startsWith("bestmove")) finish(line.split(" ")[1] ?? null);
+      if (line.startsWith("info")) {
+        const mpv = line.match(/multipv (\d+)/);
+        const pvm = line.match(/ pv (\S+)/);
+        if (mpv && pvm) altLines.set(parseInt(mpv[1]), pvm[1]);
+      } else if (line.startsWith("bestmove")) {
+        bestUci = line.split(" ")[1] ?? null;
+        finish();
+      }
     };
     engine.sendCommand("setoption name Skill Level value " + skillLevel);
+    engine.sendCommand("setoption name MultiPV value " + multipv);
     engine.sendCommand("position fen " + fen);
     engine.sendCommand("go depth " + depth);
   }));

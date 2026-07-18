@@ -91,7 +91,7 @@ ${RULES}`;
 //           the deep cost on all ~70 positions. Concentrates CPU where it matters.
 const SHALLOW_DEPTH = 8;
 const DEEP_DEPTH = 12;      // deep enough to be reliable, short enough not to freeze the free-tier CPU
-const MAX_DEEP_MOVES = 6;   // cap how many error positions we deepen
+const MAX_DEEP_MOVES = 8;   // cap how many error positions we deepen
 
 function classify(centipawnLoss: number): MoveClassification {
   if (centipawnLoss < 10) return "best";
@@ -163,12 +163,25 @@ export async function analyzeGame(
       return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(centipawnLoss) };
     });
 
-  // ── Pass 2: deepen only the worst positions ────────────────────────────────
+  // ── Pass 2: deepen the worst positions ──────────────────────────────────────
+  // Blunders/mistakes always get priority, but "inaccuracy" moves now compete
+  // for any remaining slots too. Reason: a shallow (depth 8) search in a
+  // genuinely complex/sharp position can misjudge a move as merely a minor
+  // inaccuracy when a deeper look would show it was actually much worse — and
+  // since pass 1 only flagged blunders/mistakes for a deeper look, that error
+  // was never caught. This under-detection systematically deflates ACPL (and
+  // therefore inflates the "Elo estimado") specifically in complex games,
+  // which is exactly the failure mode reported ("en partidas complejas me
+  // calificas con el de 2000").
   const prelim = buildMoves();
+  const severityRank = (cls: string | null) => cls === "blunder" ? 0 : cls === "mistake" ? 1 : 2;
   const errorIdx = prelim
     .map((m, i) => ({ i, loss: m.centipawn_loss ?? 0, cls: m.classification }))
-    .filter((m) => m.cls === "blunder" || m.cls === "mistake")
-    .sort((a, b) => b.loss - a.loss)
+    .filter((m) => m.cls === "blunder" || m.cls === "mistake" || m.cls === "inaccuracy")
+    .sort((a, b) => {
+      const rankDiff = severityRank(a.cls) - severityRank(b.cls);
+      return rankDiff !== 0 ? rankDiff : b.loss - a.loss;
+    })
     .slice(0, MAX_DEEP_MOVES)
     .map((m) => m.i);
 
