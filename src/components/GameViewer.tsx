@@ -8,6 +8,8 @@ import { Piece } from "./pieces";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
+import { estimateEloFromAcpl } from "@/lib/eloEstimate";
+import { isBookMove } from "@/lib/openingBook";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -80,20 +82,62 @@ const CLASS_LABEL: Record<string, string> = {
   best: "La mejor jugada", excellent: "Excelente", good: "Buena jugada",
 };
 
-// Per-move coach line (chess.com style). Rule-based, concise, honest.
-function moveComment(m: MoveInfo | null): { label: string; text: string; color: string } | null {
+// Book/opening-theory moves (see openingBook.ts) get a distinct little-book
+// badge instead of the usual classification glyph, chess.com-style.
+const BOOK_EMOJI = "📖";
+const BOOK_COLOR = "#8a6a3a";
+
+const PIECE_WORD_ES: Record<string, string> = { N: "el caballo", B: "el alfil", R: "la torre", Q: "la dama", K: "el rey" };
+const CAPTURED_WORD_ES: Record<string, string> = { p: "un peón", n: "un caballo", b: "un alfil", r: "una torre", q: "la dama" };
+
+// Reads the concrete facts a SAN string already carries — which piece moved
+// (its letter prefix; none means a pawn), capture/check/mate/castle — with
+// no engine or AI call, so the rule-based comment below can name what
+// actually happened on the board instead of only naming the classification.
+function describeSan(san: string) {
+  const isCastle = san.startsWith("O-O");
+  const isMate = san.includes("#");
+  const isCheck = !isMate && san.includes("+");
+  const pieceLetter = !isCastle && /^[NBRQK]/.test(san) ? san[0] : null;
+  return { isCastle, isMate, isCheck, pieceLetter };
+}
+
+// Natural-language clause for what the move itself did, in first or third
+// person depending on whose move it is — "Capturas la dama con la torre" vs
+// "El rival captura la dama con la torre".
+function describeAction(m: MoveInfo, isMine: boolean): string {
+  const { isCastle, isMate, isCheck, pieceLetter } = describeSan(m.san);
+  if (isCastle) {
+    const kind = m.san.startsWith("O-O-O") ? "un enroque largo" : "un enroque corto";
+    return isMine ? `Haces ${kind}` : `El rival hace ${kind}`;
+  }
+  const pieceWord = pieceLetter ? PIECE_WORD_ES[pieceLetter] : "el peón";
+  const capturedWord = m.captured ? CAPTURED_WORD_ES[m.captured] : null;
+  if (isMate) return isMine ? `Das jaque mate con ${pieceWord}` : `El rival da jaque mate con ${pieceWord}`;
+  if (capturedWord) return isMine ? `Capturas ${capturedWord} con ${pieceWord}` : `El rival captura ${capturedWord} con ${pieceWord}`;
+  if (isCheck) return isMine ? `Das jaque con ${pieceWord}` : `El rival da jaque con ${pieceWord}`;
+  return isMine ? `Mueves ${pieceWord} a ${m.to}` : `El rival mueve ${pieceWord} a ${m.to}`;
+}
+
+// Per-move coach line (chess.com style). Rule-based, concise, honest — and
+// since the underlying classification is computed for both colors already
+// (see blunderDetector.ts), this comments on the opponent's moves too, not
+// only the tracked player's — `isMine` just swaps first/third person and,
+// for the losing side, whether "perdiste"/"el rival perdió" applies.
+function moveComment(m: MoveInfo | null, isMine: boolean): { label: string; text: string; color: string } | null {
   if (!m || !m.classification) return null;
   const label = CLASS_LABEL[m.classification] ?? "";
   const color = CLASS_COLOR[m.classification] ?? "var(--muted-foreground)";
+  const action = describeAction(m, isMine);
   const text = {
-    brilliant: "¡Jugada brillante! Un sacrificio que funciona — de las mejores.",
-    great: "¡Gran jugada! Encontraste el golpe clave.",
-    blunder: "Perdiste ventaja importante. Mira cuál era la mejor jugada.",
-    mistake: "Cediste algo de ventaja innecesariamente.",
-    inaccuracy: "Había una jugada un poco mejor.",
-    good: "Jugada sólida.",
-    excellent: "Muy buena elección.",
-    best: "La mejor jugada de la posición.",
+    brilliant: `${action} — un sacrificio que el motor confirma como de las mejores jugadas posibles.`,
+    great: `${action} y gana material limpio, mejorando mucho la posición.`,
+    best: `${action}: la mejor jugada de la posición.`,
+    excellent: `${action}: una muy buena elección.`,
+    good: `${action}: jugada sólida.`,
+    inaccuracy: `${action}, pero no era la más precisa — había algo mejor.`,
+    mistake: `${action}, cediendo algo de ventaja innecesariamente.`,
+    blunder: `${action}, perdiendo ventaja importante — revisa cuál era la mejor jugada.`,
   }[m.classification] ?? "";
   return { label, text, color };
 }
@@ -401,6 +445,9 @@ interface Props {
 
 export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, avgAccuracy, gameId, autoStory }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
+  // Full SAN history, for book/theory-move detection (openingBook.ts) — a
+  // move only counts as "book" in the context of every move played before it.
+  const sanHistory = useMemo(() => moves.map((m) => m.san), [moves]);
 
   const firstBlunderIdx = jumpToBlunder
     ? moves.findIndex((m) => m.classification === "blunder")
@@ -419,6 +466,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
   const currentMove = idx >= 0 ? moves[idx]       : null;
   const lastMove    = currentMove ? { from: currentMove.from, to: currentMove.to } : null;
+  const currentIsBook = isBookMove(sanHistory, idx);
 
   // Best move arrow state (Story Mode's per-moment arrow; general review now
   // uses the automatic autoBest cache below instead of a manual fetch).
@@ -546,6 +594,36 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     }
     return counts;
   }, [moves, playerColor]);
+
+  // Same breakdown for the OPPONENT — the engine already classifies every
+  // ply regardless of color (see blunderDetector.ts), it just never got
+  // surfaced anywhere: the summary only ever graded "you". Chess.com's own
+  // Game Review always shows both sides side by side; this mirrors that.
+  const opponentColor = playerColor === "w" ? "b" : "w";
+  const theirClassSummary = useMemo(() => {
+    const counts: Record<string, number> = { brilliant: 0, great: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
+    for (const m of moves) {
+      if (m.color !== opponentColor) continue;
+      if (m.classification && counts[m.classification] !== undefined) counts[m.classification]++;
+    }
+    return counts;
+  }, [moves, opponentColor]);
+
+  // Estimated performance Elo for each side, from average centipawn loss —
+  // an approximation (see eloEstimate.ts), same spirit as chess.com's own
+  // "Estimated Elo Performance".
+  const eloEstimates = useMemo(() => {
+    const acplFor = (color: "w" | "b") => {
+      const losses = moves.filter((m) => m.color === color && m.centipawnLoss !== null).map((m) => m.centipawnLoss as number);
+      return losses.length > 0 ? losses.reduce((s, v) => s + v, 0) / losses.length : null;
+    };
+    const myAcpl = acplFor(playerColor);
+    const theirAcpl = acplFor(opponentColor);
+    return {
+      mine: myAcpl !== null ? estimateEloFromAcpl(myAcpl) : null,
+      theirs: theirAcpl !== null ? estimateEloFromAcpl(theirAcpl) : null,
+    };
+  }, [moves, playerColor, opponentColor]);
   const toMine = useCallback(
     (e: number | null) => (e === null ? null : playerColor === "w" ? e : -e),
     [playerColor],
@@ -776,6 +854,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           accuracy={accuracy ?? null}
           avgAccuracy={avgAccuracy ?? null}
           counts={classSummary}
+          theirCounts={theirClassSummary}
+          myEloEstimate={eloEstimates.mine}
+          theirEloEstimate={eloEstimates.theirs}
           momentsCount={0}
           gameResult={gameResult}
         />
@@ -792,27 +873,38 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               (and the board stays put) by default, full text on demand;
               collapses again on the next move via the effect above. */}
           {!inExplore && (() => {
-            const c = moveComment(currentMove);
             const cls = currentMove?.classification ?? null;
             const isMine = currentMove?.color === playerColor;
+            const c = moveComment(currentMove, isMine);
             const curE = toMine(currentMove?.evaluation ?? null);
             const prevE = toMine(idx > 0 ? moves[idx - 1].evaluation : 0);
-            const ai = currentMove?.explanation ?? null;
+            // The AI explanation is always written in "your student" framing
+            // (see blunderDetector.ts's coachComment prompt) — showing it for
+            // the OPPONENT's move would wrongly claim "you" made it. Only use
+            // it for the tracked player's own moves; the opponent's moves
+            // always get the rule-based comment above, which is color-aware.
+            const ai = isMine ? (currentMove?.explanation ?? null) : null;
             let computed = c?.text ?? "";
-            if (currentMove && c && isMine && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
+            if (currentMove && c && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
               const swing = curE - prevE;
               const to = fmtEval(curE);
-              if (cls === "blunder" || cls === "mistake") computed = `Perdiste ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
+              const loseVerb = isMine ? "Perdiste" : "El rival perdió";
+              const keepVerb = isMine ? "Mantienes" : "El rival mantiene";
+              const worseVerb = isMine ? "Sigues" : "El rival sigue";
+              if (cls === "blunder" || cls === "mistake") computed = `${loseVerb} ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
               else if (cls === "inaccuracy") computed = `Imprecisa (${fmtEval(prevE)} a ${to}).`;
-              else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `Mantienes ventaja (${to}).` : curE <= -1 ? `Sigues peor (${to}).` : `Equilibrio (${to}).`;
+              else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `${keepVerb} ventaja (${to}).` : curE <= -1 ? `${worseVerb} peor (${to}).` : `Equilibrio (${to}).`;
             }
-            const color = c?.color ?? "var(--muted-foreground)";
+            const color = currentIsBook ? BOOK_COLOR : (c?.color ?? "var(--muted-foreground)");
             const commentText = ai || computed || (currentMove ? "" : "Usa las flechas para revisar la partida.");
             return (
               <div className={`flex items-start gap-2 ${commentExpanded ? "min-h-28" : "h-28"} shrink-0`}>
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white mt-0.5"
                   style={{ background: color }}>
-                  {cls ? CLASS_EMOJI[cls] : "•"}
+                  {/* Book/theory moves get the same "known move" badge
+                      chess.com shows during opening theory — a little book —
+                      in place of the classification glyph. */}
+                  {currentIsBook ? BOOK_EMOJI : cls ? CLASS_EMOJI[cls] : "•"}
                 </div>
                 <button
                   type="button"
@@ -822,7 +914,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 >
                   <p className="text-sm font-bold truncate" style={{ color }}>
                     {currentMove
-                      ? <><span className="font-mono">{currentMove.san}</span>{c ? ` — ${c.label}` : ""}</>
+                      ? <><span className="font-mono">{currentMove.san}</span>{currentIsBook ? " — Teoría (libro)" : c ? ` — ${c.label}` : ""}</>
                       : "Posición inicial"}
                   </p>
                   {/* Grew again from 3 to 5 visible lines — freed by pushing
@@ -937,9 +1029,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 }
                 interactive={inExplore}
                 onMove={inExplore ? handleExploreMove : undefined}
-                lastMoveBadge={!inExplore && !previewMoveInfo && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
-                  ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
-                  : null}
+                lastMoveBadge={!inExplore && !previewMoveInfo && !storyMomentSlide && currentIsBook
+                  ? { emoji: BOOK_EMOJI, color: BOOK_COLOR }
+                  : !inExplore && !previewMoveInfo && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
+                    ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
+                    : null}
               />
 
             </div>
