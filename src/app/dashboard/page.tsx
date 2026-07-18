@@ -119,7 +119,11 @@ export default async function DashboardPage({ searchParams }: Props) {
                 Dónde se te escapó la partida
               </span>
             </div>
-            <p className="font-deco text-2xl leading-tight uppercase">
+            {/* Plain text, not .font-deco/uppercase — real opening names plus
+                move notation are variable-length data, not a short headline,
+                and the condensed display face wrapped them into an
+                unreadable 3-line block. */}
+            <p className="text-lg font-bold leading-snug">
               {translateOpening(highlights.mostErrors.opening)}
             </p>
             <p className="text-xs text-muted-foreground mt-1.5">

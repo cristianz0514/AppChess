@@ -26,12 +26,14 @@ function Sunburst() {
       viewBox="0 0 200 200"
       aria-hidden
       className="absolute pointer-events-none"
-      style={{ width: 280, height: 280, top: -54, left: "50%", transform: "translateX(-50%)" }}
+      // Kept small and close to the medallion on purpose — a bigger radius
+      // reached far enough down to cross through the headline text below it.
+      style={{ width: 160, height: 160, top: -30, left: "50%", transform: "translateX(-50%)" }}
     >
       {Array.from({ length: rayCount }).map((_, i) => {
         const angle = (i / rayCount) * Math.PI * 2;
         const inner = 44;
-        const outer = i % 2 === 0 ? 98 : 78;
+        const outer = i % 2 === 0 ? 74 : 60;
         // Rounded to 2dp — SSR/CSR can otherwise disagree on the last digit
         // of the raw float (Node vs browser rounding), which trips a
         // hydration mismatch even though the geometry is identical.
@@ -139,7 +141,7 @@ export default function Home() {
           Tu entrenador de ajedrez con IA
         </p>
 
-        <h1 className="deco-display text-5xl leading-[0.92] mb-4 text-balance max-w-sm uppercase" style={{ color: "var(--deco-black)" }}>
+        <h1 className="deco-display text-[26px] leading-[1.15] mb-4 text-balance max-w-[15rem] uppercase" style={{ color: "var(--deco-black)" }}>
           Descubre dónde se te <span style={{ color: "var(--deco-navy)" }}>escapan</span> las partidas
         </h1>
 
@@ -239,8 +241,8 @@ export default function Home() {
         }
         .deco-display {
           font-family: var(--font-deco-display), sans-serif;
-          font-weight: 800;
-          letter-spacing: -0.01em;
+          font-weight: 700;
+          letter-spacing: 0;
         }
         .deco-mono { font-family: var(--font-geist-mono), monospace; }
 
