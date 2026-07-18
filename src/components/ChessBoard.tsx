@@ -367,21 +367,18 @@ export function ChessBoard({
         );
       })()}
 
-      {/* Promotion piece picker. Two earlier attempts anchored this to the
-          destination square (a horizontal row, then a vertical column that
-          "grows into the board") and both still overflowed for someone
-          playing it for real — percentage positioning pinned to one tiny
-          square is fragile across screen sizes/aspect ratios in a way that
-          's hard to fully verify without live devices. A third attempt made
-          it a `position: fixed` overlay, which should center on the
-          viewport — except the board's own root div sets `containerType:
-          "inline-size"` (for the `cqi` units used everywhere above) AND
-          `overflow: hidden`, and CSS containment ALSO establishes the
-          containing block for `fixed` descendants, same as `transform` or
-          `filter` would. So the picker was centering on (and getting
-          clipped by) the board's own small box, not the screen. Portaling
-          it to `document.body` moves it fully outside that subtree — a
-          real `position: fixed` there has nothing left to contain it. */}
+      {/* Promotion piece picker. Three earlier attempts still cut off a
+          choice on a real phone: two anchored it to the destination square
+          (overflows near a board edge/corner), the third made it a
+          `position: fixed` overlay portaled to `document.body` — an
+          improvement, but the 4 choices were still a horizontal row
+          squeezed into a ~320px card, so on a narrow screen (or in
+          landscape, where the viewport is short) one or two choices ended
+          up clipped instead of just cramped. A vertical stack has no
+          horizontal squeeze to begin with — each choice gets the full card
+          width — and `maxHeight` + `overflowY: auto` is a safety net so
+          even a very short landscape viewport scrolls to the rest instead
+          of hiding them. */}
       {promoPending && typeof document !== "undefined" && createPortal((() => {
         const isWhite = promoPending.color === "white";
         const choices: Array<{ p: "q" | "r" | "b" | "n"; label: string }> = [
@@ -398,24 +395,25 @@ export function ChessBoard({
               role="menu"
               aria-label="Elige la pieza de coronación"
               onClick={(e) => e.stopPropagation()}
-              className="rounded-3xl p-4 text-center w-full"
-              style={{ background: "var(--card, #fff)", border: "1px solid var(--border, transparent)", animation: "bvBadgePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both", maxWidth: 320 }}
+              className="rounded-3xl p-4 w-full overflow-y-auto"
+              style={{
+                background: "var(--card, #fff)", border: "1px solid var(--border, transparent)",
+                animation: "bvBadgePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+                maxWidth: 320, maxHeight: "min(80dvh, 480px)",
+              }}
             >
-              <p className="text-sm font-bold mb-3" style={{ color: "var(--foreground, #1a1a1a)" }}>¿En qué corona el peón?</p>
-              {/* Fixed px widths here overflowed a 320px-wide screen (iPhone
-                  SE-class) once the card's own padding was accounted for —
-                  flex-1 buttons share whatever room is actually left instead. */}
-              <div className="flex gap-1.5">
+              <p className="text-sm font-bold mb-3 text-center" style={{ color: "var(--foreground, #1a1a1a)" }}>¿En qué corona el peón?</p>
+              <div className="flex flex-col gap-2">
                 {choices.map(({ p, label }) => (
                   <button
                     key={p}
                     onClick={() => choosePromotion(p)}
                     aria-label={label}
-                    className="flex-1 min-w-0 flex flex-col items-center gap-1 rounded-2xl transition active:scale-95"
-                    style={{ padding: "8px 2px", border: "1px solid var(--border, #e5e5e5)", background: "var(--background, #f7f7f7)" }}
+                    className="w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 transition active:scale-[0.98]"
+                    style={{ border: "1px solid var(--border, #e5e5e5)", background: "var(--background, #f7f7f7)" }}
                   >
-                    <span style={{ width: 32, height: 32 }}><Piece type={p} white={isWhite} /></span>
-                    <span className="text-[9px] font-semibold" style={{ color: "var(--muted-foreground, #666)" }}>{label}</span>
+                    <span style={{ width: 32, height: 32 }} className="shrink-0"><Piece type={p} white={isWhite} /></span>
+                    <span className="text-sm font-semibold" style={{ color: "var(--foreground, #1a1a1a)" }}>{label}</span>
                   </button>
                 ))}
               </div>
