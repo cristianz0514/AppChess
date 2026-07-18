@@ -398,7 +398,7 @@ export function ChessBoard({
               className="rounded-3xl p-4 w-full overflow-y-auto"
               style={{
                 background: "var(--card, #fff)", border: "1px solid var(--border, transparent)",
-                animation: "bvBadgePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+                animation: "bvPanelPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both",
                 maxWidth: 320, maxHeight: "min(80dvh, 480px)",
               }}
             >

@@ -151,11 +151,25 @@
   border-radius: 6px;
 }
 
-/* Classification badge pop-in on the board (chess.com-style delight). */
+/* Classification badge pop-in on the board (chess.com-style delight). This
+   one bakes in translate(-50%,-50%) because the badge is absolutely
+   positioned at an x/y point and needs to center itself ON that point — do
+   NOT reuse this for a flex-centered panel (see bvPanelPop below), the extra
+   translate throws it off by half its own width/height. */
 @keyframes bvBadgePop {
   0%   { transform: translate(-50%, -50%) scale(0.9);  opacity: 0; }
   60%  { transform: translate(-50%, -50%) scale(1.18); opacity: 1; }
   100% { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+}
+
+/* Same bounce as bvBadgePop, without the centering translate — for panels
+   already centered by their flex parent (e.g. the promotion picker), which
+   bvBadgePop's baked-in translate(-50%,-50%) would shove off-center by half
+   its own size. */
+@keyframes bvPanelPop {
+  0%   { transform: scale(0.9);  opacity: 0; }
+  60%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
 }
 
 /* Gentle entrance for content blocks (board, panels) on mount. */
