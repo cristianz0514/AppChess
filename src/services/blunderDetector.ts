@@ -200,10 +200,15 @@ export async function analyzeGame(
     if (Math.abs(evalAfter) >= 9000) continue;    // ignore forced-mate lines
 
     const movedVal = VAL[h.piece] ?? 0;
+    const capturedVal = h.captured != null ? (VAL[h.captured] ?? 0) : 0;
     // Sacrifice: a cheaper enemy piece can capture the piece we just moved,
-    // yet the engine still rates this the best move → brilliant.
+    // yet the engine still rates this the best move → brilliant. Requires
+    // `capturedVal < movedVal` — i.e. this move is a NET material loss (or
+    // gives away a piece for nothing) — otherwise a plain even trade (e.g.
+    // bishop takes knight, pawn recaptures: capturedVal 3 == movedVal 3)
+    // was wrongly flagged brilliant just because the recapturer was cheap.
     let brilliant = false;
-    if (movedVal >= 3 && evalBefore <= 4.5) {
+    if (movedVal >= 3 && capturedVal < movedVal && evalBefore <= 4.5) {
       try {
         const c = new Chess(fens[i]);
         const caps = c.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured);

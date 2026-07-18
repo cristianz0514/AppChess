@@ -4,19 +4,29 @@
 // piecewise-linear curve over commonly-cited ACPL/rating anchor points, so
 // it should be labeled as an estimate wherever it's shown, never as a real
 // rating.
+//
+// The top end used to start at ACPL 5 → 2700, which our engine pass can't
+// actually back up: most positions are only evaluated at a shallow depth
+// (8 ply — see SHALLOW_DEPTH in blunderDetector.ts), with just a handful of
+// the worst positions re-checked at depth 12. That resolution can't
+// reliably tell a 2700-strength move from a 2200-strength one in a quiet
+// position, so a very low ACPL (common on short games or ones that stay in
+// known opening theory the whole time) was reading out an implausibly high
+// "super alta" Elo the caller couldn't actually stand behind. Compressed
+// the curve so the ceiling matches what a depth 8-12 engine pass can
+// credibly distinguish, and callers should additionally exclude book moves
+// and require a minimum sample size before trusting this (see GameViewer.tsx).
 const ANCHORS: [acpl: number, elo: number][] = [
-  [5, 2700],
-  [10, 2500],
-  [20, 2300],
-  [30, 2100],
-  [45, 1900],
-  [65, 1700],
-  [90, 1500],
-  [120, 1300],
-  [160, 1100],
-  [220, 900],
-  [320, 700],
-  [500, 500],
+  [15, 2400],
+  [25, 2200],
+  [40, 2000],
+  [60, 1800],
+  [85, 1600],
+  [120, 1400],
+  [160, 1200],
+  [220, 1000],
+  [300, 800],
+  [450, 600],
 ];
 
 export function estimateEloFromAcpl(acpl: number): number {

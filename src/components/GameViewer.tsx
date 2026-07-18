@@ -611,11 +611,22 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   // Estimated performance Elo for each side, from average centipawn loss —
   // an approximation (see eloEstimate.ts), same spirit as chess.com's own
-  // "Estimated Elo Performance".
+  // "Estimated Elo Performance". Two things kept reading out an implausibly
+  // high number ("super alta"): known opening-theory moves score near-zero
+  // loss regardless of the player's own strength (they're reciting a known
+  // line, not calculating), and a handful of such moves is enough to skew a
+  // short game's whole average — so book moves (openingBook.ts) are
+  // excluded here, and a minimum sample of real, post-book moves is
+  // required before showing a number at all.
+  const MIN_MOVES_FOR_ELO_ESTIMATE = 6;
   const eloEstimates = useMemo(() => {
     const acplFor = (color: "w" | "b") => {
-      const losses = moves.filter((m) => m.color === color && m.centipawnLoss !== null).map((m) => m.centipawnLoss as number);
-      return losses.length > 0 ? losses.reduce((s, v) => s + v, 0) / losses.length : null;
+      const losses = moves
+        .map((m, i) => ({ m, i }))
+        .filter(({ m, i }) => m.color === color && m.centipawnLoss !== null && !isBookMove(sanHistory, i))
+        .map(({ m }) => m.centipawnLoss as number);
+      if (losses.length < MIN_MOVES_FOR_ELO_ESTIMATE) return null;
+      return losses.reduce((s, v) => s + v, 0) / losses.length;
     };
     const myAcpl = acplFor(playerColor);
     const theirAcpl = acplFor(opponentColor);
@@ -623,7 +634,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       mine: myAcpl !== null ? estimateEloFromAcpl(myAcpl) : null,
       theirs: theirAcpl !== null ? estimateEloFromAcpl(theirAcpl) : null,
     };
-  }, [moves, playerColor, opponentColor]);
+  }, [moves, sanHistory, playerColor, opponentColor]);
   const toMine = useCallback(
     (e: number | null) => (e === null ? null : playerColor === "w" ? e : -e),
     [playerColor],
