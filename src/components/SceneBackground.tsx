@@ -3,11 +3,14 @@
 // would've clashed with our own dialogue UI) so the story feels like it's
 // happening somewhere, not floating on a blank card.
 export type SceneVariant =
-  | "living-room" | "torneo-infantil" | "olimpiada" | "premiacion" | "sala-elite" | "exhibicion-mundial";
+  | "living-room" | "club" | "torneo-infantil" | "torneo-internacional"
+  | "olimpiada" | "premiacion" | "sala-elite" | "exhibicion-mundial";
 
 const IMAGE_SRC: Record<SceneVariant, string> = {
   "living-room": "/campeones/sala.jpg",
+  "club": "/campeones/club.jpg",
   "torneo-infantil": "/campeones/torneo-infantil.jpg",
+  "torneo-internacional": "/campeones/torneo-internacional.jpg",
   "olimpiada": "/campeones/olimpiada.jpg",
   "premiacion": "/campeones/premiacion.jpg",
   "sala-elite": "/campeones/sala-elite.jpg",
@@ -24,8 +27,10 @@ export function SceneBackground({ variant }: { variant: SceneVariant }) {
         className="w-full h-full object-cover"
       />
       {/* Darkening scrim so the dialogue/UI on top stays legible over any part
-          of the scene, not just where it happens to be dark already. */}
-      <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.55))" }} />
+          of the scene, not just where it happens to be dark already. Measured
+          a real 2.45:1 contrast failure (needs 4.5:1) for the white header
+          text over a bright scene at the old .25-.55 range — raised it. */}
+      <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,.5), rgba(0,0,0,.75))" }} />
     </div>
   );
 }

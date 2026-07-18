@@ -6,8 +6,10 @@ import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
 import { Piece } from "./pieces";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
+import { estimateEloFromAcpl } from "@/lib/eloEstimate";
+import { isBookMove } from "@/lib/openingBook";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -52,41 +54,6 @@ type StorySlide =
   | { type: "moment"; cm: CriticalMoment; boardIdx: number }
   | { type: "outro"; recovered: boolean; finalEval: number | null; lastMoveNumber: number; boardIdx: number };
 
-// ── Practice mode evaluator ───────────────────────────────────────────────────
-
-interface PracticeResult {
-  verdict: "excellent" | "good" | "neutral" | "illegal";
-  message: string;
-}
-
-function evaluatePracticeMove(fenBefore: string, from: string, to: string, promotion: "q" | "r" | "b" | "n" = "q"): PracticeResult {
-  const game = new Chess(fenBefore);
-  let move;
-  try {
-    move = game.move({ from, to, promotion });
-  } catch {
-    return { verdict: "illegal", message: "Movimiento ilegal en esta posición." };
-  }
-  if (!move) return { verdict: "illegal", message: "Movimiento ilegal en esta posición." };
-
-  if (game.isCheckmate()) return { verdict: "excellent", message: "¡Jaque mate! La jugada perfecta." };
-  if (game.isCheck() && move.captured) return { verdict: "excellent", message: "¡Capturaste material y das jaque! Excelente combinación." };
-  if (move.captured) {
-    const vals: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
-    const gain = vals[move.captured] ?? 1;
-    return gain >= 3
-      ? { verdict: "excellent", message: `¡Excelente! Ganaste material (${move.captured === "n" || move.captured === "b" ? "pieza menor" : move.captured === "r" ? "torre" : "dama"}).` }
-      : { verdict: "good", message: "Capturaste un peón. Puede ser una mejora." };
-  }
-  if (game.isCheck()) return { verdict: "good", message: "Das jaque — presionas al rival. Buena idea." };
-
-  // Check if it's a developing move (knight or bishop to active square)
-  const developingPieces = ["n", "b"];
-  if (developingPieces.includes(move.piece)) return { verdict: "good", message: "Desarrollas una pieza — generalmente mejor que el error cometido." };
-
-  return { verdict: "neutral", message: "Jugada legal. No pierde material, pero tampoco es la óptima. Intenta buscar capturas o amenazas." };
-}
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CLASS_COLOR: Record<string, string> = {
@@ -115,20 +82,62 @@ const CLASS_LABEL: Record<string, string> = {
   best: "La mejor jugada", excellent: "Excelente", good: "Buena jugada",
 };
 
-// Per-move coach line (chess.com style). Rule-based, concise, honest.
-function moveComment(m: MoveInfo | null): { label: string; text: string; color: string } | null {
+// Book/opening-theory moves (see openingBook.ts) get a distinct little-book
+// badge instead of the usual classification glyph, chess.com-style.
+const BOOK_EMOJI = "📖";
+const BOOK_COLOR = "#8a6a3a";
+
+const PIECE_WORD_ES: Record<string, string> = { N: "el caballo", B: "el alfil", R: "la torre", Q: "la dama", K: "el rey" };
+const CAPTURED_WORD_ES: Record<string, string> = { p: "un peón", n: "un caballo", b: "un alfil", r: "una torre", q: "la dama" };
+
+// Reads the concrete facts a SAN string already carries — which piece moved
+// (its letter prefix; none means a pawn), capture/check/mate/castle — with
+// no engine or AI call, so the rule-based comment below can name what
+// actually happened on the board instead of only naming the classification.
+function describeSan(san: string) {
+  const isCastle = san.startsWith("O-O");
+  const isMate = san.includes("#");
+  const isCheck = !isMate && san.includes("+");
+  const pieceLetter = !isCastle && /^[NBRQK]/.test(san) ? san[0] : null;
+  return { isCastle, isMate, isCheck, pieceLetter };
+}
+
+// Natural-language clause for what the move itself did, in first or third
+// person depending on whose move it is — "Capturas la dama con la torre" vs
+// "El rival captura la dama con la torre".
+function describeAction(m: MoveInfo, isMine: boolean): string {
+  const { isCastle, isMate, isCheck, pieceLetter } = describeSan(m.san);
+  if (isCastle) {
+    const kind = m.san.startsWith("O-O-O") ? "un enroque largo" : "un enroque corto";
+    return isMine ? `Haces ${kind}` : `El rival hace ${kind}`;
+  }
+  const pieceWord = pieceLetter ? PIECE_WORD_ES[pieceLetter] : "el peón";
+  const capturedWord = m.captured ? CAPTURED_WORD_ES[m.captured] : null;
+  if (isMate) return isMine ? `Das jaque mate con ${pieceWord}` : `El rival da jaque mate con ${pieceWord}`;
+  if (capturedWord) return isMine ? `Capturas ${capturedWord} con ${pieceWord}` : `El rival captura ${capturedWord} con ${pieceWord}`;
+  if (isCheck) return isMine ? `Das jaque con ${pieceWord}` : `El rival da jaque con ${pieceWord}`;
+  return isMine ? `Mueves ${pieceWord} a ${m.to}` : `El rival mueve ${pieceWord} a ${m.to}`;
+}
+
+// Per-move coach line (chess.com style). Rule-based, concise, honest — and
+// since the underlying classification is computed for both colors already
+// (see blunderDetector.ts), this comments on the opponent's moves too, not
+// only the tracked player's — `isMine` just swaps first/third person and,
+// for the losing side, whether "perdiste"/"el rival perdió" applies.
+function moveComment(m: MoveInfo | null, isMine: boolean): { label: string; text: string; color: string } | null {
   if (!m || !m.classification) return null;
   const label = CLASS_LABEL[m.classification] ?? "";
   const color = CLASS_COLOR[m.classification] ?? "var(--muted-foreground)";
+  const action = describeAction(m, isMine);
   const text = {
-    brilliant: "¡Jugada brillante! Un sacrificio que funciona — de las mejores.",
-    great: "¡Gran jugada! Encontraste el golpe clave.",
-    blunder: "Perdiste ventaja importante. Mira cuál era la mejor jugada.",
-    mistake: "Cediste algo de ventaja innecesariamente.",
-    inaccuracy: "Había una jugada un poco mejor.",
-    good: "Jugada sólida.",
-    excellent: "Muy buena elección.",
-    best: "La mejor jugada de la posición.",
+    brilliant: `${action} — un sacrificio que el motor confirma como de las mejores jugadas posibles.`,
+    great: `${action} y gana material limpio, mejorando mucho la posición.`,
+    best: `${action}: la mejor jugada de la posición.`,
+    excellent: `${action}: una muy buena elección.`,
+    good: `${action}: jugada sólida.`,
+    inaccuracy: `${action}, pero no era la más precisa — había algo mejor.`,
+    mistake: `${action}, cediendo algo de ventaja innecesariamente.`,
+    blunder: `${action}, perdiendo ventaja importante — revisa cuál era la mejor jugada.`,
   }[m.classification] ?? "";
   return { label, text, color };
 }
@@ -320,16 +329,17 @@ function CapturedTray({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
     if (!m.captured) continue;
     (m.color === "w" ? byWhite : byBlack).push(m.captured);
   }
-  if (byWhite.length === 0 && byBlack.length === 0) return null;
-
   const byValueDesc = (a: string, b: string) => (PIECE_VALUE[b] ?? 0) - (PIECE_VALUE[a] ?? 0);
   byWhite.sort(byValueDesc);
   byBlack.sort(byValueDesc);
   const diff = byWhite.reduce((s, p) => s + (PIECE_VALUE[p] ?? 0), 0)
     - byBlack.reduce((s, p) => s + (PIECE_VALUE[p] ?? 0), 0);
 
+  // Fixed height (matches the 13px piece icons) even with zero captures —
+  // this used to return null with nothing captured yet, which meant the
+  // board sat higher until the first capture in the game shifted it down.
   return (
-    <div className="flex items-center justify-between px-0.5">
+    <div className="flex items-center justify-between px-0.5" style={{ minHeight: 13 }}>
       <div className="flex items-center">
         {byWhite.map((p, i) => (
           <span key={i} style={{ width: 13, height: 13, marginLeft: i > 0 ? -4 : 0 }}>
@@ -435,62 +445,28 @@ interface Props {
 
 export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, avgAccuracy, gameId, autoStory }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
-  const [tab, setTab] = useState<Tab>("analizar");
-
-  // Practice mode state
-  const [practiceBlunderIdx, setPracticeBlunderIdx] = useState<number | null>(null);
-  const [practiceResult, setPracticeResult] = useState<PracticeResult | null>(null);
-  const [practiceMovePlayed, setPracticeMovePlayed] = useState<{ from: string; to: string; promotion?: "q" | "r" | "b" | "n" } | null>(null);
-  const inPractice = practiceBlunderIdx !== null;
+  // Full SAN history, for book/theory-move detection (openingBook.ts) — a
+  // move only counts as "book" in the context of every move played before it.
+  const sanHistory = useMemo(() => moves.map((m) => m.san), [moves]);
 
   const firstBlunderIdx = jumpToBlunder
     ? moves.findIndex((m) => m.classification === "blunder")
     : -1;
 
   const [idx, setIdx] = useState(firstBlunderIdx >= 0 ? firstBlunderIdx : moves.length - 1);
+  // The coach line was clamped to 2 lines forever so the board never shifts
+  // while scrubbing through moves — but a real 2-3 sentence AI comment
+  // routinely runs longer than that and got cut off mid-sentence. Tap to
+  // expand it instead: compact (and stable) by default, full text on demand.
+  // Collapses again on the next move so it doesn't stay expanded forever.
+  const [commentExpanded, setCommentExpanded] = useState(false);
+  useEffect(() => { setCommentExpanded(false); }, [idx]);
 
   const startFen    = new Chess().fen();
   const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
   const currentMove = idx >= 0 ? moves[idx]       : null;
   const lastMove    = currentMove ? { from: currentMove.from, to: currentMove.to } : null;
-
-  // Practice mode: show position BEFORE the blunder
-  const practiceMove = practiceBlunderIdx !== null ? moves[practiceBlunderIdx] : null;
-  const practiceFen  = practiceBlunderIdx !== null
-    ? (practiceBlunderIdx > 0 ? moves[practiceBlunderIdx - 1].fen : new Chess().fen())
-    : null;
-
-  // Arrow showing the blunder that was played
-  const practiceArrows: Arrow[] = practiceMove
-    ? [{ from: practiceMove.from, to: practiceMove.to, color: "red" }]
-    : [];
-
-  // Arrow showing user's practice move
-  const userArrows: Arrow[] = practiceMovePlayed
-    ? [{ from: practiceMovePlayed.from, to: practiceMovePlayed.to, color: "green" }]
-    : [];
-
-  function startPractice(blunderIdx: number) {
-    setPracticeBlunderIdx(blunderIdx);
-    setPracticeResult(null);
-    setPracticeMovePlayed(null);
-    setTab("consejos");
-  }
-
-  function exitPractice() {
-    setPracticeBlunderIdx(null);
-    setPracticeResult(null);
-    setPracticeMovePlayed(null);
-  }
-
-  function handlePracticeMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
-    if (!practiceFen || practiceResult) return;
-    const result = evaluatePracticeMove(practiceFen, from, to, promotion);
-    setPracticeResult(result);
-    if (result.verdict !== "illegal") {
-      setPracticeMovePlayed({ from, to, promotion });
-    }
-  }
+  const currentIsBook = isBookMove(sanHistory, idx);
 
   // Best move arrow state (Story Mode's per-moment arrow; general review now
   // uses the automatic autoBest cache below instead of a manual fetch).
@@ -618,6 +594,47 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     }
     return counts;
   }, [moves, playerColor]);
+
+  // Same breakdown for the OPPONENT — the engine already classifies every
+  // ply regardless of color (see blunderDetector.ts), it just never got
+  // surfaced anywhere: the summary only ever graded "you". Chess.com's own
+  // Game Review always shows both sides side by side; this mirrors that.
+  const opponentColor = playerColor === "w" ? "b" : "w";
+  const theirClassSummary = useMemo(() => {
+    const counts: Record<string, number> = { brilliant: 0, great: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
+    for (const m of moves) {
+      if (m.color !== opponentColor) continue;
+      if (m.classification && counts[m.classification] !== undefined) counts[m.classification]++;
+    }
+    return counts;
+  }, [moves, opponentColor]);
+
+  // Estimated performance Elo for each side, from average centipawn loss —
+  // an approximation (see eloEstimate.ts), same spirit as chess.com's own
+  // "Estimated Elo Performance". Two things kept reading out an implausibly
+  // high number ("super alta"): known opening-theory moves score near-zero
+  // loss regardless of the player's own strength (they're reciting a known
+  // line, not calculating), and a handful of such moves is enough to skew a
+  // short game's whole average — so book moves (openingBook.ts) are
+  // excluded here, and a minimum sample of real, post-book moves is
+  // required before showing a number at all.
+  const MIN_MOVES_FOR_ELO_ESTIMATE = 6;
+  const eloEstimates = useMemo(() => {
+    const acplFor = (color: "w" | "b") => {
+      const losses = moves
+        .map((m, i) => ({ m, i }))
+        .filter(({ m, i }) => m.color === color && m.centipawnLoss !== null && !isBookMove(sanHistory, i))
+        .map(({ m }) => m.centipawnLoss as number);
+      if (losses.length < MIN_MOVES_FOR_ELO_ESTIMATE) return null;
+      return losses.reduce((s, v) => s + v, 0) / losses.length;
+    };
+    const myAcpl = acplFor(playerColor);
+    const theirAcpl = acplFor(opponentColor);
+    return {
+      mine: myAcpl !== null ? estimateEloFromAcpl(myAcpl) : null,
+      theirs: theirAcpl !== null ? estimateEloFromAcpl(theirAcpl) : null,
+    };
+  }, [moves, sanHistory, playerColor, opponentColor]);
   const toMine = useCallback(
     (e: number | null) => (e === null ? null : playerColor === "w" ? e : -e),
     [playerColor],
@@ -742,7 +759,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // asked. Cached per index so scrubbing back and forth doesn't refetch.
   const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string } | null>>({});
   useEffect(() => {
-    if (inExplore || inStory || inPractice) return;
+    if (inExplore || inStory) return;
     if (autoBest[idx] !== undefined) return;
     let cancelled = false;
     fetch(`/api/bestmove?fen=${encodeURIComponent(currentFen)}`)
@@ -760,14 +777,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       })
       .catch(() => { if (!cancelled) setAutoBest((prev) => ({ ...prev, [idx]: null })); });
     return () => { cancelled = true; };
-  }, [idx, inExplore, inStory, inPractice, currentFen, autoBest]);
+  }, [idx, inExplore, inStory, currentFen, autoBest]);
 
   // Tapping the best-move readout plays it out on the board (Lichess-style
   // preview) instead of only pointing an arrow at it — the position itself
   // updates so you can see the resulting structure, then the X restores the
   // real position.
   const [previewBest, setPreviewBest] = useState(false);
-  const previewMoveInfo = !inExplore && !inStory && !inPractice && previewBest ? autoBest[idx] : null;
+  const previewMoveInfo = !inExplore && !inStory && previewBest ? autoBest[idx] : null;
   const previewFen = useMemo(() => {
     if (!previewMoveInfo) return null;
     try {
@@ -838,7 +855,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   ];
 
   return (
-    <div className="flex flex-col gap-3 pt-2 pb-2">
+    <div className="flex flex-col gap-1.5 pt-1 pb-1">
 
       {gameAnalyzed && (
         <ReviewSummaryModal
@@ -848,97 +865,92 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           accuracy={accuracy ?? null}
           avgAccuracy={avgAccuracy ?? null}
           counts={classSummary}
+          theirCounts={theirClassSummary}
+          myEloEstimate={eloEstimates.mine}
+          theirEloEstimate={eloEstimates.theirs}
           momentsCount={0}
           gameResult={gameResult}
         />
       )}
 
 
-      {/* ── Header info ──────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-muted-foreground truncate max-w-[200px]">{opening}</p>
-          {gameResult && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full mt-0.5 inline-block"
-              style={{
-                background: gameResult === "win" ? "oklch(0.77 0.17 177 / 0.2)" : gameResult === "loss" ? "oklch(0.63 0.23 25 / 0.2)" : "oklch(0.70 0.18 50 / 0.2)",
-                color: gameResult === "win" ? "var(--bv-green)" : gameResult === "loss" ? "var(--bv-red)" : "var(--bv-orange)",
-              }}>
-              {gameResult === "win" ? "Victoria" : gameResult === "loss" ? "Derrota" : "Tablas"}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {gameAnalyzed && (
-            <button onClick={() => setShowSummary(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold"
-              style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
-              <BarChart2 size={12} /> Resumen
-            </button>
-          )}
-          <button
-            onClick={() => { const on = !toggleMuted(); setSoundOn(on); if (on) playSound("move"); }}
-            aria-label={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
-            title={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
-            className="w-8 h-8 flex items-center justify-center rounded-full border transition-colors hover:bg-muted/40"
-            style={{ borderColor: "var(--border)", color: soundOn ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
-            {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
-          </button>
-        </div>
-      </div>
-
       {/* ── Tab: Analizar ────────────────────────────────────── */}
-      {!inPractice && (
-        <>
 
-
-          {/* Coach line — precomputed AI comment inline; fixed height so the board never shifts */}
+          {/* Coach line — precomputed AI comment inline. Was clamped to 2 lines
+              with a fixed height so the board never jumps while scrubbing
+              through moves, but a real 2-3 sentence coach comment routinely
+              ran to 40-60 words — well past what 2 lines at text-xs can hold
+              — and got cut off mid-sentence. Tap it to expand: stays compact
+              (and the board stays put) by default, full text on demand;
+              collapses again on the next move via the effect above. */}
           {!inExplore && (() => {
-            const c = moveComment(currentMove);
             const cls = currentMove?.classification ?? null;
             const isMine = currentMove?.color === playerColor;
+            const c = moveComment(currentMove, isMine);
             const curE = toMine(currentMove?.evaluation ?? null);
             const prevE = toMine(idx > 0 ? moves[idx - 1].evaluation : 0);
-            const ai = currentMove?.explanation ?? null;
+            // The AI explanation is always written in "your student" framing
+            // (see blunderDetector.ts's coachComment prompt) — showing it for
+            // the OPPONENT's move would wrongly claim "you" made it. Only use
+            // it for the tracked player's own moves; the opponent's moves
+            // always get the rule-based comment above, which is color-aware.
+            const ai = isMine ? (currentMove?.explanation ?? null) : null;
             let computed = c?.text ?? "";
-            if (currentMove && c && isMine && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
+            if (currentMove && c && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
               const swing = curE - prevE;
               const to = fmtEval(curE);
-              if (cls === "blunder" || cls === "mistake") computed = `Perdiste ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
+              const loseVerb = isMine ? "Perdiste" : "El rival perdió";
+              const keepVerb = isMine ? "Mantienes" : "El rival mantiene";
+              const worseVerb = isMine ? "Sigues" : "El rival sigue";
+              if (cls === "blunder" || cls === "mistake") computed = `${loseVerb} ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
               else if (cls === "inaccuracy") computed = `Imprecisa (${fmtEval(prevE)} a ${to}).`;
-              else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `Mantienes ventaja (${to}).` : curE <= -1 ? `Sigues peor (${to}).` : `Equilibrio (${to}).`;
+              else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `${keepVerb} ventaja (${to}).` : curE <= -1 ? `${worseVerb} peor (${to}).` : `Equilibrio (${to}).`;
             }
-            const color = c?.color ?? "var(--muted-foreground)";
+            const color = currentIsBook ? BOOK_COLOR : (c?.color ?? "var(--muted-foreground)");
+            const commentText = ai || computed || (currentMove ? "" : "Usa las flechas para revisar la partida.");
             return (
-              <div className="flex items-start gap-2 h-16 shrink-0">
+              <div className={`flex items-start gap-2 ${commentExpanded ? "min-h-28" : "h-28"} shrink-0`}>
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white mt-0.5"
                   style={{ background: color }}>
-                  {cls ? CLASS_EMOJI[cls] : "•"}
+                  {/* Book/theory moves get the same "known move" badge
+                      chess.com shows during opening theory — a little book —
+                      in place of the classification glyph. */}
+                  {currentIsBook ? BOOK_EMOJI : cls ? CLASS_EMOJI[cls] : "•"}
                 </div>
-                <div className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => commentText && setCommentExpanded((v) => !v)}
+                  className="flex-1 min-w-0 text-left"
+                  aria-expanded={commentExpanded}
+                >
                   <p className="text-sm font-bold truncate" style={{ color }}>
                     {currentMove
-                      ? <><span className="font-mono">{currentMove.san}</span>{c ? ` — ${c.label}` : ""}</>
+                      ? <><span className="font-mono">{currentMove.san}</span>{currentIsBook ? " — Teoría (libro)" : c ? ` — ${c.label}` : ""}</>
                       : "Posición inicial"}
                   </p>
+                  {/* Grew again from 3 to 5 visible lines — freed by pushing
+                      the button rows below further down (tighter gaps
+                      throughout this view) — since the AI's real 2-3
+                      sentence comments are the thing actually needing space.
+                      Still taps to expand for anything longer than that. */}
                   {ai ? (
-                    <p className="text-xs leading-snug line-clamp-2 flex items-start gap-1 text-foreground">
+                    <p className={`text-xs leading-snug flex items-start gap-1 text-foreground ${commentExpanded ? "" : "line-clamp-5"}`}>
                       <Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
                       <span>{ai}</span>
                     </p>
                   ) : (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {computed || (currentMove ? "" : "Usa las flechas para revisar la partida.")}
+                    <p className={`text-xs text-muted-foreground ${commentExpanded ? "" : "line-clamp-5"}`}>
+                      {commentText}
                     </p>
                   )}
-                </div>
+                </button>
               </div>
             );
           })()}
 
           {/* Board + eval bar (bar on top, board edge-to-edge) */}
-          <div className="space-y-2 -mx-4" style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-            <div className="px-4 space-y-1.5">
+          <div className="space-y-1.5 -mx-4" style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+            <div className="px-4 space-y-1">
               <EvalBar moves={moves} idx={inExplore ? -1 : idx} />
               {!inExplore && <CapturedTray moves={moves} idx={idx} />}
             </div>
@@ -962,9 +974,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   </div>
                 </div>
               )}
-              {/* Explore mode banner */}
+              {/* Explore mode banner — was `absolute top-0`, floating on top of
+                  the board instead of sitting above it, so it covered the top
+                  rank. Normal flow now: it pushes the board down instead of
+                  overlaying it. */}
               {inExplore && (
-                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
+                <div className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
                   style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
                   <span className="flex items-center gap-1"><Search size={13} /> Exploración libre</span>
                   <div className="flex items-center gap-1">
@@ -988,9 +1003,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 </div>
               )}
               {/* Best-move preview banner — shown while the board displays the
-                  hypothetical position after playing the suggested move. */}
+                  hypothetical position after playing the suggested move.
+                  Same fix as the explore banner: normal flow instead of an
+                  absolute overlay sitting on top of the board. */}
               {!inExplore && previewFen && previewMoveInfo && (
-                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 rounded-t-xl text-xs font-bold"
+                <div className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
                   style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
                   <span className="flex items-center gap-1"><Target size={13} /> Mejor: {previewMoveInfo.san}</span>
                   <button onClick={() => setPreviewBest(false)} title="Volver a la posición real" aria-label="Cerrar vista previa"
@@ -1023,9 +1040,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 }
                 interactive={inExplore}
                 onMove={inExplore ? handleExploreMove : undefined}
-                lastMoveBadge={!inExplore && !previewMoveInfo && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
-                  ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
-                  : null}
+                lastMoveBadge={!inExplore && !previewMoveInfo && !storyMomentSlide && currentIsBook
+                  ? { emoji: BOOK_EMOJI, color: BOOK_COLOR }
+                  : !inExplore && !previewMoveInfo && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
+                    ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
+                    : null}
               />
 
             </div>
@@ -1033,7 +1052,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
           {/* Nav - arrows with the current move in the CENTER (chess.com style) */}
           {!inExplore && (
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-1.5">
               <button
                 onClick={() => go(-1)} disabled={idx <= -1}
                 className="w-10 h-11 flex items-center justify-center rounded-xl border transition active:scale-95 disabled:opacity-30"
@@ -1087,7 +1106,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
           {/* Action row - compact; opens overlays, never shifts the board */}
           {!inExplore && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button onClick={() => setFlipped((f) => !f)} title="Girar tablero" aria-label="Girar tablero"
                 className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
                 style={{ borderColor: "var(--border)", background: "var(--card)", color: "var(--muted-foreground)" }}>
@@ -1101,137 +1120,41 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               {/* Best move draws automatically as a blue arrow. Tapping this
                   readout also plays it out on the board (Lichess-style) so
                   you can see the resulting position; the banner's X restores
-                  the real one. */}
+                  the real one. Fixed width (was content-sized px-3, which
+                  grew/shrank as the label went "…" → "—" → a real SAN move,
+                  shoving Resumen/sonido sideways every time) so the rest of
+                  the row stays put regardless of label length. */}
               <button
                 onClick={() => autoBest[idx] && setPreviewBest((p) => !p)}
                 disabled={!autoBest[idx]}
-                className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition active:scale-[0.98] disabled:opacity-60"
+                title={autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : undefined}
+                className="w-[4.75rem] h-11 shrink-0 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition active:scale-[0.98] disabled:opacity-60"
                 style={{ background: previewBest ? "var(--bv-purple)" : "oklch(0.61 0.22 285 / 0.10)", color: previewBest ? "#fff" : "var(--bv-purple)" }}>
-                <Target size={16} />
-                {autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : autoBest[idx] === null ? "Sin mejor jugada" : "Calculando..."}
+                <Target size={14} className="shrink-0" />
+                <span className="truncate">{autoBest[idx] ? autoBest[idx]!.san : autoBest[idx] === null ? "—" : "…"}</span>
               </button>
-              {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
-                <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
+              {/* Resumen + sonido used to sit in a header row above the coach
+                  comment — moved here, bottom-right of the action row, once
+                  shrinking "Mejor" (above) freed the room for them. Resumen
+                  dropped its text label — the bar-chart icon reads fine on
+                  its own alongside every other icon-only button in this row. */}
+              {gameAnalyzed && (
+                <button onClick={() => setShowSummary(true)} title="Resumen" aria-label="Resumen"
                   className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
                   style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
-                  <Brain size={18} />
+                  <BarChart2 size={16} />
                 </button>
               )}
-            </div>
-          )}
-        </>
-      )}
-
-
-
-      {/* ── Modo Práctica ────────────────────────────────────── */}
-      {inPractice && practiceFen && practiceMove && (
-        <div className="space-y-3">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
-                Modo Práctica
-              </p>
-              <p className="text-sm font-semibold">
-                Jugada {practiceMove.moveNumber} · {practiceMove.color === "w" ? "Blancas" : "Negras"}
-              </p>
-            </div>
-            <button onClick={exitPractice}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border transition-colors hover:bg-muted/50"
-              style={{ borderColor: "var(--border)", color: "var(--muted-foreground)" }}>
-              <RotateCcw size={12} /> Volver
-            </button>
-          </div>
-
-          {/* Instruction */}
-          {!practiceResult && (
-            <div className="rounded-2xl p-3 border" style={{ background: "oklch(0.61 0.22 285 / 0.08)", borderColor: "oklch(0.61 0.22 285 / 0.3)" }}>
-              <p className="text-xs font-semibold" style={{ color: "var(--bv-purple)" }}>¿Qué hubieras jugado?</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                La flecha <span className="text-red-400 font-bold">roja</span> muestra el error cometido ({practiceMove.san}).
-                Toca una pieza y luego el destino para intentar tu jugada.
-              </p>
-            </div>
-          )}
-
-          {/* Practice board */}
-          <div className="space-y-2 -mx-4">
-            <div className="px-4"><EvalBar moves={moves} idx={Math.max(-1, practiceBlunderIdx! - 1)} /></div>
-            <ChessBoard
-              fen={practiceResult && practiceMovePlayed
-                ? (() => {
-                    const g = new Chess(practiceFen);
-                    try { g.move({ from: practiceMovePlayed.from, to: practiceMovePlayed.to, promotion: practiceMovePlayed.promotion ?? "q" }); } catch {}
-                    return g.fen();
-                  })()
-                : practiceFen
-              }
-              orientation={playedAs}
-              arrows={practiceResult ? userArrows : practiceArrows}
-              interactive={!practiceResult}
-              onMove={handlePracticeMove}
-            />
-          </div>
-
-          {/* Result feedback */}
-          {practiceResult && (
-            <div className="rounded-2xl p-4 border-l-4"
-              style={{
-                background: "var(--card)",
-                borderColor: "var(--border)",
-                borderLeftColor: practiceResult.verdict === "excellent" ? "var(--bv-green)"
-                  : practiceResult.verdict === "good" ? "var(--bv-green)"
-                  : practiceResult.verdict === "neutral" ? "var(--bv-orange)"
-                  : "var(--bv-red)",
-                borderLeftWidth: 4,
-              }}>
-              <p className="text-lg font-bold mb-1">
-                {practiceResult.verdict === "excellent" ? "✅ ¡Excelente!" :
-                 practiceResult.verdict === "good"      ? "✅ ¡Buena jugada!" :
-                 practiceResult.verdict === "neutral"   ? "⚠️ Jugada aceptable" :
-                 "❌ Movimiento ilegal"}
-              </p>
-              <p className="text-sm text-muted-foreground">{practiceResult.message}</p>
-              {practiceResult.verdict !== "illegal" && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  El error original fue <span className="font-bold font-mono" style={{ color: "var(--bv-red)" }}>{practiceMove.san}</span>.
-                  {practiceMove.centipawnLoss != null && practiceMove.centipawnLoss > 0 && ` Costó ${practiceMove.centipawnLoss} centipeones.`}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Try again / next blunder */}
-          <div className="flex gap-2">
-            {practiceResult && (
-              <button onClick={() => { setPracticeResult(null); setPracticeMovePlayed(null); }}
-                className="flex-1 py-2.5 rounded-2xl border text-xs font-semibold transition"
-                style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-                Intentar de nuevo
+              <button
+                onClick={() => { const on = !toggleMuted(); setSoundOn(on); if (on) playSound("move"); }}
+                aria-label={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
+                title={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-colors hover:bg-muted/40"
+                style={{ borderColor: "var(--border)", color: soundOn ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
+                {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
               </button>
-            )}
-            {practiceResult && (() => {
-              const errors = moves.map((m, i) => ({ ...m, flatIdx: i })).filter(m => m.classification === "blunder" || m.classification === "mistake");
-              const nextErr = errors.find(e => e.flatIdx > practiceBlunderIdx!);
-              return nextErr ? (
-                <button onClick={() => startPractice(nextErr.flatIdx)}
-                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition"
-                  style={{ background: "var(--bv-purple)", color: "#fff" }}>
-                  Siguiente error →
-                </button>
-              ) : (
-                <button onClick={exitPractice}
-                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition"
-                  style={{ background: "var(--bv-green)", color: "#fff" }}>
-                  ¡Completado! 🎉
-                </button>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
+            </div>
+          )}
 
     </div>
   );

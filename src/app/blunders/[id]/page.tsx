@@ -1,11 +1,10 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { getUsername } from "@/lib/getUsername";
 import { supabase } from "@/lib/supabase";
 import { GameViewer } from "@/components/GameViewer";
 import { GameAutoAnalyzer } from "@/components/GameAutoAnalyzer";
 import { ShareGameButton } from "@/components/ShareGameButton";
-import { ChevronLeft } from "lucide-react";
+import { BackButton } from "@/components/BackButton";
 import { translateOpening } from "@/lib/translateOpening";
 import { getDashboardStats } from "@/services/dashboardData";
 import type { Game } from "@/types";
@@ -92,9 +91,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 border-b"
         style={{ background: "var(--background)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-3">
-          <Link href="/blunders" className="p-2 -ml-2 rounded-full transition-colors hover:bg-muted">
-            <ChevronLeft size={20} />
-          </Link>
+          <BackButton href="/blunders" />
           <span className="font-bold text-base tracking-tight" style={{ color: "var(--bv-purple)" }}>
             AnaliChess IA
           </span>

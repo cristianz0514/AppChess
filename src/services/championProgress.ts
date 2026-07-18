@@ -36,8 +36,14 @@ export async function getChampionProgress(userId: string): Promise<Map<string, C
 export async function saveChapterResult(
   userId: string, championId: string, chapterId: string, result: ChapterResult,
 ): Promise<void> {
-  await supabase.from("champion_progress").upsert(
+  // The Supabase client returns a {data, error} pair instead of throwing —
+  // an unchecked `.error` (as this was) silently drops the write on a real
+  // failure (e.g. an RLS policy rejecting the upsert) while the caller sees
+  // a normal resolved promise and reports success anyway. Surfacing it here
+  // is what turns that into a real, callable-visible failure.
+  const { error } = await supabase.from("champion_progress").upsert(
     { user_id: userId, champion_id: championId, chapter_id: chapterId, result, completed_at: new Date().toISOString() },
     { onConflict: "user_id,champion_id,chapter_id" },
   );
+  if (error) throw new Error(`saveChapterResult: ${error.message}`);
 }

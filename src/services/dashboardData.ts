@@ -49,6 +49,11 @@ export interface GameWindowRow {
   ended_by_abandonment: boolean;
   played_at: string | null;
   created_at: string;
+  // Champion-battle games (Nacimiento de un Campeón) get a synthetic
+  // "campeones-{championId}-{chapterId}-{userId}-{ts}" id instead of a real
+  // chess.com one (see api/champions/analyze) — this is how callers tell
+  // them apart from real imported games.
+  chess_game_id: string | null;
 }
 
 export const getGameWindow = cache(async function(
@@ -57,7 +62,7 @@ export const getGameWindow = cache(async function(
   limit = DASHBOARD_WINDOW,
 ): Promise<GameWindowRow[]> {
   const modern = await hasModernSchema();
-  const base = "id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at";
+  const base = "id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at, chess_game_id";
   let q = supabase
     .from("games")
     .select(modern ? `${base}, time_class, ended_by_abandonment, played_at` : base)
@@ -82,6 +87,7 @@ export const getGameWindow = cache(async function(
     time_class: g.time_class ?? null,
     ended_by_abandonment: g.ended_by_abandonment ?? false,
     played_at: g.played_at ?? null,
+    chess_game_id: g.chess_game_id ?? null,
     created_at: g.created_at!,
   }));
 });
@@ -208,6 +214,7 @@ export interface RecentGame {
   time_class: string | null;
   created_at: string;
   played_at: string | null;
+  chess_game_id: string | null;
 }
 
 export interface ExampleGame {
@@ -403,7 +410,7 @@ export async function getGamesByOpening(
   openingName: string
 ): Promise<RecentGame[]> {
   const modern = await hasModernSchema();
-  const base = "id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at";
+  const base = "id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at, chess_game_id";
   const { data } = await supabase
     .from("games")
     .select(modern ? `${base}, time_class, played_at` : base)
@@ -538,5 +545,6 @@ export async function getRecentGames(userId: string, limit = 20, timeClass?: str
     time_class: g.time_class,
     created_at: g.created_at,
     played_at: g.played_at,
+    chess_game_id: g.chess_game_id,
   }));
 }

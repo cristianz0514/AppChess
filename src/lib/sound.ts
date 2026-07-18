@@ -2,7 +2,7 @@
 // offline, tiny. Deliberately few and subtle: move, capture, check, error,
 // brilliant. Triggered only by user interaction so autoplay policies are happy.
 
-type SoundName = "move" | "capture" | "check" | "error" | "brilliant" | "promote";
+type SoundName = "move" | "capture" | "check" | "error" | "brilliant" | "promote" | "blip";
 
 let ctx: AudioContext | null = null;
 let muted = false;
@@ -93,13 +93,24 @@ function noise(audio: AudioContext, { dur = 0.08, gain = 0.09, cutoff = 900 } = 
   src.stop(t0 + dur);
 }
 
-export function play(name: SoundName) {
+export function play(name: SoundName, opts?: { pitch?: number }) {
   ensureInit();
   if (muted) return;
   const audio = getCtx();
   if (!audio) return;
   try {
     switch (name) {
+      case "blip": {
+        // Classic SNES-RPG dialogue "voice" (Chrono Trigger/EarthBound-style
+        // chatter, not real speech) — one short percussive blip per revealed
+        // character. `opts.pitch` lets each speaker chatter at a slightly
+        // different base pitch, and a little per-blip jitter keeps a whole
+        // line from sounding like one flat buzz.
+        const base = opts?.pitch ?? 440;
+        const jitter = base * (0.94 + Math.random() * 0.12);
+        tone(audio, { freq: jitter, type: "square", dur: 0.035, gain: 0.06 });
+        break;
+      }
       case "move":
         tone(audio, { freq: 220, type: "triangle", dur: 0.07, gain: 0.10 });
         break;

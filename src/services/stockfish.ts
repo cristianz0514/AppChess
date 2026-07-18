@@ -156,12 +156,19 @@ export async function getBestMove(fen: string, depth = 12): Promise<{ from: stri
 // beginner actually plays (inconsistent, occasional one-move blunders)
 // than any fixed low search depth alone would be.
 function strengthForElo(elo: number): { skillLevel: number; depth: number; blunderChance: number } {
-  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.45 };
-  if (elo <= 600)  return { skillLevel: 1,  depth: 2,  blunderChance: 0.25 };
-  if (elo <= 900)  return { skillLevel: 3,  depth: 3,  blunderChance: 0.12 };
-  if (elo <= 1200) return { skillLevel: 6,  depth: 5,  blunderChance: 0.05 };
-  if (elo <= 1600) return { skillLevel: 10, depth: 7,  blunderChance: 0 };
-  if (elo <= 2000) return { skillLevel: 15, depth: 9,  blunderChance: 0 };
+  // Even "Skill Level 0, depth 1" still has Stockfish's own material/tactical
+  // eval behind it, so it reliably spots hanging pieces and simple tactics —
+  // playing far stronger than a real ELO ~200 beginner (a five-year-old who
+  // just learned how pieces move). Raised the low-tier blunder chances so
+  // random legal moves dominate there instead of engine search.
+  // Second tuning pass after playtesting: 200 still played too strong even at
+  // a 75% blunder chance, and 1700 (chapter 12) felt slightly under-strength.
+  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.9 };
+  if (elo <= 600)  return { skillLevel: 1,  depth: 1,  blunderChance: 0.6 };
+  if (elo <= 900)  return { skillLevel: 2,  depth: 2,  blunderChance: 0.35 };
+  if (elo <= 1200) return { skillLevel: 4,  depth: 4,  blunderChance: 0.15 };
+  if (elo <= 1600) return { skillLevel: 9,  depth: 6,  blunderChance: 0.05 };
+  if (elo <= 2000) return { skillLevel: 17, depth: 11, blunderChance: 0 };
   return                  { skillLevel: 20, depth: 12, blunderChance: 0 };
 }
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
-import { getUserId, getDashboardStats, getRecentGames, getGamesByOpening } from "@/services/dashboardData";
+import { getUserId, getRecentGames, getGamesByOpening } from "@/services/dashboardData";
 import { translateOpening } from "@/lib/translateOpening";
 
 function resultBadge(result: string) {
@@ -13,6 +13,15 @@ function resultBadge(result: string) {
 function formatDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("es-ES", { month: "short", day: "numeric" });
+}
+
+// Champion-battle games (Nacimiento de un Campeón) get inserted with a
+// synthetic "campeones-..." chess_game_id instead of a real chess.com one
+// (see api/champions/analyze) — that's the only marker distinguishing them
+// from real imported games, since they share the same `games` table so the
+// existing analysis viewer (/blunders/{id}) works for both.
+function isChampionBattle(chessGameId: string | null): boolean {
+  return chessGameId?.startsWith("campeones-") ?? false;
 }
 
 export const metadata = { title: "Partidas" };
@@ -27,16 +36,27 @@ export default async function BlundersPage({ searchParams }: Props) {
   const userId   = await getUserId(username);
   if (!userId) return null;
 
-  const [stats, games] = await Promise.all([
-    getDashboardStats(userId),
-    opening
-      ? getGamesByOpening(userId, opening)
-      : getRecentGames(userId, 200),
-  ]);
+  const allGames = opening
+    ? await getGamesByOpening(userId, opening)
+    : await getRecentGames(userId, 200);
+
+  // Nacimiento de un Campeón battles share the same `games` table (so the
+  // existing analysis viewer works for them too) but aren't real chess.com
+  // games — mixing them into "your recent games" was confusing, and their
+  // rating/time-control columns are empty since a battle never had those.
+  // Split into two lists and recompute the stats cards from the chess.com
+  // ones only, so those numbers stay consistent with what's actually listed
+  // below them instead of counting battles the list doesn't show.
+  const games = allGames.filter((g) => !isChampionBattle(g.chess_game_id));
+  const campeonesGames = allGames.filter((g) => isChampionBattle(g.chess_game_id));
 
   const wins   = games.filter((g) => g.result === "win").length;
   const losses = games.filter((g) => g.result === "loss").length;
   const draws  = games.filter((g) => g.result === "draw").length;
+  const accuracies = games.map((g) => g.accuracy).filter((a): a is number => a !== null);
+  const avgAccuracy = accuracies.length > 0
+    ? Math.round((accuracies.reduce((s, a) => s + a, 0) / accuracies.length) * 10) / 10
+    : null;
 
   return (
     <AppLayout username={username}>
@@ -74,14 +94,14 @@ export default async function BlundersPage({ searchParams }: Props) {
           ))}
         </div>
 
-        {stats.avgAccuracy !== null && (
+        {avgAccuracy !== null && (
           <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Precisión Promedio</p>
-              <p className="text-sm text-muted-foreground mt-0.5">Últimas {stats.totalGames} partidas</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Últimas {games.length} partidas</p>
             </div>
             <p className="text-4xl font-bold" style={{ color: "var(--bv-green)" }}>
-              {stats.avgAccuracy}%
+              {avgAccuracy}%
             </p>
           </div>
         )}
@@ -125,6 +145,43 @@ export default async function BlundersPage({ searchParams }: Props) {
           <p className="text-sm text-muted-foreground text-center py-12">
             Sin partidas aún. Importa tus partidas desde el inicio.
           </p>
+        )}
+
+        {/* Separate from the chess.com list above — these are Nacimiento de
+            un Campeón battles, not real rated games, so they don't have an
+            opening/rating/time-control to show. Only rendered when there's
+            at least one, and never shown at all when filtering by opening
+            (a champion battle never has one, so it'd never match anyway). */}
+        {!opening && campeonesGames.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <p className="px-4 pt-4 pb-2 text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
+              Nacimiento de un Campeón
+            </p>
+            <div className="divide-y divide-border">
+              {campeonesGames.map((game) => {
+                const badge = resultBadge(game.result);
+                return (
+                  <Link key={game.id} href={`/blunders/${game.id}`}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs"
+                      style={{ background: badge.bg, color: badge.color }}>
+                      {badge.label}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">Batalla de Campeones</p>
+                      <p className="text-[10px] text-muted-foreground capitalize">
+                        {game.played_as === "white" ? "Blancas" : "Negras"} · {formatDate(game.played_at ?? game.created_at)}
+                      </p>
+                    </div>
+                    {game.accuracy !== null && (
+                      <p className="text-[10px] text-muted-foreground shrink-0">{game.accuracy}%</p>
+                    )}
+                    <span className="text-muted-foreground text-sm shrink-0">›</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         )}
 
       </div>

@@ -1,8 +1,10 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Chess, type Square } from "chess.js";
 import { Piece } from "./pieces";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 function parseFen(fen: string): Array<Array<string | null>> {
   const board: Array<Array<string | null>> = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -66,6 +68,9 @@ export function ChessBoard({
   // piece to promote to; ours silently forced a queen every time. Holds the
   // pending move until the player picks.
   const [promoPending, setPromoPending] = useState<{ from: string; to: string; color: "white" | "black" } | null>(null);
+  // Same gap as the result modal: nothing moved focus into the picker, Tab
+  // could escape to the board behind it, Escape did nothing.
+  const promoPanelRef = useFocusTrap<HTMLDivElement>(!!promoPending, () => setPromoPending(null));
   const board = parseFen(fen);
   const turnColor = fen.split(" ")[1] === "w" ? "white" : "black";
 
@@ -171,7 +176,7 @@ export function ChessBoard({
   return (
     <div
       className="w-full aspect-square rounded-xl select-none relative overflow-hidden"
-      style={{ border: "2px solid var(--border)", containerType: "inline-size" }}
+      style={{ border: "2px solid var(--border)", containerType: "inline-size", background: "#dcd6f2" }}
     >
       {/* Board grid */}
       <div
@@ -194,8 +199,12 @@ export function ChessBoard({
 
             // Light board — white + soft lavender. Last-move highlight is a warm
             // YELLOW (not purple) so it never blends into the lavender squares.
+            // Pre-blended, fully opaque hex (not rgba over the square's own
+            // base) — the board has no opaque backdrop of its own behind the
+            // squares, so a semi-transparent highlight let the scene image
+            // behind it show through the moment a piece moved.
             let bg = isDark ? "#dcd6f2" : "#faf9ff";
-            if (isHighlighted) bg = isDark ? "rgba(255,193,7,0.55)" : "rgba(255,205,40,0.5)";
+            if (isHighlighted) bg = isDark ? "#efca71" : "#fde394";
             // Selected piece: bright amber + inset ring — unmistakable.
             if (isSelected) bg = "#ffd23f";
 
@@ -253,7 +262,10 @@ export function ChessBoard({
                   <span style={{
                     position: "absolute", top: 2, left: 3,
                     fontSize: "2.2cqi",
-                    color: isDark ? "#8b82ad" : "#c9c2e0",
+                    // One color that clears 4.5:1 on both square tones (was
+                    // 1.63:1 / 2.54:1 — barely visible, and this app's
+                    // audience is often still learning file/rank notation).
+                    color: "#5b5480",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {orientation === "white" ? 8 - rowIdx : rowIdx + 1}
@@ -263,7 +275,10 @@ export function ChessBoard({
                   <span style={{
                     position: "absolute", bottom: 2, right: 3,
                     fontSize: "2.2cqi",
-                    color: isDark ? "#8b82ad" : "#c9c2e0",
+                    // One color that clears 4.5:1 on both square tones (was
+                    // 1.63:1 / 2.54:1 — barely visible, and this app's
+                    // audience is often still learning file/rank notation).
+                    color: "#5b5480",
                     fontWeight: 700, lineHeight: 1,
                   }}>
                     {String.fromCharCode(97 + (orientation === "white" ? colIdx : 7 - colIdx))}
@@ -352,57 +367,60 @@ export function ChessBoard({
         );
       })()}
 
-      {/* Promotion piece picker — a small popover of the 4 promotable pieces,
-          positioned over the destination square (chess.com/lichess convention). */}
-      {promoPending && (() => {
-        const { x, y } = sqToXYPct(promoPending.to, orientation);
+      {/* Promotion piece picker. Three earlier attempts still cut off a
+          choice on a real phone: two anchored it to the destination square
+          (overflows near a board edge/corner), the third made it a
+          `position: fixed` overlay portaled to `document.body` — an
+          improvement, but the 4 choices were still a horizontal row
+          squeezed into a ~320px card, so on a narrow screen (or in
+          landscape, where the viewport is short) one or two choices ended
+          up clipped instead of just cramped. A vertical stack has no
+          horizontal squeeze to begin with — each choice gets the full card
+          width — and `maxHeight` + `overflowY: auto` is a safety net so
+          even a very short landscape viewport scrolls to the rest instead
+          of hiding them. */}
+      {promoPending && typeof document !== "undefined" && createPortal((() => {
         const isWhite = promoPending.color === "white";
-        const choices: Array<"q" | "r" | "b" | "n"> = ["q", "r", "b", "n"];
+        const choices: Array<{ p: "q" | "r" | "b" | "n"; label: string }> = [
+          { p: "q", label: "Dama" }, { p: "r", label: "Torre" }, { p: "b", label: "Alfil" }, { p: "n", label: "Caballo" },
+        ];
         return (
-          <>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(10,9,15,0.6)", backdropFilter: "blur(3px)", animation: "bvFadeInUp 0.2s ease-out both" }}
+            onClick={() => setPromoPending(null)}
+          >
             <div
-              aria-hidden
-              onClick={() => setPromoPending(null)}
-              style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(20,18,30,0.15)" }}
-            />
-            <div
+              ref={promoPanelRef}
               role="menu"
               aria-label="Elige la pieza de coronación"
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-3xl p-4 w-full overflow-y-auto"
               style={{
-                position: "absolute",
-                left: `${x}%`, top: `${y}%`,
-                transform: "translate(-50%, -50%)",
-                zIndex: 4,
-                display: "flex",
-                borderRadius: "9999px",
-                background: "var(--card, #fff)",
-                boxShadow: "0 12px 28px -8px rgba(38,36,46,0.35)",
-                padding: "2%",
-                gap: "1.5%",
-                animation: "bvBadgePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+                background: "var(--card, #fff)", border: "1px solid var(--border, transparent)",
+                animation: "bvPanelPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+                maxWidth: 320, maxHeight: "min(80dvh, 480px)",
               }}
             >
-              {choices.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => choosePromotion(p)}
-                  aria-label={p}
-                  style={{
-                    width: "11cqi", height: "11cqi",
-                    borderRadius: "9999px",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                    padding: "8%",
-                  }}
-                >
-                  <Piece type={p} white={isWhite} />
-                </button>
-              ))}
+              <p className="text-sm font-bold mb-3 text-center" style={{ color: "var(--foreground, #1a1a1a)" }}>¿En qué corona el peón?</p>
+              <div className="flex flex-col gap-2">
+                {choices.map(({ p, label }) => (
+                  <button
+                    key={p}
+                    onClick={() => choosePromotion(p)}
+                    aria-label={label}
+                    className="w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 transition active:scale-[0.98]"
+                    style={{ border: "1px solid var(--border, #e5e5e5)", background: "var(--background, #f7f7f7)" }}
+                  >
+                    <span style={{ width: 32, height: 32 }} className="shrink-0"><Piece type={p} white={isWhite} /></span>
+                    <span className="text-sm font-semibold" style={{ color: "var(--foreground, #1a1a1a)" }}>{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </>
+          </div>
         );
-      })()}
+      })(), document.body)}
 
       <style>{`
         @keyframes bvHintPulse {

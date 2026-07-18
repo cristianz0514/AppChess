@@ -30,11 +30,18 @@ interface Props {
   accuracy: number | null;
   avgAccuracy: number | null;
   counts: Record<string, number>;
+  // Opponent's own classification breakdown + both sides' estimated
+  // performance Elo — chess.com's Game Review always grades both players,
+  // not just the one you're tracking; these are optional so older call
+  // sites without this data still render the single-column view.
+  theirCounts?: Record<string, number>;
+  myEloEstimate?: number | null;
+  theirEloEstimate?: number | null;
   momentsCount: number;
   gameResult?: "win" | "loss" | "draw";
 }
 
-export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, avgAccuracy, counts, momentsCount, gameResult }: Props) {
+export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, avgAccuracy, counts, theirCounts, myEloEstimate, theirEloEstimate, momentsCount, gameResult }: Props) {
   const [render, setRender] = useState(open);
   const [shown, setShown] = useState(false);
   const [displayAcc, setDisplayAcc] = useState(0);
@@ -131,26 +138,80 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
               )}
             </div>
           </div>
+
+          {/* Estimated performance Elo for BOTH sides — same idea as
+              chess.com's "Estimated Elo Performance", from average
+              centipawn loss (see eloEstimate.ts). Approximate, so it's
+              labeled as an estimate rather than a real rating. */}
+          {(myEloEstimate != null || theirEloEstimate != null) && (
+            <div className="mt-3 pt-3 flex items-center justify-around" style={{ borderTop: "1px solid var(--border)" }}>
+              <div className="text-center">
+                <p className="text-lg font-display font-bold leading-none">{myEloEstimate ?? "—"}</p>
+                <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-1">Tu Elo estimado</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-display font-bold leading-none">{theirEloEstimate ?? "—"}</p>
+                <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-1">Elo del rival</p>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Classification breakdown */}
-        <div className="px-5 py-3 grid grid-cols-2 gap-x-4 gap-y-2">
-          {ROWS.map(({ key, label }, i) => (
-            <div key={key} className="flex items-center gap-2.5"
-              style={{
-                opacity: shown ? 1 : 0,
-                transform: shown ? "translateY(0)" : "translateY(4px)",
-                transition: `opacity .3s ease ${0.12 + i * 0.04}s, transform .3s ease ${0.12 + i * 0.04}s`,
-              }}>
-              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                style={{ background: COLOR[key] }}>
-                {GLYPH[key]}
-              </span>
-              <span className="text-sm flex-1 text-muted-foreground">{label}</span>
-              <span className="text-sm font-bold tabular-nums">{counts[key] ?? 0}</span>
+        {/* Classification breakdown. With `theirCounts` (both sides graded,
+            chess.com-style): one row per category with the opponent's count
+            on the left and yours on the right, flanking a shared label —
+            without it (older/simpler call sites), the original single
+            column. */}
+        {theirCounts ? (
+          <div className="px-5 py-3">
+            <div className="flex items-center justify-between px-1 mb-1.5">
+              <span className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Rival</span>
+              <span className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Tú</span>
             </div>
-          ))}
-        </div>
+            <div className="space-y-1.5">
+              {ROWS.map(({ key, label }, i) => (
+                <div key={key} className="flex items-center gap-2"
+                  style={{
+                    opacity: shown ? 1 : 0,
+                    transform: shown ? "translateY(0)" : "translateY(4px)",
+                    transition: `opacity .3s ease ${0.12 + i * 0.04}s, transform .3s ease ${0.12 + i * 0.04}s`,
+                  }}>
+                  <span className="w-6 text-sm font-bold tabular-nums text-right" style={{ color: COLOR[key] }}>
+                    {theirCounts[key] ?? 0}
+                  </span>
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                    style={{ background: COLOR[key] }}>
+                    {GLYPH[key]}
+                  </span>
+                  <span className="text-sm flex-1 text-center text-muted-foreground truncate">{label}</span>
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                    style={{ background: COLOR[key] }}>
+                    {GLYPH[key]}
+                  </span>
+                  <span className="w-6 text-sm font-bold tabular-nums">{counts[key] ?? 0}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="px-5 py-3 grid grid-cols-2 gap-x-4 gap-y-2">
+            {ROWS.map(({ key, label }, i) => (
+              <div key={key} className="flex items-center gap-2.5"
+                style={{
+                  opacity: shown ? 1 : 0,
+                  transform: shown ? "translateY(0)" : "translateY(4px)",
+                  transition: `opacity .3s ease ${0.12 + i * 0.04}s, transform .3s ease ${0.12 + i * 0.04}s`,
+                }}>
+                <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                  style={{ background: COLOR[key] }}>
+                  {GLYPH[key]}
+                </span>
+                <span className="text-sm flex-1 text-muted-foreground">{label}</span>
+                <span className="text-sm font-bold tabular-nums">{counts[key] ?? 0}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* CTAs */}
         <div className="px-5 pb-5 pt-1 space-y-2">

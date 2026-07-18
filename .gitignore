@@ -29,3 +29,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# raw Stitch export dumps (source assets get processed into public/campeones/)
+/Imagenes/

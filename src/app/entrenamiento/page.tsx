@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Target, Crown } from "lucide-react";
+import { ChevronRight, Target, Crown } from "lucide-react";
+import { BackButton } from "@/components/BackButton";
 
 export const metadata = { title: "Entrenamiento" };
 
@@ -11,9 +12,7 @@ export default function EntrenamientoPage() {
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       <header className="fixed top-0 w-full z-50 flex items-center gap-3 px-4 h-16 border-b"
         style={{ background: "var(--background)", borderColor: "var(--border)" }}>
-        <Link href="/dashboard" className="p-2 -ml-2 rounded-full transition-colors hover:bg-muted">
-          <ChevronLeft size={20} />
-        </Link>
+        <BackButton href="/dashboard" />
         <span className="font-bold text-base tracking-tight">Entrenamiento</span>
       </header>
 

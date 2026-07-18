@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
 import { getRoadTrip } from "@/services/puzzleProgress";
 import { PuzzleSolver } from "@/components/PuzzleSolver";
 import { SoundToggle } from "@/components/SoundToggle";
+import { BackButton } from "@/components/BackButton";
 import type { MateIn } from "@/lib/puzzleConstants";
 
 interface Props {
@@ -48,9 +47,7 @@ export default async function PuzzlePage({ params }: Props) {
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 border-b"
         style={{ background: "var(--background)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-3">
-          <Link href="/practica-mate" className="p-2 -ml-2 rounded-full transition-colors hover:bg-muted">
-            <ChevronLeft size={20} />
-          </Link>
+          <BackButton href="/practica-mate" />
           <div>
             <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Mundo {worldMateIn}</p>
             <span className="font-bold text-sm tracking-tight">Ejercicio {nodeIndex + 1}</span>
