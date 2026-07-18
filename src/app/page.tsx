@@ -41,7 +41,8 @@ function Sunburst() {
         const y2 = +(100 + Math.sin(angle) * outer).toFixed(2);
         return (
           <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-            stroke="var(--deco-brass)" strokeWidth={1.25} opacity={0.55} strokeLinecap="round" />
+            stroke={i % 2 === 0 ? "var(--deco-navy)" : "var(--deco-black)"}
+            strokeWidth={1.25} opacity={0.6} strokeLinecap="round" />
         );
       })}
     </svg>
@@ -129,17 +130,17 @@ export default function Home() {
         <div className="relative mb-6 flex items-center justify-center" style={{ width: 72, height: 72 }}>
           <Sunburst />
           <div className="deco-medallion relative w-16 h-16 flex items-center justify-center select-none"
-            style={{ background: "var(--deco-ink-2)" }}>
-            <span className="text-2xl leading-none" style={{ color: "var(--deco-brass)" }}>♞</span>
+            style={{ background: "var(--deco-bg)" }}>
+            <span className="text-2xl leading-none" style={{ color: "var(--deco-navy)" }}>♞</span>
           </div>
         </div>
 
-        <p className="deco-mono text-[11px] font-bold tracking-[0.28em] uppercase mb-4" style={{ color: "var(--deco-brass)" }}>
+        <p className="deco-mono text-[11px] font-bold tracking-[0.28em] uppercase mb-4" style={{ color: "var(--deco-navy)" }}>
           Tu entrenador de ajedrez con IA
         </p>
 
-        <h1 className="deco-display text-5xl leading-[0.92] mb-4 text-balance max-w-sm uppercase">
-          Descubre dónde se te <span style={{ color: "var(--deco-emerald)" }}>escapan</span> las partidas
+        <h1 className="deco-display text-5xl leading-[0.92] mb-4 text-balance max-w-sm uppercase" style={{ color: "var(--deco-black)" }}>
+          Descubre dónde se te <span style={{ color: "var(--deco-navy)" }}>escapan</span> las partidas
         </h1>
 
         <p className="text-base max-w-sm leading-relaxed mb-8" style={{ color: "var(--deco-muted)" }}>
@@ -166,7 +167,7 @@ export default function Home() {
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2 normal-case tracking-normal">
-                <span className="w-4 h-4 rounded-full border-2 border-black/20 border-t-black/70 animate-spin inline-block" />
+                <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin inline-block" />
                 {phase || "Importando tu historial…"}
               </span>
             ) : "Ver mis partidas →"}
@@ -176,14 +177,14 @@ export default function Home() {
               this is what keeps it from ever looking frozen/failed. */}
           {loading && (
             <div className="space-y-1.5">
-              <div className="w-full h-1 overflow-hidden" style={{ background: "var(--deco-ink-2)" }}>
+              <div className="w-full h-1 overflow-hidden" style={{ background: "color-mix(in oklab, var(--deco-black) 15%, transparent)" }}>
                 <div
                   className="h-full transition duration-300"
                   style={{
                     width: pct != null ? "100%" : "30%",
                     transform: pct != null ? `scaleX(${pct / 100})` : undefined,
                     transformOrigin: "left",
-                    background: "linear-gradient(90deg, var(--deco-brass), var(--deco-emerald))",
+                    background: "linear-gradient(90deg, var(--deco-black), var(--deco-navy))",
                     animation: pct == null ? "bvIndeterminate 1.3s ease-in-out infinite" : undefined,
                   }}
                 />
@@ -197,7 +198,7 @@ export default function Home() {
           )}
 
           {error && (
-            <p className="text-xs text-center" style={{ color: "#E5747A" }}>{error}</p>
+            <p className="text-xs text-center" style={{ color: "var(--destructive)" }}>{error}</p>
           )}
         </form>
 
@@ -206,7 +207,7 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Features — a deco building directory: brass hairlines between rows,
+      {/* Features — a deco building directory: hairlines between rows,
           not a numbered sequence (these four are parallel, not steps). */}
       <div className="relative px-5 pb-12 max-w-sm mx-auto w-full">
         <div className="deco-hairline" />
@@ -215,10 +216,10 @@ export default function Home() {
             <div className="flex items-start gap-4 py-4"
               style={{ animation: `bvFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both ${0.15 + i * 0.07}s` }}>
               <div className="deco-icon-frame shrink-0 w-10 h-10 flex items-center justify-center">
-                <f.Icon size={16} style={{ color: "var(--deco-brass)" }} strokeWidth={2} />
+                <f.Icon size={16} style={{ color: "var(--deco-navy)" }} strokeWidth={2} />
               </div>
               <div className="text-left">
-                <p className="deco-mono text-[11px] font-bold tracking-[0.06em] uppercase mb-1" style={{ color: "var(--deco-porcelain)" }}>{f.title}</p>
+                <p className="deco-mono text-[11px] font-bold tracking-[0.06em] uppercase mb-1" style={{ color: "var(--deco-black)" }}>{f.title}</p>
                 <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--deco-muted)" }}>{f.desc}</p>
               </div>
             </div>
@@ -229,14 +230,12 @@ export default function Home() {
 
       <style>{`
         .deco-page {
-          --deco-ink: #0B0D12;
-          --deco-ink-2: #14171F;
-          --deco-porcelain: #F3EFE6;
-          --deco-brass: #C9A15C;
-          --deco-emerald: #22B27E;
-          --deco-muted: #8B8F9B;
-          background: var(--deco-ink);
-          color: var(--deco-porcelain);
+          --deco-bg: var(--background);
+          --deco-black: #14161C;
+          --deco-navy: #1B2A52;
+          --deco-muted: #5B6472;
+          background: var(--deco-bg);
+          color: var(--deco-black);
         }
         .deco-display {
           font-family: var(--font-deco-display), sans-serif;
@@ -249,35 +248,35 @@ export default function Home() {
            reused for the monogram and (mirrored, gentler) the icon frames. */
         .deco-medallion {
           clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
-          border: 1px solid var(--deco-brass);
+          border: 1.5px solid var(--deco-black);
         }
         .deco-icon-frame {
           clip-path: polygon(22% 0, 78% 0, 100% 22%, 100% 78%, 78% 100%, 22% 100%, 0 78%, 0 22%);
-          background: var(--deco-ink-2);
-          border: 1px solid color-mix(in oklab, var(--deco-brass) 45%, transparent);
+          background: var(--deco-bg);
+          border: 1.5px solid var(--deco-navy);
         }
         .deco-panel {
-          background: var(--deco-ink-2);
-          border: 1px solid color-mix(in oklab, var(--deco-brass) 30%, transparent);
+          background: var(--deco-bg);
+          border: 1.5px solid var(--deco-black);
           clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
         }
         .deco-input {
-          background: var(--deco-ink);
-          border: 1px solid color-mix(in oklab, var(--deco-brass) 35%, transparent);
-          color: var(--deco-porcelain);
+          background: var(--deco-bg);
+          border: 1px solid color-mix(in oklab, var(--deco-black) 35%, transparent);
+          color: var(--deco-black);
         }
         .deco-input::placeholder { color: var(--deco-muted); }
         .deco-input:focus {
-          border-color: var(--deco-brass);
-          box-shadow: 0 0 0 3px color-mix(in oklab, var(--deco-brass) 25%, transparent);
+          border-color: var(--deco-navy);
+          box-shadow: 0 0 0 3px color-mix(in oklab, var(--deco-navy) 22%, transparent);
         }
         .deco-cta {
-          background: var(--deco-emerald);
-          color: #06110B;
+          background: var(--deco-navy);
+          color: #FFFFFF;
         }
         .deco-hairline {
           height: 1px;
-          background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--deco-brass) 45%, transparent) 20%, color-mix(in oklab, var(--deco-brass) 45%, transparent) 80%, transparent);
+          background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--deco-black) 35%, transparent) 20%, color-mix(in oklab, var(--deco-black) 35%, transparent) 80%, transparent);
         }
       `}</style>
     </main>
