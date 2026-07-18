@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Chess } from "chess.js";
+import { Hourglass } from "lucide-react";
 import { ChessBoard } from "./ChessBoard";
 import { Piece } from "./pieces";
 import { play as playSound } from "@/lib/sound";
@@ -170,9 +171,13 @@ export function ChampionBattle({ playerColor, opponentName, eloTarget, onGameOve
         <div aria-live="polite" aria-atomic="true">
           {!over && (
             thinking ? (
-              <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "oklch(0.75 0.15 285)" }}>
-                <span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin inline-block" />
-                Pensando…
+              // The "Pensando…" label used to vary the row's width/height
+              // against "Tu turno"/"Turno de X", which could push the
+              // captured-pieces tray and board down every time the engine
+              // started thinking. A fixed-size spinning hourglass icon takes
+              // its place instead — same footprint every time, no text.
+              <p className="flex items-center" aria-label="Pensando" title="Pensando">
+                <Hourglass size={14} className="animate-spin" style={{ color: "oklch(0.75 0.15 285)", animationDuration: "1.4s" }} />
               </p>
             ) : (
               <p className="text-xs font-semibold" style={{ color: isPlayerTurn ? "oklch(0.75 0.17 145)" : "rgba(255,255,255,.55)" }}>
