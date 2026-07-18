@@ -175,7 +175,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
             {!hintUsed && (
               <button onClick={useHint}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold"
-                style={{ background: "oklch(0.61 0.22 285 / 0.12)", color: "var(--bv-purple)" }}>
+                style={{ background: "oklch(0.34 0.10 264 / 0.12)", color: "var(--bv-purple)" }}>
                 Usar pista
               </button>
             )}

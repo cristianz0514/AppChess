@@ -107,10 +107,10 @@ export default async function DashboardPage({ searchParams }: Props) {
         {highlights.mostErrors && highlights.mostErrors.errorCount > 0 && (
           <Link
             href={`/blunders/${highlights.mostErrors.id}?blunder=1`}
-            className="block rounded-3xl p-5 border transition active:scale-[0.99]"
+            className="deco-step block p-5 border transition active:scale-[0.99]"
             style={{
               borderColor: "var(--bv-purple)",
-              background: "linear-gradient(135deg, oklch(0.61 0.22 285 / 0.12), oklch(0.63 0.23 25 / 0.06))",
+              background: "linear-gradient(135deg, oklch(0.34 0.10 264 / 0.12), oklch(0.63 0.23 25 / 0.06))",
             }}
           >
             <div className="flex items-center gap-2 mb-2">
@@ -119,7 +119,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                 Dónde se te escapó la partida
               </span>
             </div>
-            <p className="text-xl font-display font-bold leading-tight">
+            <p className="font-deco text-2xl leading-tight uppercase">
               {translateOpening(highlights.mostErrors.opening)}
             </p>
             <p className="text-xs text-muted-foreground mt-1.5">
@@ -140,22 +140,22 @@ export default async function DashboardPage({ searchParams }: Props) {
         {/* ── Rating row ──────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
           {/* Blitz Rating */}
-          <div className="bg-card border border-border rounded-2xl p-4 space-y-1">
+          <div className="deco-step-sm bg-card border border-border p-4 space-y-1">
             <p className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
               Rating
             </p>
-            <p className="text-4xl font-bold tracking-tight" style={{ color: "var(--bv-green)" }}>
+            <p className="font-deco text-4xl leading-none" style={{ color: "var(--bv-green)" }}>
               {stats.currentRating ?? "—"}
             </p>
             <p className="text-xs text-muted-foreground">{stats.totalGames} partidas</p>
           </div>
 
           {/* Win / Loss record */}
-          <div className="bg-card border border-border rounded-2xl p-4 space-y-1">
+          <div className="deco-step-sm bg-card border border-border p-4 space-y-1">
             <p className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
               Resultados
             </p>
-            <p className="text-2xl font-bold tracking-tight">
+            <p className="font-deco text-2xl leading-none">
               <span style={{ color: "var(--bv-green)" }}>{resultStats.wins}V</span>
               {" – "}
               <span style={{ color: "var(--bv-red)" }}>{resultStats.losses}D</span>
@@ -171,9 +171,9 @@ export default async function DashboardPage({ searchParams }: Props) {
              core to the product, right after the hero, not buried below stats) ── */}
         <Link href="/practica-mate"
           className="flex items-center gap-3 p-4 rounded-2xl border transition active:scale-[0.98]"
-          style={{ borderColor: "oklch(0.61 0.22 285 / 0.25)", background: "oklch(0.61 0.22 285 / 0.08)" }}>
+          style={{ borderColor: "oklch(0.34 0.10 264 / 0.25)", background: "oklch(0.34 0.10 264 / 0.08)" }}>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: "oklch(0.61 0.22 285 / 0.15)" }}>
+            style={{ background: "oklch(0.34 0.10 264 / 0.15)" }}>
             <Target size={18} style={{ color: "var(--bv-purple)" }} />
           </div>
           <div className="flex-1 min-w-0">
@@ -225,7 +225,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                 Icon={Search}
                 game={highlights.mostErrors}
                 accentColor="var(--bv-purple)"
-                accentBg="oklch(0.61 0.22 285 / 0.12)"
+                accentBg="oklch(0.34 0.10 264 / 0.12)"
                 stat={`${highlights.mostErrors?.errorCount ?? 0} errores graves`}
                 jumpBlunder
               />

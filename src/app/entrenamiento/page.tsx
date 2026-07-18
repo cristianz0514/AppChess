@@ -19,9 +19,9 @@ export default function EntrenamientoPage() {
       <main className="flex-1 pt-24 px-4 max-w-lg mx-auto w-full pb-8 space-y-3">
         <Link href="/practica-mate"
           className="flex items-center gap-4 p-4 rounded-2xl border transition active:scale-[0.98]"
-          style={{ borderColor: "oklch(0.61 0.22 285 / 0.25)", background: "oklch(0.61 0.22 285 / 0.08)" }}>
+          style={{ borderColor: "oklch(0.34 0.10 264 / 0.25)", background: "oklch(0.34 0.10 264 / 0.08)" }}>
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
-            style={{ background: "oklch(0.61 0.22 285 / 0.15)" }}>
+            style={{ background: "oklch(0.34 0.10 264 / 0.15)" }}>
             <Target size={22} style={{ color: "var(--bv-purple)" }} />
           </div>
           <div className="flex-1 min-w-0">

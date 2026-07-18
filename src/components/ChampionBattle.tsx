@@ -177,7 +177,7 @@ export function ChampionBattle({ playerColor, opponentName, eloTarget, onGameOve
               // started thinking. A fixed-size spinning hourglass icon takes
               // its place instead — same footprint every time, no text.
               <p className="flex items-center" aria-label="Pensando" title="Pensando">
-                <Hourglass size={14} className="animate-spin" style={{ color: "oklch(0.75 0.15 285)", animationDuration: "1.4s" }} />
+                <Hourglass size={14} className="animate-spin" style={{ color: "oklch(0.75 0.08 264)", animationDuration: "1.4s" }} />
               </p>
             ) : (
               <p className="text-xs font-semibold" style={{ color: isPlayerTurn ? "oklch(0.75 0.17 145)" : "rgba(255,255,255,.55)" }}>

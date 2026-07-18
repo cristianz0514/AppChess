@@ -81,8 +81,8 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
           <div className="mx-auto max-w-[300px] rounded-3xl p-6 text-center border mb-2"
             style={{
               background: "rgba(255,255,255,0.95)", backdropFilter: "blur(10px)",
-              borderColor: "oklch(0.61 0.22 285 / 0.10)",
-              boxShadow: world.locked ? "0 8px 20px -8px rgba(38,36,46,.12)" : "0 20px 40px -14px oklch(0.42 0.20 288 / 0.35)",
+              borderColor: "oklch(0.34 0.10 264 / 0.10)",
+              boxShadow: world.locked ? "0 8px 20px -8px rgba(38,36,46,.12)" : "0 20px 40px -14px oklch(0.30 0.09 264 / 0.35)",
               filter: world.locked ? "grayscale(0.5)" : undefined,
               opacity: world.locked ? 0.55 : 1,
             }}>
@@ -98,7 +98,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
               </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full"
-                style={{ background: "oklch(0.61 0.22 285 / 0.10)" }}>
+                style={{ background: "oklch(0.34 0.10 264 / 0.10)" }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--bv-purple)" }} />
                 <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--bv-purple)" }}>
                   {world.solvedCount}/{world.nodes.length} resueltos
@@ -163,11 +163,11 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
                       color: isPersonal || isDone ? "#fff" : isCurrent ? "var(--bv-purple)" : "rgba(255,255,255,0.9)",
                       border: isCurrent ? "6px solid var(--bv-purple)" : isPersonal ? "2px solid rgba(27,170,166,0.35)" : "none",
                       boxShadow: isCurrent
-                        ? "0 20px 30px -10px oklch(0.42 0.20 288 / 0.45)"
+                        ? "0 20px 30px -10px oklch(0.30 0.09 264 / 0.45)"
                         : isPersonal
                           ? "0 0 0 4px rgba(255,255,255,0.85), 0 10px 22px -8px rgba(27,170,166,.45)"
                           : isDone
-                            ? "0 0 0 4px rgba(255,255,255,0.6), 0 6px 14px -4px oklch(0.42 0.20 288 / 0.45)"
+                            ? "0 0 0 4px rgba(255,255,255,0.6), 0 6px 14px -4px oklch(0.30 0.09 264 / 0.45)"
                             : "inset 0 2px 5px rgba(0,0,0,0.3)",
                       backdropFilter: node.state === "locked" ? "blur(6px)" : undefined,
                       cursor: node.state === "locked" ? "not-allowed" : "pointer",
@@ -214,8 +214,8 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
           100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
         }
         @keyframes puzzlePulse {
-          0%, 100% { box-shadow: 0 0 0 0 oklch(0.61 0.22 285 / 0.35); }
-          50% { box-shadow: 0 0 0 10px oklch(0.61 0.22 285 / 0); }
+          0%, 100% { box-shadow: 0 0 0 0 oklch(0.34 0.10 264 / 0.35); }
+          50% { box-shadow: 0 0 0 10px oklch(0.34 0.10 264 / 0); }
         }
         @keyframes puzzleBob {
           0%, 100% { transform: translateY(0); }

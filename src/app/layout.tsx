@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Fraunces, Geist_Mono } from "next/font/google";
+import { Inter, Fraunces, Geist_Mono, Big_Shoulders } from "next/font/google";
 import "./globals.css";
 
 // Body / UI — clean, highly legible grotesk for a text-dense product.
@@ -20,6 +20,19 @@ const heading = Fraunces({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// Deco display face — condensed geometric skyscraper-signage type, used only
+// for the "coach tool" pages' own headings (dashboard, blunders, insights,
+// openings) via the .font-deco class. Narrative pages (Nacimiento de un
+// Campeón, Practica el Mate) keep Fraunces/.font-display — that's a
+// deliberate, separate voice, not an oversight.
+const decoHeading = Big_Shoulders({
+  variable: "--font-deco-heading",
+  subsets: ["latin"],
+  weight: "variable",
+  axes: ["opsz"],
+  display: "swap",
 });
 
 export const viewport: Viewport = {
@@ -64,7 +77,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${sans.variable} ${heading.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${sans.variable} ${heading.variable} ${geistMono.variable} ${decoHeading.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         {children}

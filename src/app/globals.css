@@ -88,7 +88,11 @@
   --bv-green:  #0BA678;
   --bv-red:    #E5484D;
   --bv-orange: #E0852B;
-  --bv-purple: #6D4AED;
+  /* Art deco redesign: was a bright violet (#6D4AED) — now a dark navy,
+     matching the landing page. The board's own highlight ring is
+     hardcoded to the old value on purpose (ChessBoard.tsx) since the
+     board is the last piece of this redesign, staying as-is for now. */
+  --bv-purple: oklch(0.34 0.10 264);
 }
 
 .dark {
@@ -136,11 +140,31 @@
   html {
     @apply font-sans;
   }
-  /* Display serif for the main page titles — premium, editorial feel. */
+  /* Display serif for narrative pages (Nacimiento de un Campeón, Practica el
+     Mate) — kept deliberately separate from .font-deco below, a different
+     voice for a different mode, not an inconsistency. */
   h1, .font-display {
     font-family: var(--font-heading);
     letter-spacing: -0.01em;
   }
+}
+
+/* Condensed geometric display for the main coach-tool pages (dashboard,
+   blunders, insights, openings) — the art deco redesign's headline face. */
+.font-deco {
+  font-family: var(--font-deco-heading), sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Art deco signature shape — a stepped/ziggurat corner cut, reused sparingly
+   across the redesign (landing page medallion/panel, and here on the
+   dashboard's highest-priority cards) rather than on every single card. */
+.deco-step {
+  clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+}
+.deco-step-sm {
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
 }
 
 /* Visible keyboard focus for accessibility — brand-colored, only for keyboard

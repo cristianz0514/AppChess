@@ -107,7 +107,7 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
       >
         {/* Header — gradient hero */}
         <div className="relative px-5 pt-4 pb-5"
-          style={{ background: "linear-gradient(135deg, oklch(0.61 0.22 285 / 0.14), oklch(0.60 0.11 184 / 0.10))" }}>
+          style={{ background: "linear-gradient(135deg, oklch(0.34 0.10 264 / 0.14), oklch(0.60 0.11 184 / 0.10))" }}>
           <div className="mx-auto mb-3 h-1 w-10 rounded-full sm:hidden" style={{ background: "var(--border)" }} />
           <button onClick={onClose} aria-label="Cerrar"
             className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors">

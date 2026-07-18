@@ -66,7 +66,7 @@ export default async function InsightsPage() {
         {/* Saludo */}
         <div>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Coach IA</p>
-          <h1 className="font-display text-2xl font-bold mt-0.5">Hola, <span className="capitalize">{username}</span>.</h1>
+          <h1 className="font-deco text-2xl mt-0.5">Hola, <span className="capitalize">{username}</span>.</h1>
           {insights.length > 0 && (
             <p className="text-sm text-muted-foreground mt-1">
               Analicé tus últimas partidas. Esto es lo que encontré.
@@ -134,7 +134,7 @@ export default async function InsightsPage() {
 
         {/* CTA */}
         <div className="rounded-2xl p-5 text-center space-y-2"
-          style={{ background: "oklch(0.61 0.22 285 / 0.15)", border: "1px solid oklch(0.61 0.22 285 / 0.25)" }}>
+          style={{ background: "oklch(0.34 0.10 264 / 0.15)", border: "1px solid oklch(0.34 0.10 264 / 0.25)" }}>
           <p className="text-sm font-bold">La maestría es un camino.</p>
           <p className="text-xs text-muted-foreground">Sigue analizando tus partidas para descubrir patrones más profundos.</p>
         </div>

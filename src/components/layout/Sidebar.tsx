@@ -18,9 +18,12 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex flex-col w-56 shrink-0 border-r border-border bg-card h-screen sticky top-0">
-      <div className="px-4 py-5 border-b border-border">
-        <span className="font-semibold text-sm tracking-tight">AnaliChess</span>
-        <span className="text-primary text-sm"> IA</span>
+      <div className="px-4 py-5 border-b border-border flex items-center gap-2.5">
+        <div className="deco-step-sm w-8 h-8 flex items-center justify-center shrink-0"
+          style={{ background: "var(--bv-purple)" }}>
+          <span className="text-white text-sm leading-none">♞</span>
+        </div>
+        <span className="font-deco text-base leading-none uppercase">AnaliChess<span style={{ color: "var(--bv-purple)" }}> IA</span></span>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-0.5">
         {navItems.map(({ href, label, icon: Icon }) => {
@@ -39,7 +42,7 @@ export function Sidebar() {
                   ? "font-semibold"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
               )}
-              style={active ? { background: "oklch(0.61 0.22 285 / 0.12)", color: "var(--bv-purple)" } : {}}
+              style={active ? { background: "oklch(0.34 0.10 264 / 0.12)", color: "var(--bv-purple)" } : {}}
             >
               <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
               {label}
@@ -49,7 +52,7 @@ export function Sidebar() {
       </nav>
       <div className="p-3 border-t border-border">
         <Link href="/"
-          className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-bold text-white transition-transform active:scale-[0.98]"
+          className="deco-step-sm flex items-center justify-center gap-2 px-3 py-2 text-sm font-bold text-white transition-transform active:scale-[0.98]"
           style={{ background: "var(--bv-purple)" }}>
           <Plus size={16} strokeWidth={2.5} /> Importar partidas
         </Link>

@@ -64,7 +64,7 @@ export default function OpeningsPage() {
 
         <div>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Análisis</p>
-          <h1 className="font-display text-2xl font-bold mt-0.5">Repertorio de Aperturas</h1>
+          <h1 className="font-deco text-2xl mt-0.5 uppercase">Repertorio de Aperturas</h1>
         </div>
 
         {/* ── Color filter ─────────────────────────────────────── */}

@@ -253,7 +253,10 @@ export function ChessBoard({
                   // text naming a square.
                   <div aria-hidden style={{
                     position: "absolute", inset: "3%", borderRadius: "9999px",
-                    boxShadow: "inset 0 0 0 0.6cqi var(--bv-purple)",
+                    // Hardcoded (not var(--bv-purple)) on purpose — the board
+                    // itself is the last piece of the redesign, staying as-is
+                    // for now even as the rest of the app repoints that token.
+                    boxShadow: "inset 0 0 0 0.6cqi #6D4AED",
                     animation: "bvHintPulse 1.1s ease-in-out infinite",
                     pointerEvents: "none", zIndex: 1,
                   }} />

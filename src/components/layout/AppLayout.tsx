@@ -22,12 +22,12 @@ export function AppLayout({ children, username }: Props) {
         {/* Mobile top header */}
         <header className="md:hidden flex items-center justify-between px-4 h-14 shrink-0 border-b border-border bg-card/80 backdrop-blur-sm">
           <div
-            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+            className="deco-step-sm w-8 h-8 flex items-center justify-center text-xs font-bold shrink-0"
             style={{ background: "var(--bv-purple)", color: "#fff" }}
           >
             {initials}
           </div>
-          <span className="text-sm font-bold tracking-tight">AnaliChess IA</span>
+          <span className="font-deco text-sm leading-none uppercase">AnaliChess IA</span>
           <Link href="/" aria-label="Importar partidas"
             className="w-8 h-8 flex items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:text-foreground active:scale-95">
             <Plus size={16} />

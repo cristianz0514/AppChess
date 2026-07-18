@@ -391,7 +391,7 @@ function MoveTable({ moves, idx, onGo, compact }: {
         ref={isActive ? activeRef : undefined}
         className="flex-1 flex items-center gap-1 cursor-pointer rounded px-1.5 py-1 transition-colors text-xs font-mono"
         style={{
-          background: isActive ? "oklch(0.61 0.22 285 / 0.22)" : isError ? `${col}11` : "transparent",
+          background: isActive ? "oklch(0.34 0.10 264 / 0.22)" : isError ? `${col}11` : "transparent",
           borderLeft: isActive ? `2px solid var(--bv-purple)` : isError ? `2px solid ${col}` : "2px solid transparent",
           color: col ?? "var(--foreground)",
           fontWeight: isActive || m.classification ? 600 : 400,
@@ -980,7 +980,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   overlaying it. */}
               {inExplore && (
                 <div className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
-                  style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
+                  style={{ background: "oklch(0.34 0.10 264 / 0.92)", color: "#fff" }}>
                   <span className="flex items-center gap-1"><Search size={13} /> Exploración libre</span>
                   <div className="flex items-center gap-1">
                     <button
@@ -1008,7 +1008,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   absolute overlay sitting on top of the board. */}
               {!inExplore && previewFen && previewMoveInfo && (
                 <div className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
-                  style={{ background: "oklch(0.61 0.22 285 / 0.92)", color: "#fff" }}>
+                  style={{ background: "oklch(0.34 0.10 264 / 0.92)", color: "#fff" }}>
                   <span className="flex items-center gap-1"><Target size={13} /> Mejor: {previewMoveInfo.san}</span>
                   <button onClick={() => setPreviewBest(false)} title="Volver a la posición real" aria-label="Cerrar vista previa"
                     className="px-1.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors">
@@ -1129,7 +1129,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 disabled={!autoBest[idx]}
                 title={autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : undefined}
                 className="w-[4.75rem] h-11 shrink-0 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition active:scale-[0.98] disabled:opacity-60"
-                style={{ background: previewBest ? "var(--bv-purple)" : "oklch(0.61 0.22 285 / 0.10)", color: previewBest ? "#fff" : "var(--bv-purple)" }}>
+                style={{ background: previewBest ? "var(--bv-purple)" : "oklch(0.34 0.10 264 / 0.10)", color: previewBest ? "#fff" : "var(--bv-purple)" }}>
                 <Target size={14} className="shrink-0" />
                 <span className="truncate">{autoBest[idx] ? autoBest[idx]!.san : autoBest[idx] === null ? "—" : "…"}</span>
               </button>

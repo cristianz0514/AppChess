@@ -65,13 +65,13 @@ export default async function BlundersPage({ searchParams }: Props) {
 
         <div>
           <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Historial</p>
-          <h1 className="font-display text-2xl font-bold mt-0.5">
+          <h1 className="font-deco text-2xl mt-0.5 uppercase">
             {opening ? "Partidas por Apertura" : "Partidas Recientes"}
           </h1>
           {opening && (
             <div className="flex items-center gap-2 mt-2">
               <span className="text-xs px-2 py-1 rounded-full border font-medium truncate max-w-[260px]"
-                style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)", background: "oklch(0.61 0.22 285 / 0.1)" }}>
+                style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)", background: "oklch(0.34 0.10 264 / 0.1)" }}>
                 {translateOpening(opening)}
               </span>
               <Link href="/blunders" className="text-xs text-muted-foreground underline underline-offset-2">

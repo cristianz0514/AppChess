@@ -38,7 +38,7 @@ export default async function PracticeMatePage() {
         {totalNodes > 0 && (
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 px-3 py-1 rounded-full"
-              style={{ background: "oklch(0.61 0.22 285 / 0.14)", color: "var(--bv-purple)" }}>
+              style={{ background: "oklch(0.34 0.10 264 / 0.14)", color: "var(--bv-purple)" }}>
               <CheckCircle2 size={13} strokeWidth={2.4} />
               <span className="text-[11px] font-bold tabular-nums">{totalSolved}/{totalNodes}</span>
             </div>
