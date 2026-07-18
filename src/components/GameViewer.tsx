@@ -6,7 +6,7 @@ import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
 import { Piece } from "./pieces";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, RotateCcw, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
 import type { Game } from "@/types";
 
@@ -51,41 +51,6 @@ type StorySlide =
   | { type: "intro"; peak: number; boardIdx: number }
   | { type: "moment"; cm: CriticalMoment; boardIdx: number }
   | { type: "outro"; recovered: boolean; finalEval: number | null; lastMoveNumber: number; boardIdx: number };
-
-// ── Practice mode evaluator ───────────────────────────────────────────────────
-
-interface PracticeResult {
-  verdict: "excellent" | "good" | "neutral" | "illegal";
-  message: string;
-}
-
-function evaluatePracticeMove(fenBefore: string, from: string, to: string, promotion: "q" | "r" | "b" | "n" = "q"): PracticeResult {
-  const game = new Chess(fenBefore);
-  let move;
-  try {
-    move = game.move({ from, to, promotion });
-  } catch {
-    return { verdict: "illegal", message: "Movimiento ilegal en esta posición." };
-  }
-  if (!move) return { verdict: "illegal", message: "Movimiento ilegal en esta posición." };
-
-  if (game.isCheckmate()) return { verdict: "excellent", message: "¡Jaque mate! La jugada perfecta." };
-  if (game.isCheck() && move.captured) return { verdict: "excellent", message: "¡Capturaste material y das jaque! Excelente combinación." };
-  if (move.captured) {
-    const vals: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
-    const gain = vals[move.captured] ?? 1;
-    return gain >= 3
-      ? { verdict: "excellent", message: `¡Excelente! Ganaste material (${move.captured === "n" || move.captured === "b" ? "pieza menor" : move.captured === "r" ? "torre" : "dama"}).` }
-      : { verdict: "good", message: "Capturaste un peón. Puede ser una mejora." };
-  }
-  if (game.isCheck()) return { verdict: "good", message: "Das jaque — presionas al rival. Buena idea." };
-
-  // Check if it's a developing move (knight or bishop to active square)
-  const developingPieces = ["n", "b"];
-  if (developingPieces.includes(move.piece)) return { verdict: "good", message: "Desarrollas una pieza — generalmente mejor que el error cometido." };
-
-  return { verdict: "neutral", message: "Jugada legal. No pierde material, pero tampoco es la óptima. Intenta buscar capturas o amenazas." };
-}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -320,16 +285,17 @@ function CapturedTray({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
     if (!m.captured) continue;
     (m.color === "w" ? byWhite : byBlack).push(m.captured);
   }
-  if (byWhite.length === 0 && byBlack.length === 0) return null;
-
   const byValueDesc = (a: string, b: string) => (PIECE_VALUE[b] ?? 0) - (PIECE_VALUE[a] ?? 0);
   byWhite.sort(byValueDesc);
   byBlack.sort(byValueDesc);
   const diff = byWhite.reduce((s, p) => s + (PIECE_VALUE[p] ?? 0), 0)
     - byBlack.reduce((s, p) => s + (PIECE_VALUE[p] ?? 0), 0);
 
+  // Fixed height (matches the 13px piece icons) even with zero captures —
+  // this used to return null with nothing captured yet, which meant the
+  // board sat higher until the first capture in the game shifted it down.
   return (
-    <div className="flex items-center justify-between px-0.5">
+    <div className="flex items-center justify-between px-0.5" style={{ minHeight: 13 }}>
       <div className="flex items-center">
         {byWhite.map((p, i) => (
           <span key={i} style={{ width: 13, height: 13, marginLeft: i > 0 ? -4 : 0 }}>
@@ -435,13 +401,6 @@ interface Props {
 
 export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, avgAccuracy, gameId, autoStory }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
-  const [tab, setTab] = useState<Tab>("analizar");
-
-  // Practice mode state
-  const [practiceBlunderIdx, setPracticeBlunderIdx] = useState<number | null>(null);
-  const [practiceResult, setPracticeResult] = useState<PracticeResult | null>(null);
-  const [practiceMovePlayed, setPracticeMovePlayed] = useState<{ from: string; to: string; promotion?: "q" | "r" | "b" | "n" } | null>(null);
-  const inPractice = practiceBlunderIdx !== null;
 
   const firstBlunderIdx = jumpToBlunder
     ? moves.findIndex((m) => m.classification === "blunder")
@@ -460,44 +419,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
   const currentMove = idx >= 0 ? moves[idx]       : null;
   const lastMove    = currentMove ? { from: currentMove.from, to: currentMove.to } : null;
-
-  // Practice mode: show position BEFORE the blunder
-  const practiceMove = practiceBlunderIdx !== null ? moves[practiceBlunderIdx] : null;
-  const practiceFen  = practiceBlunderIdx !== null
-    ? (practiceBlunderIdx > 0 ? moves[practiceBlunderIdx - 1].fen : new Chess().fen())
-    : null;
-
-  // Arrow showing the blunder that was played
-  const practiceArrows: Arrow[] = practiceMove
-    ? [{ from: practiceMove.from, to: practiceMove.to, color: "red" }]
-    : [];
-
-  // Arrow showing user's practice move
-  const userArrows: Arrow[] = practiceMovePlayed
-    ? [{ from: practiceMovePlayed.from, to: practiceMovePlayed.to, color: "green" }]
-    : [];
-
-  function startPractice(blunderIdx: number) {
-    setPracticeBlunderIdx(blunderIdx);
-    setPracticeResult(null);
-    setPracticeMovePlayed(null);
-    setTab("consejos");
-  }
-
-  function exitPractice() {
-    setPracticeBlunderIdx(null);
-    setPracticeResult(null);
-    setPracticeMovePlayed(null);
-  }
-
-  function handlePracticeMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
-    if (!practiceFen || practiceResult) return;
-    const result = evaluatePracticeMove(practiceFen, from, to, promotion);
-    setPracticeResult(result);
-    if (result.verdict !== "illegal") {
-      setPracticeMovePlayed({ from, to, promotion });
-    }
-  }
 
   // Best move arrow state (Story Mode's per-moment arrow; general review now
   // uses the automatic autoBest cache below instead of a manual fetch).
@@ -749,7 +670,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // asked. Cached per index so scrubbing back and forth doesn't refetch.
   const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string } | null>>({});
   useEffect(() => {
-    if (inExplore || inStory || inPractice) return;
+    if (inExplore || inStory) return;
     if (autoBest[idx] !== undefined) return;
     let cancelled = false;
     fetch(`/api/bestmove?fen=${encodeURIComponent(currentFen)}`)
@@ -767,14 +688,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       })
       .catch(() => { if (!cancelled) setAutoBest((prev) => ({ ...prev, [idx]: null })); });
     return () => { cancelled = true; };
-  }, [idx, inExplore, inStory, inPractice, currentFen, autoBest]);
+  }, [idx, inExplore, inStory, currentFen, autoBest]);
 
   // Tapping the best-move readout plays it out on the board (Lichess-style
   // preview) instead of only pointing an arrow at it — the position itself
   // updates so you can see the resulting structure, then the X restores the
   // real position.
   const [previewBest, setPreviewBest] = useState(false);
-  const previewMoveInfo = !inExplore && !inStory && !inPractice && previewBest ? autoBest[idx] : null;
+  const previewMoveInfo = !inExplore && !inStory && previewBest ? autoBest[idx] : null;
   const previewFen = useMemo(() => {
     if (!previewMoveInfo) return null;
     try {
@@ -845,7 +766,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   ];
 
   return (
-    <div className="flex flex-col gap-2 pt-1 pb-1">
+    <div className="flex flex-col gap-1.5 pt-1 pb-1">
 
       {gameAnalyzed && (
         <ReviewSummaryModal
@@ -862,9 +783,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
 
       {/* ── Tab: Analizar ────────────────────────────────────── */}
-      {!inPractice && (
-        <>
-
 
           {/* Coach line — precomputed AI comment inline. Was clamped to 2 lines
               with a fixed height so the board never jumps while scrubbing
@@ -891,7 +809,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             const color = c?.color ?? "var(--muted-foreground)";
             const commentText = ai || computed || (currentMove ? "" : "Usa las flechas para revisar la partida.");
             return (
-              <div className={`flex items-start gap-2 ${commentExpanded ? "min-h-20" : "h-20"} shrink-0`}>
+              <div className={`flex items-start gap-2 ${commentExpanded ? "min-h-28" : "h-28"} shrink-0`}>
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white mt-0.5"
                   style={{ background: color }}>
                   {cls ? CLASS_EMOJI[cls] : "•"}
@@ -907,18 +825,18 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                       ? <><span className="font-mono">{currentMove.san}</span>{c ? ` — ${c.label}` : ""}</>
                       : "Posición inicial"}
                   </p>
-                  {/* Was h-16/line-clamp-2 — freed up room elsewhere (tighter
-                      spacing throughout this view) goes straight here, since
-                      the AI's real 2-3 sentence comments were the thing
-                      actually needing space. One more line visible by
-                      default now; still taps to expand for the rest. */}
+                  {/* Grew again from 3 to 5 visible lines — freed by pushing
+                      the button rows below further down (tighter gaps
+                      throughout this view) — since the AI's real 2-3
+                      sentence comments are the thing actually needing space.
+                      Still taps to expand for anything longer than that. */}
                   {ai ? (
-                    <p className={`text-xs leading-snug flex items-start gap-1 text-foreground ${commentExpanded ? "" : "line-clamp-3"}`}>
+                    <p className={`text-xs leading-snug flex items-start gap-1 text-foreground ${commentExpanded ? "" : "line-clamp-5"}`}>
                       <Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
                       <span>{ai}</span>
                     </p>
                   ) : (
-                    <p className={`text-xs text-muted-foreground ${commentExpanded ? "" : "line-clamp-3"}`}>
+                    <p className={`text-xs text-muted-foreground ${commentExpanded ? "" : "line-clamp-5"}`}>
                       {commentText}
                     </p>
                   )}
@@ -928,8 +846,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           })()}
 
           {/* Board + eval bar (bar on top, board edge-to-edge) */}
-          <div className="space-y-2 -mx-4" style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-            <div className="px-4 space-y-1.5">
+          <div className="space-y-1.5 -mx-4" style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+            <div className="px-4 space-y-1">
               <EvalBar moves={moves} idx={inExplore ? -1 : idx} />
               {!inExplore && <CapturedTray moves={moves} idx={idx} />}
             </div>
@@ -1097,34 +1015,24 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               {/* Best move draws automatically as a blue arrow. Tapping this
                   readout also plays it out on the board (Lichess-style) so
                   you can see the resulting position; the banner's X restores
-                  the real one. Shrunk from a flex-1 pill (which ate the rest
-                  of the row) down to content-sized — that's what makes room
-                  for Resumen/sonido below without crowding the board. */}
+                  the real one. Fixed width (was content-sized px-3, which
+                  grew/shrank as the label went "…" → "—" → a real SAN move,
+                  shoving Resumen/sonido sideways every time) so the rest of
+                  the row stays put regardless of label length. */}
               <button
                 onClick={() => autoBest[idx] && setPreviewBest((p) => !p)}
                 disabled={!autoBest[idx]}
                 title={autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : undefined}
-                className="h-11 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-60"
+                className="w-[4.75rem] h-11 shrink-0 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition active:scale-[0.98] disabled:opacity-60"
                 style={{ background: previewBest ? "var(--bv-purple)" : "oklch(0.61 0.22 285 / 0.10)", color: previewBest ? "#fff" : "var(--bv-purple)" }}>
-                <Target size={14} />
-                {autoBest[idx] ? autoBest[idx]!.san : autoBest[idx] === null ? "—" : "…"}
+                <Target size={14} className="shrink-0" />
+                <span className="truncate">{autoBest[idx] ? autoBest[idx]!.san : autoBest[idx] === null ? "—" : "…"}</span>
               </button>
-              {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
-                <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
-                  className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
-                  style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
-                  <Brain size={18} />
-                </button>
-              )}
               {/* Resumen + sonido used to sit in a header row above the coach
                   comment — moved here, bottom-right of the action row, once
-                  shrinking "Mejor" (above) freed the room for them. No
-                  spacer anymore — a `flex-1` gap here read as wasted empty
-                  space on rows without "Practicar", so everything just packs
-                  together in order instead; Resumen/sonido still end up
-                  trailing at the row's end. Resumen dropped its text label —
-                  the bar-chart icon reads fine on its own alongside every
-                  other icon-only button in this row. */}
+                  shrinking "Mejor" (above) freed the room for them. Resumen
+                  dropped its text label — the bar-chart icon reads fine on
+                  its own alongside every other icon-only button in this row. */}
               {gameAnalyzed && (
                 <button onClick={() => setShowSummary(true)} title="Resumen" aria-label="Resumen"
                   className="w-11 h-11 flex items-center justify-center rounded-xl border transition active:scale-95"
@@ -1142,119 +1050,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               </button>
             </div>
           )}
-        </>
-      )}
-
-
-
-      {/* ── Modo Práctica ────────────────────────────────────── */}
-      {inPractice && practiceFen && practiceMove && (
-        <div className="space-y-3">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "var(--bv-purple)" }}>
-                Modo Práctica
-              </p>
-              <p className="text-sm font-semibold">
-                Jugada {practiceMove.moveNumber} · {practiceMove.color === "w" ? "Blancas" : "Negras"}
-              </p>
-            </div>
-            <button onClick={exitPractice}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border transition-colors hover:bg-muted/50"
-              style={{ borderColor: "var(--border)", color: "var(--muted-foreground)" }}>
-              <RotateCcw size={12} /> Volver
-            </button>
-          </div>
-
-          {/* Instruction */}
-          {!practiceResult && (
-            <div className="rounded-2xl p-3 border" style={{ background: "oklch(0.61 0.22 285 / 0.08)", borderColor: "oklch(0.61 0.22 285 / 0.3)" }}>
-              <p className="text-xs font-semibold" style={{ color: "var(--bv-purple)" }}>¿Qué hubieras jugado?</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                La flecha <span className="text-red-400 font-bold">roja</span> muestra el error cometido ({practiceMove.san}).
-                Toca una pieza y luego el destino para intentar tu jugada.
-              </p>
-            </div>
-          )}
-
-          {/* Practice board */}
-          <div className="space-y-2 -mx-4">
-            <div className="px-4"><EvalBar moves={moves} idx={Math.max(-1, practiceBlunderIdx! - 1)} /></div>
-            <ChessBoard
-              fen={practiceResult && practiceMovePlayed
-                ? (() => {
-                    const g = new Chess(practiceFen);
-                    try { g.move({ from: practiceMovePlayed.from, to: practiceMovePlayed.to, promotion: practiceMovePlayed.promotion ?? "q" }); } catch {}
-                    return g.fen();
-                  })()
-                : practiceFen
-              }
-              orientation={playedAs}
-              arrows={practiceResult ? userArrows : practiceArrows}
-              interactive={!practiceResult}
-              onMove={handlePracticeMove}
-            />
-          </div>
-
-          {/* Result feedback */}
-          {practiceResult && (
-            <div className="rounded-2xl p-4 border-l-4"
-              style={{
-                background: "var(--card)",
-                borderColor: "var(--border)",
-                borderLeftColor: practiceResult.verdict === "excellent" ? "var(--bv-green)"
-                  : practiceResult.verdict === "good" ? "var(--bv-green)"
-                  : practiceResult.verdict === "neutral" ? "var(--bv-orange)"
-                  : "var(--bv-red)",
-                borderLeftWidth: 4,
-              }}>
-              <p className="text-lg font-bold mb-1">
-                {practiceResult.verdict === "excellent" ? "✅ ¡Excelente!" :
-                 practiceResult.verdict === "good"      ? "✅ ¡Buena jugada!" :
-                 practiceResult.verdict === "neutral"   ? "⚠️ Jugada aceptable" :
-                 "❌ Movimiento ilegal"}
-              </p>
-              <p className="text-sm text-muted-foreground">{practiceResult.message}</p>
-              {practiceResult.verdict !== "illegal" && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  El error original fue <span className="font-bold font-mono" style={{ color: "var(--bv-red)" }}>{practiceMove.san}</span>.
-                  {practiceMove.centipawnLoss != null && practiceMove.centipawnLoss > 0 && ` Costó ${practiceMove.centipawnLoss} centipeones.`}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Try again / next blunder */}
-          <div className="flex gap-2">
-            {practiceResult && (
-              <button onClick={() => { setPracticeResult(null); setPracticeMovePlayed(null); }}
-                className="flex-1 py-2.5 rounded-2xl border text-xs font-semibold transition"
-                style={{ borderColor: "var(--border)", background: "var(--card)" }}>
-                Intentar de nuevo
-              </button>
-            )}
-            {practiceResult && (() => {
-              const errors = moves.map((m, i) => ({ ...m, flatIdx: i })).filter(m => m.classification === "blunder" || m.classification === "mistake");
-              const nextErr = errors.find(e => e.flatIdx > practiceBlunderIdx!);
-              return nextErr ? (
-                <button onClick={() => startPractice(nextErr.flatIdx)}
-                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition"
-                  style={{ background: "var(--bv-purple)", color: "#fff" }}>
-                  Siguiente error →
-                </button>
-              ) : (
-                <button onClick={exitPractice}
-                  className="flex-1 py-2.5 rounded-2xl text-xs font-bold transition"
-                  style={{ background: "var(--bv-green)", color: "#fff" }}>
-                  ¡Completado! 🎉
-                </button>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
 
     </div>
   );
