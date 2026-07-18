@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Lock } from "lucide-react";
 import { BackButton } from "@/components/BackButton";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
@@ -38,33 +38,52 @@ export default async function ChampionChaptersPage({ params }: Props) {
           <img src="/campeones/budapest-atardecer.jpg" alt="" className="w-full h-full object-cover" />
         </div>
         <p className="text-sm text-muted-foreground text-center text-balance">{champion.tagline}</p>
-        <p className="text-xs text-center rounded-lg px-3 py-2" style={{ background: "var(--card)", color: "var(--muted-foreground)" }}>
-          Todos los capítulos están habilitados temporalmente para validarlos. Más adelante se
-          desbloquearán en orden, uno a uno, según ganes el anterior.
-        </p>
 
         <div className="space-y-3">
           {champion.chapters.map((chapter, i) => {
             const won = progress.get(`${champion.id}/${chapter.id}`)?.result === "win";
-            return (
+            // Chapter 1 is always open; every chapter after that needs the
+            // PREVIOUS one won, not just attempted — a loss or a draw
+            // doesn't advance the story.
+            const previousChapter = champion.chapters[i - 1];
+            const unlocked = i === 0 || progress.get(`${champion.id}/${previousChapter.id}`)?.result === "win";
+
+            const content = (
+              <>
+                <div
+                  className="flex items-center justify-center rounded-full shrink-0 font-display font-bold"
+                  style={{ width: 40, height: 40, background: unlocked ? champion.color : "var(--muted-foreground)", color: "#fff" }}
+                >
+                  {unlocked ? i + 1 : <Lock size={16} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold truncate">{chapter.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {unlocked ? `Vs ${chapter.opponentName} · ELO ${chapter.eloTarget}` : `Gana el capítulo ${i} para desbloquear`}
+                  </p>
+                </div>
+                {won && <CheckCircle2 size={18} style={{ color: "var(--bv-green)" }} className="shrink-0" />}
+              </>
+            );
+
+            return unlocked ? (
               <Link
                 key={chapter.id}
                 href={`/campeones/${champion.id}/${chapter.id}`}
                 className="flex items-center gap-4 p-4 rounded-2xl border transition active:scale-[0.98]"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}
               >
-                <div
-                  className="flex items-center justify-center rounded-full shrink-0 font-display font-bold"
-                  style={{ width: 40, height: 40, background: champion.color, color: "#fff" }}
-                >
-                  {i + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold truncate">{chapter.title}</p>
-                  <p className="text-xs text-muted-foreground">Vs {chapter.opponentName} · ELO {chapter.eloTarget}</p>
-                </div>
-                {won && <CheckCircle2 size={18} style={{ color: "var(--bv-green)" }} className="shrink-0" />}
+                {content}
               </Link>
+            ) : (
+              <div
+                key={chapter.id}
+                aria-disabled="true"
+                className="flex items-center gap-4 p-4 rounded-2xl border opacity-60"
+                style={{ borderColor: "var(--border)", background: "var(--card)" }}
+              >
+                {content}
+              </div>
             );
           })}
         </div>
