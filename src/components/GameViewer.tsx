@@ -861,39 +861,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       )}
 
 
-      {/* ── Header info ──────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-muted-foreground truncate max-w-[200px]">{opening}</p>
-          {gameResult && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full mt-0.5 inline-block"
-              style={{
-                background: gameResult === "win" ? "oklch(0.77 0.17 177 / 0.2)" : gameResult === "loss" ? "oklch(0.63 0.23 25 / 0.2)" : "oklch(0.70 0.18 50 / 0.2)",
-                color: gameResult === "win" ? "var(--bv-green)" : gameResult === "loss" ? "var(--bv-red)" : "var(--bv-orange)",
-              }}>
-              {gameResult === "win" ? "Victoria" : gameResult === "loss" ? "Derrota" : "Tablas"}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {gameAnalyzed && (
-            <button onClick={() => setShowSummary(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold"
-              style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
-              <BarChart2 size={12} /> Resumen
-            </button>
-          )}
-          <button
-            onClick={() => { const on = !toggleMuted(); setSoundOn(on); if (on) playSound("move"); }}
-            aria-label={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
-            title={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
-            className="w-8 h-8 flex items-center justify-center rounded-full border transition-colors hover:bg-muted/40"
-            style={{ borderColor: "var(--border)", color: soundOn ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
-            {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
-          </button>
-        </div>
-      </div>
-
       {/* ── Tab: Analizar ────────────────────────────────────── */}
       {!inPractice && (
         <>
@@ -1125,14 +1092,17 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               {/* Best move draws automatically as a blue arrow. Tapping this
                   readout also plays it out on the board (Lichess-style) so
                   you can see the resulting position; the banner's X restores
-                  the real one. */}
+                  the real one. Shrunk from a flex-1 pill (which ate the rest
+                  of the row) down to content-sized — that's what makes room
+                  for Resumen/sonido below without crowding the board. */}
               <button
                 onClick={() => autoBest[idx] && setPreviewBest((p) => !p)}
                 disabled={!autoBest[idx]}
-                className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition active:scale-[0.98] disabled:opacity-60"
+                title={autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : undefined}
+                className="h-11 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] disabled:opacity-60"
                 style={{ background: previewBest ? "var(--bv-purple)" : "oklch(0.61 0.22 285 / 0.10)", color: previewBest ? "#fff" : "var(--bv-purple)" }}>
-                <Target size={16} />
-                {autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : autoBest[idx] === null ? "Sin mejor jugada" : "Calculando..."}
+                <Target size={14} />
+                {autoBest[idx] ? autoBest[idx]!.san : autoBest[idx] === null ? "—" : "…"}
               </button>
               {idx >= 0 && currentMove?.color === playerColor && (currentMove?.classification === "blunder" || currentMove?.classification === "mistake") && (
                 <button onClick={() => startPractice(idx)} title="Practicar esta posicion" aria-label="Practicar"
@@ -1141,6 +1111,27 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   <Brain size={18} />
                 </button>
               )}
+              {/* Resumen + sonido used to sit in a header row above the coach
+                  comment — moved here, bottom-right, now that shrinking
+                  "Mejor" (above) freed the room for them. The spacer pushes
+                  both to the end of the row instead of trailing right after
+                  Practicar. */}
+              <div className="flex-1" />
+              {gameAnalyzed && (
+                <button onClick={() => setShowSummary(true)}
+                  className="h-11 flex items-center gap-1 px-2.5 rounded-xl border text-[11px] font-bold shrink-0"
+                  style={{ borderColor: "var(--bv-purple)", color: "var(--bv-purple)" }}>
+                  <BarChart2 size={12} /> Resumen
+                </button>
+              )}
+              <button
+                onClick={() => { const on = !toggleMuted(); setSoundOn(on); if (on) playSound("move"); }}
+                aria-label={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
+                title={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
+                className="w-11 h-11 flex items-center justify-center rounded-xl border transition-colors hover:bg-muted/40 shrink-0"
+                style={{ borderColor: "var(--border)", color: soundOn ? "var(--bv-purple)" : "var(--muted-foreground)" }}>
+                {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              </button>
             </div>
           )}
         </>
