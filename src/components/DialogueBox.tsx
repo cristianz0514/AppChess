@@ -130,7 +130,7 @@ function LineBubble({
         )}
       </div>
       <div className={`flex items-center gap-1 mt-3 text-[11px] font-semibold ${isNarration ? "justify-center" : isPlayer ? "justify-start" : "justify-end"}`}
-        style={{ color: "var(--bv-purple)" }}>
+        style={{ color: "var(--bv-electric)" }}>
         {isTyping ? "Toca para saltar" : isLast ? "Continuar" : "Siguiente"} <ChevronRight size={13} />
         <span className="font-normal ml-1" style={{ color: "rgba(255,255,255,.5)" }}>{lineNumber}/{totalLines}</span>
       </div>

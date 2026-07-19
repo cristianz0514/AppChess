@@ -91,7 +91,7 @@ export function InstallPrompt() {
       role="dialog"
       aria-label="Instalar AnaliChess IA"
     >
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-2xl">
+      <div className="deco-step bg-card border border-border p-4 shadow-2xl">
 
         <div className="flex items-start justify-between mb-3">
           <div>
@@ -115,7 +115,8 @@ export function InstallPrompt() {
             </p>
             <button
               onClick={handleDismiss}
-              className="w-full bg-foreground text-background text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
+              className="w-full text-white text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
+              style={{ background: "var(--bv-electric)" }}
             >
               Entendido
             </button>
@@ -134,7 +135,8 @@ export function InstallPrompt() {
             <div className="flex gap-2">
               <button
                 onClick={handleInstall}
-                className="flex-1 bg-foreground text-background text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
+                className="flex-1 text-white text-xs font-semibold py-2 rounded-xl hover:opacity-90 active:opacity-70 transition-opacity"
+                style={{ background: "var(--bv-electric)" }}
               >
                 Instalar app
               </button>

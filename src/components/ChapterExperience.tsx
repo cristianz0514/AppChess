@@ -124,8 +124,8 @@ function ResultModal({
           <button
             onClick={handleAnalyze}
             disabled={analyzing}
-            className="w-full py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-60"
-            style={{ background: "var(--bv-purple)", color: "#fff" }}
+            className="deco-step w-full py-3 font-bold flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-60"
+            style={{ background: "var(--bv-electric)", color: "#fff" }}
           >
             {analyzing ? (
               <span className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin inline-block" />
