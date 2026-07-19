@@ -76,7 +76,7 @@ export default async function InsightsPage() {
 
         {/* Insight destacado */}
         {featured ? (
-          <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+          <div className="deco-step bg-card border border-border p-5 space-y-3">
             <div className="flex items-center gap-2">
               <Sparkles size={13} style={{ color: "var(--bv-purple)" }} />
               <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Consejo del día</p>

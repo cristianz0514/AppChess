@@ -68,14 +68,14 @@ export default function OpeningsPage() {
         </div>
 
         {/* ── Color filter ─────────────────────────────────────── */}
-        <div className="flex gap-2 p-1 rounded-2xl border border-border bg-card">
+        <div className="deco-step-sm flex gap-2 p-1 border border-border bg-card">
           {FILTERS.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setColor(id)}
               className="flex-1 py-2 rounded-xl text-xs font-semibold transition"
               style={{
-                background: color === id ? "var(--bv-purple)" : "transparent",
+                background: color === id ? "var(--bv-electric)" : "transparent",
                 color: color === id ? "#fff" : "var(--muted-foreground)",
               }}
             >

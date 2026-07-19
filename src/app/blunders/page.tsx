@@ -87,7 +87,7 @@ export default async function BlundersPage({ searchParams }: Props) {
             { label: "Derrotas",  value: losses, color: "var(--bv-red)"    },
             { label: "Tablas",    value: draws,  color: "var(--bv-orange)" },
           ].map(({ label, value, color }) => (
-            <div key={label} className="bg-card border border-border rounded-xl p-3 text-center">
+            <div key={label} className="deco-step-sm bg-card border border-border p-3 text-center">
               <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{label}</p>
               <p className="text-2xl font-bold" style={{ color }}>{value}</p>
             </div>
@@ -95,7 +95,7 @@ export default async function BlundersPage({ searchParams }: Props) {
         </div>
 
         {avgAccuracy !== null && (
-          <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
+          <div className="deco-step bg-card border border-border p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Precisión Promedio</p>
               <p className="text-sm text-muted-foreground mt-0.5">Últimas {games.length} partidas</p>

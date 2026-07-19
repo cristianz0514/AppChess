@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Big_Shoulders } from "next/font/google";
 import { trackGamesImported } from "@/lib/installTracking";
-import { Target, Crosshair, BookOpen, type LucideIcon } from "lucide-react";
 
 // Display face for this page only — a condensed geometric skyscraper-signage
 // face (literally the typeface family used on Chicago high-rises), the
@@ -142,21 +141,11 @@ export default function Home() {
 
   const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
 
-  // Three benefits, one short line each — not a paragraph per feature.
-  const features: { Icon: LucideIcon; title: string; desc: string }[] = [
-    { Icon: Target,    title: "Detecta tus errores",     desc: "Jugada por jugada." },
-    { Icon: Crosshair, title: "Practica tus errores",    desc: "Vuelve a intentar la posición." },
-    { Icon: BookOpen,  title: "Repertorio de aperturas", desc: "Con qué apertura ganas más." },
-  ];
-
   return (
-    <main className={`${decoDisplay.variable} deco-page min-h-screen flex flex-col relative overflow-hidden`}>
+    <main className={`${decoDisplay.variable} deco-page h-dvh overflow-hidden flex flex-col items-center justify-center px-5 text-center relative`}
+      style={{ animation: "bvFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
-      {/* Hero */}
-      <div className="relative flex-1 flex flex-col items-center justify-center px-5 pt-20 pb-8 text-center"
-        style={{ animation: "bvFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-
-        <div className="relative mb-8 flex items-center justify-center" style={{ width: 96, height: 96 }}>
+        <div className="relative mb-6 flex items-center justify-center" style={{ width: 96, height: 96 }}>
           <Sunburst />
           <div className="deco-medallion deco-medallion-in relative w-20 h-20 flex items-center justify-center select-none"
             style={{ background: "var(--deco-bg)" }}>
@@ -164,15 +153,15 @@ export default function Home() {
           </div>
         </div>
 
-        <p className="deco-mono text-[11px] font-bold tracking-[0.28em] uppercase mb-4" style={{ color: "var(--deco-navy)" }}>
+        <p className="deco-mono text-[11px] font-bold tracking-[0.28em] uppercase mb-3" style={{ color: "var(--deco-navy)" }}>
           Tu entrenador de ajedrez con IA
         </p>
 
-        <h1 className="deco-display text-[26px] leading-[1.15] mb-4 text-balance max-w-[15rem] uppercase" style={{ color: "var(--deco-black)" }}>
-          Descubre dónde se te <span style={{ color: "var(--deco-navy)" }}>escapan</span> las partidas
+        <h1 className="deco-display text-[26px] leading-[1.15] mb-3 text-balance max-w-[15rem] uppercase" style={{ color: "var(--deco-black)" }}>
+          Descubre dónde se te <span style={{ color: "var(--deco-accent)" }}>escapan</span> las partidas
         </h1>
 
-        <p className="text-base max-w-xs leading-snug mb-8" style={{ color: "var(--deco-muted)" }}>
+        <p className="text-base max-w-xs leading-snug mb-6" style={{ color: "var(--deco-muted)" }}>
           Conecta tu cuenta de Chess.com.
         </p>
 
@@ -213,7 +202,7 @@ export default function Home() {
                     width: pct != null ? "100%" : "30%",
                     transform: pct != null ? `scaleX(${pct / 100})` : undefined,
                     transformOrigin: "left",
-                    background: "linear-gradient(90deg, var(--deco-black), var(--deco-navy))",
+                    background: "linear-gradient(90deg, var(--deco-black), var(--deco-accent))",
                     animation: pct == null ? "bvIndeterminate 1.3s ease-in-out infinite" : undefined,
                   }}
                 />
@@ -231,38 +220,17 @@ export default function Home() {
           )}
         </form>
 
-        <p className="deco-mono text-[10px] tracking-[0.12em] uppercase mt-5" style={{ color: "var(--deco-muted)" }}>
+        <p className="deco-mono text-[10px] tracking-[0.12em] uppercase mt-4" style={{ color: "var(--deco-muted)" }}>
           Gratis · Sin registro · Todo tu historial público
         </p>
-      </div>
-
-      {/* Features — a deco building directory: hairlines between rows,
-          not a numbered sequence (these four are parallel, not steps). */}
-      <div className="relative px-5 pb-12 max-w-sm mx-auto w-full">
-        <div className="deco-hairline" />
-        {features.map((f, i) => (
-          <div key={f.title}>
-            <div className="flex items-start gap-4 py-4"
-              style={{ animation: `bvFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both ${0.15 + i * 0.07}s` }}>
-              <div className="deco-icon-frame shrink-0 w-10 h-10 flex items-center justify-center">
-                <f.Icon size={16} style={{ color: "var(--deco-navy)" }} strokeWidth={2} />
-              </div>
-              <div className="text-left">
-                <p className="deco-mono text-[11px] font-bold tracking-[0.06em] uppercase mb-1" style={{ color: "var(--deco-black)" }}>{f.title}</p>
-                <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--deco-muted)" }}>{f.desc}</p>
-              </div>
-            </div>
-            <div className="deco-hairline" />
-          </div>
-        ))}
-      </div>
 
       <style>{`
         .deco-page {
           --deco-bg: var(--background);
-          --deco-black: #14161C;
-          --deco-navy: #1B2A52;
+          --deco-black: #1C2430;
+          --deco-navy: #2B3A55;
           --deco-muted: #5B6472;
+          --deco-accent: #4A5EE8;
           background: var(--deco-bg);
           color: var(--deco-black);
         }
@@ -273,16 +241,11 @@ export default function Home() {
         }
         .deco-mono { font-family: var(--font-geist-mono), monospace; }
 
-        /* Signature shape: a stepped/ziggurat octagon — deco's massing motif,
-           reused for the monogram and (mirrored, gentler) the icon frames. */
+        /* Signature shape: a single-cut chevron corner — reused for the
+           monogram, the form panel, and the CTA below. */
         .deco-medallion {
-          clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+          clip-path: polygon(18% 0, 100% 0, 100% 82%, 82% 100%, 0 100%, 0 18%);
           border: 1.5px solid var(--deco-black);
-        }
-        .deco-icon-frame {
-          clip-path: polygon(22% 0, 78% 0, 100% 22%, 100% 78%, 78% 100%, 22% 100%, 0 78%, 0 22%);
-          background: var(--deco-bg);
-          border: 1.5px solid var(--deco-navy);
         }
         .deco-panel {
           background: var(--deco-bg);
@@ -296,18 +259,14 @@ export default function Home() {
         }
         .deco-input::placeholder { color: var(--deco-muted); }
         .deco-input:focus {
-          border-color: var(--deco-navy);
-          box-shadow: 0 0 0 3px color-mix(in oklab, var(--deco-navy) 22%, transparent);
+          border-color: var(--deco-accent);
+          box-shadow: 0 0 0 3px color-mix(in oklab, var(--deco-accent) 22%, transparent);
         }
         .deco-cta {
-          background: var(--deco-navy);
+          background: var(--deco-accent);
           color: #FFFFFF;
+          clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
         }
-        .deco-hairline {
-          height: 1px;
-          background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--deco-black) 35%, transparent) 20%, color-mix(in oklab, var(--deco-black) 35%, transparent) 80%, transparent);
-        }
-
         /* Logo signature motion — an assembly sequence (rays fan out, the
            medallion frame materializes, the knight fades in last), then a
            near-imperceptible ambient spin once it's settled. A passive

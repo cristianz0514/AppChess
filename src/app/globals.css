@@ -93,6 +93,12 @@
      hardcoded to the old value on purpose (ChessBoard.tsx) since the
      board is the last piece of this redesign, staying as-is for now. */
   --bv-purple: oklch(0.34 0.10 264);
+  /* Neofuturism evolution: navy stays the identity color (logo, icons, active
+     nav, category tags) — this is the one accent spent on actual interactive
+     moments (primary CTAs, active toggles, focus rings), so it doesn't get
+     diluted by appearing everywhere navy already does. See page.tsx (landing)
+     for the pattern this was proven on first. */
+  --bv-electric: #4A5EE8;
 }
 
 .dark {
@@ -170,7 +176,7 @@
 /* Visible keyboard focus for accessibility — brand-colored, only for keyboard
    users (not mouse clicks). */
 :focus-visible {
-  outline: 2px solid var(--bv-purple);
+  outline: 2px solid var(--bv-electric);
   outline-offset: 2px;
   border-radius: 6px;
 }

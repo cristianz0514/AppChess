@@ -1129,7 +1129,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 disabled={!autoBest[idx]}
                 title={autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : undefined}
                 className="w-[4.75rem] h-11 shrink-0 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition active:scale-[0.98] disabled:opacity-60"
-                style={{ background: previewBest ? "var(--bv-purple)" : "oklch(0.34 0.10 264 / 0.10)", color: previewBest ? "#fff" : "var(--bv-purple)" }}>
+                style={{ background: previewBest ? "var(--bv-electric)" : "color-mix(in oklab, var(--bv-electric) 12%, transparent)", color: previewBest ? "#fff" : "var(--bv-electric)" }}>
                 <Target size={14} className="shrink-0" />
                 <span className="truncate">{autoBest[idx] ? autoBest[idx]!.san : autoBest[idx] === null ? "—" : "…"}</span>
               </button>

@@ -53,7 +53,7 @@ export function Sidebar() {
       <div className="p-3 border-t border-border">
         <Link href="/"
           className="deco-step-sm flex items-center justify-center gap-2 px-3 py-2 text-sm font-bold text-white transition-transform active:scale-[0.98]"
-          style={{ background: "var(--bv-purple)" }}>
+          style={{ background: "var(--bv-electric)" }}>
           <Plus size={16} strokeWidth={2.5} /> Importar partidas
         </Link>
       </div>
