@@ -70,7 +70,7 @@ export default async function ChampionChaptersPage({ params }: Props) {
               <Link
                 key={chapter.id}
                 href={`/campeones/${champion.id}/${chapter.id}`}
-                className="flex items-center gap-4 p-4 rounded-2xl border transition active:scale-[0.98]"
+                className="deco-step flex items-center gap-4 p-4 border transition active:scale-[0.98]"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}
               >
                 {content}
@@ -79,7 +79,7 @@ export default async function ChampionChaptersPage({ params }: Props) {
               <div
                 key={chapter.id}
                 aria-disabled="true"
-                className="flex items-center gap-4 p-4 rounded-2xl border opacity-60"
+                className="deco-step flex items-center gap-4 p-4 border opacity-60"
                 style={{ borderColor: "var(--border)", background: "var(--card)" }}
               >
                 {content}

@@ -84,7 +84,7 @@ export function GameAutoAnalyzer({ gameId, reanalyze }: Props) {
   }, [gameId, router]);
 
   return (
-    <div className="rounded-2xl border p-8 text-center flex flex-col items-center gap-5"
+    <div className="deco-step border p-8 text-center flex flex-col items-center gap-5"
       style={{ background: "var(--card)", borderColor: "var(--border)" }}>
       {status === "busy" ? (
         <>
@@ -117,7 +117,7 @@ export function GameAutoAnalyzer({ gameId, reanalyze }: Props) {
                 style={{
                   transform: `scaleX(${total > 0 ? pct / 100 : 0})`,
                   transformOrigin: "left",
-                  background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))",
+                  background: "linear-gradient(90deg, var(--bv-electric), var(--bv-green))",
                 }}
               />
             </div>
@@ -139,7 +139,7 @@ export function GameAutoAnalyzer({ gameId, reanalyze }: Props) {
           <button
             onClick={() => { started.current = false; setStatus("running"); setDone(0); setTotal(0); run.current?.(); }}
             className="px-4 py-2 rounded-xl text-xs font-bold"
-            style={{ background: "var(--bv-purple)", color: "#fff" }}>
+            style={{ background: "var(--bv-electric)", color: "#fff" }}>
             Reintentar
           </button>
         </>

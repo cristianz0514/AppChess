@@ -217,8 +217,8 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
         <div className="px-5 pb-5 pt-1 space-y-2">
           {momentsCount > 0 && (
             <button onClick={onReviewMoments}
-              className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-              style={{ background: "var(--bv-purple)" }}>
+              className="deco-step w-full py-3 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              style={{ background: "var(--bv-electric)" }}>
               <Play size={16} fill="#fff" /> Revivir los {momentsCount} momentos clave
             </button>
           )}

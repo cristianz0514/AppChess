@@ -165,7 +165,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
           <div className="rounded-xl border px-3 py-2.5 flex items-center justify-between gap-3"
             style={{ borderColor: "var(--border)", background: "var(--card)" }}>
             <div className="flex items-center gap-2 min-w-0">
-              <Lightbulb size={15} style={{ color: hintUsed ? "var(--muted-foreground)" : "var(--bv-purple)" }} />
+              <Lightbulb size={15} style={{ color: hintUsed ? "var(--muted-foreground)" : "var(--bv-electric)" }} />
               {showHintSq ? (
                 <span className="text-xs">Pista: la pieza correcta está en <b>{showHintSq}</b>.</span>
               ) : (
@@ -175,7 +175,7 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
             {!hintUsed && (
               <button onClick={useHint}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold"
-                style={{ background: "oklch(0.34 0.10 264 / 0.12)", color: "var(--bv-purple)" }}>
+                style={{ background: "color-mix(in oklab, var(--bv-electric) 12%, transparent)", color: "var(--bv-electric)" }}>
                 Usar pista
               </button>
             )}
@@ -203,8 +203,8 @@ export function PuzzleSolver({ node, nextNodeId }: Props) {
       {status === "solved" && (
         <button
           onClick={() => router.push(nextNodeId ? `/practica-mate/${nextNodeId}` : "/practica-mate")}
-          className="w-full py-3.5 rounded-2xl font-bold text-white transition-transform active:scale-[0.98]"
-          style={{ background: "var(--bv-purple)" }}>
+          className="deco-step w-full py-3.5 font-bold text-white transition-transform active:scale-[0.98]"
+          style={{ background: "var(--bv-electric)" }}>
           {nextNodeId ? "Siguiente ejercicio →" : "Volver al camino →"}
         </button>
       )}

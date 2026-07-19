@@ -71,7 +71,7 @@ export default async function ChampionsPage() {
                 {champion.locked && <Lock size={16} className="text-muted-foreground shrink-0" />}
               </>
             );
-            const className = "flex items-center gap-4 p-4 rounded-2xl border transition active:scale-[0.98]";
+            const className = "deco-step flex items-center gap-4 p-4 border transition active:scale-[0.98]";
             const style = { borderColor: "var(--border)", background: "var(--card)" };
             return champion.locked || champion.chapters.length === 0 ? (
               <div key={champion.id} className={`${className} opacity-70`} style={style}>{content}</div>

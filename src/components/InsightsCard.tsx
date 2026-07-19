@@ -62,7 +62,8 @@ export function InsightsCard({ insights: initial, username }: Props) {
         <button
           onClick={refresh}
           disabled={loading}
-          className="text-[10px] font-semibold px-3 py-1 rounded-full border border-border hover:bg-accent/50 transition-colors disabled:opacity-40"
+          className="text-[10px] font-semibold px-3 py-1 rounded-full border transition-colors disabled:opacity-40"
+          style={{ borderColor: "var(--bv-electric)", color: "var(--bv-electric)" }}
         >
           {loading ? "Analizando…" : insights.length === 0 ? "Generar" : "Actualizar"}
         </button>

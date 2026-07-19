@@ -76,7 +76,7 @@ export function AnalyzeAllButton({ username }: Props) {
   const remaining = Math.max(0, total - done);
 
   return (
-    <div className="rounded-2xl border p-4 space-y-3"
+    <div className="deco-step border p-4 space-y-3"
       style={{ background: "var(--card)", borderColor: "var(--border)" }}>
       <div className="flex items-center gap-2">
         <Cpu size={14} style={{ color: "var(--bv-purple)" }} />
@@ -90,7 +90,7 @@ export function AnalyzeAllButton({ username }: Props) {
           <p className="text-sm font-semibold">Analizando en segundo plano… {done}/{total}</p>
           <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
             <div className="h-full w-full rounded-full transition"
-              style={{ transform: `scaleX(${pct / 100})`, transformOrigin: "left", background: "var(--bv-purple)" }} />
+              style={{ transform: `scaleX(${pct / 100})`, transformOrigin: "left", background: "var(--bv-electric)" }} />
           </div>
           <p className="text-[10px] text-muted-foreground">
             Puedes salir de esta pantalla: el análisis continúa solo ({remaining} restantes). El análisis profundo tarda ~1-2 min por partida.
@@ -105,7 +105,7 @@ export function AnalyzeAllButton({ username }: Props) {
         <div className="space-y-2">
           <p className="text-sm" style={{ color: "var(--bv-red)" }}>No se pudo iniciar el análisis.</p>
           <button onClick={start} className="text-xs font-bold px-3 py-1.5 rounded-xl"
-            style={{ background: "var(--bv-purple)", color: "#fff" }}>
+            style={{ background: "var(--bv-electric)", color: "#fff" }}>
             Reintentar
           </button>
         </div>
@@ -116,7 +116,7 @@ export function AnalyzeAllButton({ username }: Props) {
           </p>
           <button onClick={start}
             className="w-full py-2.5 rounded-xl text-sm font-bold transition active:scale-[0.98]"
-            style={{ background: "var(--bv-purple)", color: "#fff" }}>
+            style={{ background: "var(--bv-electric)", color: "#fff" }}>
             Analizar mis partidas
           </button>
         </>

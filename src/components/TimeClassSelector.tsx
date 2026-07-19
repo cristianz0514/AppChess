@@ -50,8 +50,8 @@ export function TimeClassSelector({ classes, current }: Props) {
             onClick={() => go(tc)}
             className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors"
             style={{
-              borderColor: active ? "var(--bv-purple)" : "var(--border)",
-              background: active ? "var(--bv-purple)" : "var(--card)",
+              borderColor: active ? "var(--bv-electric)" : "var(--border)",
+              background: active ? "var(--bv-electric)" : "var(--card)",
               color: active ? "#fff" : "var(--muted-foreground)",
             }}
           >
