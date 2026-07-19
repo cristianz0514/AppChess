@@ -1,10 +1,8 @@
-import Groq from "groq-sdk";
 import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
 import { hasModernSchema } from "./dashboardData";
+import { coachChat, coachAvailable } from "@/lib/groqCoach";
 import type { Insight } from "@/types";
-
-const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
 
@@ -367,7 +365,7 @@ const CATEGORY_LABEL_ES: Record<Insight["category"], string> = {
 };
 
 async function deepenInsight(fact: GeneratedInsight): Promise<string> {
-  if (!groq) return fact.message;
+  if (!coachAvailable) return fact.message;
   const prompt = `Eres el entrenador personal de un jugador de ajedrez de club, escribiendo una nota corta para su panel de progreso (categoría: ${CATEGORY_LABEL_ES[fact.category]}).
 
 Hecho verificado sobre este jugador (ya calculado, con datos reales de sus partidas — NO recalcules ni inventes ningún número distinto a los que aparecen aquí):
@@ -380,25 +378,17 @@ Reescríbelo en EXACTAMENTE 2 frases completas (nunca 3, nunca fragmentos), cada
 - Prohibido inventar estadísticas, partidas, jugadas o causas concretas que no estén en el hecho verificado.
 - Solo el texto final, sin comillas ni encabezados.`;
 
-  try {
-    const res = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
-      max_tokens: 160,
-    });
-    let text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
-    // Soft length cap at a word boundary — never surface a sentence cut off
-    // mid-word if the model overruns despite the length instruction above.
-    if (text.length > 320) {
-      const cut = text.slice(0, 320);
-      const lastSpace = cut.lastIndexOf(" ");
-      text = (lastSpace > 240 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
-    }
-    return text || fact.message;
-  } catch {
-    return fact.message;
+  const raw = await coachChat(prompt, { temperature: 0.5, maxTokens: 160 });
+  if (!raw) return fact.message;
+  let text = raw.replace(/^["“]|["”]$/g, "");
+  // Soft length cap at a word boundary — never surface a sentence cut off
+  // mid-word if the model overruns despite the length instruction above.
+  if (text.length > 320) {
+    const cut = text.slice(0, 320);
+    const lastSpace = cut.lastIndexOf(" ");
+    text = (lastSpace > 240 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
   }
+  return text || fact.message;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

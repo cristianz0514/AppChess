@@ -1,8 +1,8 @@
 import { Chess } from "chess.js";
-import Groq from "groq-sdk";
 import { analyzeAllFens, evaluatePosition, getTopLines } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
+import { coachChat, coachAvailable } from "@/lib/groqCoach";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -16,8 +16,6 @@ const MAX_EXPLAIN = 16;
 // strips the comment of its grounding and makes it worse, not better.
 const EXPLAIN_DEPTH = 14;
 const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
-
-const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
 const fmtP = (e: number) => (Math.abs(e) >= 90 ? (e > 0 ? "mate a favor" : "mate en contra") : `${e > 0 ? "+" : ""}${e.toFixed(1)}`);
 
@@ -50,7 +48,7 @@ async function coachComment(args: {
   fenBefore: string; san: string; bestMove: string | null; moveNumber: number;
   evalBefore: number; evalAfter: number; good: boolean; facts: string;
 }): Promise<string | null> {
-  if (!groq) return null;
+  if (!coachAvailable) return null;
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
   const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
   const RULES = `Reglas: usa SOLO los datos de los campos, no inventes nada más — ni variantes, ni patrones tácticos, ni planes que no estén ahí. Si ves un campo "Patrón verificado: X", eso es una ETIQUETA INTERNA para ti, no la copies literalmente — teje el nombre del patrón (X: horquilla/clavada/pincho/pieza colgada/pieza propia colgada) de forma natural dentro de la frase, como lo diría un humano ("...con una horquilla sobre el rey y la torre", nunca "el patrón verificado es horquilla" ni "el Patrón verificado es..."). Si NO hay ese campo, no menciones ningún patrón táctico por tu cuenta. Nombres de piezas y casillas siempre; PROHIBIDO usar notación tipo "Rb8"/"Bxd5" o casillas sueltas sin pieza — es una IA hablando con una persona. Cuando cites la jugada correcta o la respuesta del rival, repite la descripción TAL CUAL viene en los campos (no la reformules como "mover X"). PROHIBIDAS las frases de relleno: "mejorar la posición", "obtener ventaja", "no aprovechaste la oportunidad" (sin explicar qué oportunidad). No menciones cifras ni la palabra "evaluación". Español, tono de entrenador directo, cercano y con profundidad real — explica la IDEA o el plan detrás del hecho, no solo lo señales. MUY IMPORTANTE, limite estricto: máximo 2 frases completas, cada una de 10 a 16 palabras (el texto se muestra en una tarjeta pequeña de máximo 6 líneas — más largo se corta). Devuelve SOLO el texto, sin comillas ni encabezados.`;
@@ -61,27 +59,19 @@ ${RULES}`
     : `Eres un entrenador de ajedrez explicando a tu alumno un error que acaba de cometer. No te quedes en "permite esto" — explica POR QUÉ eso es grave (qué pieza/casilla/plan queda comprometido) y qué lograba la jugada correcta más allá de evitar el problema puntual.
 ${facts}
 ${RULES}`;
-  try {
-    const res = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.45,
-      max_tokens: 130,
-    });
-    let text = res.choices[0]?.message?.content?.trim().replace(/^["“]|["”]$/g, "") ?? "";
-    // Soft length cap only — do NOT split on the first "." (that would cut inside
-    // decimals like "+1.5" and mangle the comment). Trim at a word boundary.
-    // ~200 chars keeps the comment within the coach card's 6-line cap even on a
-    // narrow phone (was 340, which could run to 7-8 lines).
-    if (text.length > 200) {
-      const cut = text.slice(0, 200);
-      const lastSpace = cut.lastIndexOf(" ");
-      text = (lastSpace > 140 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
-    }
-    return text || null;
-  } catch {
-    return null;
+  const raw = await coachChat(prompt, { temperature: 0.45, maxTokens: 130 });
+  if (!raw) return null;
+  let text = raw.replace(/^["“]|["”]$/g, "");
+  // Soft length cap only — do NOT split on the first "." (that would cut inside
+  // decimals like "+1.5" and mangle the comment). Trim at a word boundary.
+  // ~200 chars keeps the comment within the coach card's 6-line cap even on a
+  // narrow phone (was 340, which could run to 7-8 lines).
+  if (text.length > 200) {
+    const cut = text.slice(0, 200);
+    const lastSpace = cut.lastIndexOf(" ");
+    text = (lastSpace > 140 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
   }
+  return text || null;
 }
 
 // Two-pass analysis:
@@ -285,7 +275,7 @@ export async function analyzeGame(
   // Runs inside the pre-view analysis window. Best-move (engine) + a short,
   // grounded LLM sentence, persisted to moves.explanation. Degrades gracefully
   // if the column is absent or GROQ is unset.
-  if (!groq) return;
+  if (!coachAvailable) return;
 
   const notable = moves
     .map((m, i) => ({ i, cls: m.classification, loss: m.centipawn_loss ?? 0 }))

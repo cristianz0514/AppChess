@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+import { coachChat } from "@/lib/groqCoach";
 
 // Coach comment for a critical moment — GROUNDED in Stockfish. We give the model
 // the move played, the engine's best move, and the evaluation swing, and ask it
@@ -97,25 +95,15 @@ Escribe 2 frases completas (no fragmentos), cada una de entre 10 y 20 palabras:
 - Está bien repetir el nombre de la pieza o el patrón en ambas frases si es el mismo hecho — NO inventes un motivo nuevo (abrir el centro, mejorar la estructura, etc.) solo para que la frase 2 suene distinta.
 - Prohibido: comillas, encabezados, "en esta posición", "es importante", cualquier variante o amenaza que no te haya dado arriba.`;
 
-  try {
-    const res = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.6,
-      max_tokens: 140,
-    });
-    const text = res.choices[0]?.message?.content?.trim() ?? "";
-    if (!text) return NextResponse.json({ error: "no text" }, { status: 502 });
+  const text = await coachChat(prompt, { temperature: 0.6, maxTokens: 140 });
+  if (!text) return NextResponse.json({ error: "coach unavailable" }, { status: 503 });
 
-    if (gameId) {
-      try {
-        const upd = supabase.from("moves").update({ explanation: text }).eq("game_id", gameId);
-        if (typeof ply === "number") await upd.eq("ply", ply);
-        else await upd.eq("move_number", moveNumber).eq("move", san);
-      } catch { /* column may not exist yet */ }
-    }
-    return NextResponse.json({ text });
-  } catch {
-    return NextResponse.json({ error: "coach unavailable" }, { status: 500 });
+  if (gameId) {
+    try {
+      const upd = supabase.from("moves").update({ explanation: text }).eq("game_id", gameId);
+      if (typeof ply === "number") await upd.eq("ply", ply);
+      else await upd.eq("move_number", moveNumber).eq("move", san);
+    } catch { /* column may not exist yet */ }
   }
+  return NextResponse.json({ text });
 }
