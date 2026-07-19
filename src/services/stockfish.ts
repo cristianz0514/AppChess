@@ -153,27 +153,31 @@ export async function getBestMove(fen: string, depth = 12): Promise<{ from: stri
 // rival is ELO 200) — this is a deliberate, documented approximation, not a
 // scientific ELO simulator.
 //
-// Revised after a real report that the ELO 950 rival "lost very easily" —
-// the original model only had two states: the engine's actual best move at
-// a given depth (which, at depth ≥2, reliably spots hanging pieces and
-// short tactics — much stronger than a real ~950 player), OR a fully random
-// legal move (which can hang a whole piece or walk into mate — far more
-// catastrophic than how a real ~950 player actually errs). With blunderChance
-// applied PER PLY, it also compounded: at the old 900-1200 tier (0.15/ply),
-// a ~25-move game had a ~99% chance of at least one blunder and ~4 EXPECTED
-// blunders — so the rival was either playing well or collapsing randomly
-// several times a game, never just "mediocre." Fixed with a third tier,
-// suboptimalChance, that occasionally substitutes a plausible-but-not-best
-// engine alternative (via a MultiPV search) instead of the true best move —
-// modeling "misjudged, not blind" the way real imperfect play actually
-// looks — and blunderChance was brought down enough that it no longer
-// compounds to a near-certain pile of blunders per game. The <=300 tier is
-// untouched — it was already playtested and tuned separately, and is not
-// what was reported as wrong.
+// Two different regimes, on purpose:
+//
+// <=800 — genuinely below what Stockfish can represent at all, even at
+// Skill Level 0. There's no nuanced way to make the engine itself play
+// this weak, so blunderChance (an outright random legal move) is the WHOLE
+// mechanism: mostly-solid engine play, occasionally interrupted by a real
+// blunder. This tier is intentionally left alone here.
+//
+// >800 — closer to Stockfish's actual representable range, and where a
+// real report came in that the ELO 950 rival "lost very easily." The old
+// model still had only two states (engine's real move at depth, or a fully
+// random legal move), and blunderChance compounded per ply across a game —
+// the old 900-1200 tier (0.15/ply) gave a ~99% chance of at least one
+// blunder and ~4 EXPECTED blunders in a 25-move game. Added a third state,
+// suboptimalChance, that samples a plausible-but-not-best move from a
+// MultiPV search instead of the true best move — "misjudged, not blind" —
+// and brought blunderChance down so it no longer compounds to a near-
+// certain pile of blunders. Only the >800 tiers changed; this is also
+// exactly where the roadmap already marks the real difficulty jump
+// (chapter 6, "arranca la dificultad real"), so the boundary lines up with
+// the game's own existing design intent, not just this fix.
 function strengthForElo(elo: number): { skillLevel: number; depth: number; blunderChance: number; suboptimalChance: number } {
-  if (elo <= 300)  return { skillLevel: 0,  depth: 1,  blunderChance: 0.9,  suboptimalChance: 0 };
-  if (elo <= 600)  return { skillLevel: 1,  depth: 1,  blunderChance: 0.35, suboptimalChance: 0.25 };
-  if (elo <= 900)  return { skillLevel: 2,  depth: 2,  blunderChance: 0.15, suboptimalChance: 0.30 };
+  if (elo <= 300) return { skillLevel: 0, depth: 1, blunderChance: 0.9,  suboptimalChance: 0 };
+  if (elo <= 600) return { skillLevel: 1, depth: 1, blunderChance: 0.6,  suboptimalChance: 0 };
+  if (elo <= 800) return { skillLevel: 2, depth: 2, blunderChance: 0.35, suboptimalChance: 0 };
   if (elo <= 1200) return { skillLevel: 4,  depth: 4,  blunderChance: 0.06, suboptimalChance: 0.30 };
   if (elo <= 1600) return { skillLevel: 9,  depth: 6,  blunderChance: 0.05, suboptimalChance: 0.15 };
   if (elo <= 2000) return { skillLevel: 17, depth: 11, blunderChance: 0,    suboptimalChance: 0.08 };
