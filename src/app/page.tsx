@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Big_Shoulders } from "next/font/google";
 import { trackGamesImported } from "@/lib/installTracking";
-import { Target, Activity, Crosshair, BookOpen, type LucideIcon } from "lucide-react";
+import { Target, Crosshair, BookOpen, type LucideIcon } from "lucide-react";
 
 // Display face for this page only — a condensed geometric skyscraper-signage
 // face (literally the typeface family used on Chicago high-rises), the
@@ -26,14 +26,19 @@ function Sunburst() {
       viewBox="0 0 200 200"
       aria-hidden
       className="absolute pointer-events-none"
-      // Kept small and close to the medallion on purpose — a bigger radius
-      // reached far enough down to cross through the headline text below it.
-      style={{ width: 160, height: 160, top: -30, left: "50%", transform: "translateX(-50%)" }}
+      // width/height == viewBox (1:1 scale) so ray lengths below are real
+      // px. top is set so the svg's own center (100,100 in viewbox units)
+      // lands exactly on the medallion's center: container is 96px tall,
+      // medallion is centered in it (center at local y=48), so
+      // top = 48 - height/2. Outer ray length is capped so the lowest tip
+      // (center + outer) stays clear of the eyebrow text under measured
+      // real layout, not eyeballed — see the mb-8 below too.
+      style={{ width: 200, height: 200, top: 48 - 100, left: "50%", transform: "translateX(-50%)" }}
     >
       {Array.from({ length: rayCount }).map((_, i) => {
         const angle = (i / rayCount) * Math.PI * 2;
         const inner = 44;
-        const outer = i % 2 === 0 ? 74 : 60;
+        const outer = i % 2 === 0 ? 68 : 55;
         // Rounded to 2dp — SSR/CSR can otherwise disagree on the last digit
         // of the raw float (Node vs browser rounding), which trips a
         // hydration mismatch even though the geometry is identical.
@@ -115,11 +120,11 @@ export default function Home() {
 
   const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
 
+  // Three benefits, one short line each — not a paragraph per feature.
   const features: { Icon: LucideIcon; title: string; desc: string }[] = [
-    { Icon: Target,    title: "Detecta tus errores", desc: "Stockfish analiza cada jugada y clasifica errores graves, errores e imprecisiones." },
-    { Icon: Activity,  title: "Barra de evaluación", desc: "Ve cómo cambia la ventaja en cada movimiento de la partida." },
-    { Icon: Crosshair, title: "Practica tus errores", desc: "Reproduce las posiciones donde fallaste e intenta encontrar la jugada correcta." },
-    { Icon: BookOpen,  title: "Repertorio de aperturas", desc: "Descubre con qué aperturas ganas más y cuáles debes mejorar." },
+    { Icon: Target,    title: "Detecta tus errores",     desc: "Jugada por jugada." },
+    { Icon: Crosshair, title: "Practica tus errores",    desc: "Vuelve a intentar la posición." },
+    { Icon: BookOpen,  title: "Repertorio de aperturas", desc: "Con qué apertura ganas más." },
   ];
 
   return (
@@ -129,11 +134,11 @@ export default function Home() {
       <div className="relative flex-1 flex flex-col items-center justify-center px-5 pt-20 pb-8 text-center"
         style={{ animation: "bvFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
-        <div className="relative mb-6 flex items-center justify-center" style={{ width: 72, height: 72 }}>
+        <div className="relative mb-8 flex items-center justify-center" style={{ width: 96, height: 96 }}>
           <Sunburst />
-          <div className="deco-medallion relative w-16 h-16 flex items-center justify-center select-none"
+          <div className="deco-medallion relative w-20 h-20 flex items-center justify-center select-none"
             style={{ background: "var(--deco-bg)" }}>
-            <span className="text-2xl leading-none" style={{ color: "var(--deco-navy)" }}>♞</span>
+            <span className="text-4xl leading-none" style={{ color: "var(--deco-navy)" }}>♞</span>
           </div>
         </div>
 
@@ -145,8 +150,8 @@ export default function Home() {
           Descubre dónde se te <span style={{ color: "var(--deco-navy)" }}>escapan</span> las partidas
         </h1>
 
-        <p className="text-base max-w-sm leading-relaxed mb-8" style={{ color: "var(--deco-muted)" }}>
-          Conecta tu cuenta de Chess.com y Stockfish analiza cada jugada — errores graves, momentos clave y qué debiste jugar.
+        <p className="text-base max-w-xs leading-snug mb-8" style={{ color: "var(--deco-muted)" }}>
+          Conecta tu cuenta de Chess.com.
         </p>
 
         {/* Form */}
