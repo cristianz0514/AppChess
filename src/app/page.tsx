@@ -19,6 +19,13 @@ const decoDisplay = Big_Shoulders({
   display: "swap",
 });
 
+// The one signature motion moment on this page — everything else is a
+// plain fade. Two layers, on purpose (see apple-design's damping guidance):
+// an entrance where the rays draw themselves in (a one-shot, no-bounce
+// reveal — this is a passive page load, not a gesture, so no overshoot),
+// then a near-imperceptible ambient rotation once settled. Both are
+// disabled under prefers-reduced-motion in favor of a plain fade — see the
+// .deco-page stylesheet below.
 function Sunburst() {
   const rayCount = 20;
   return (
@@ -35,23 +42,38 @@ function Sunburst() {
       // real layout, not eyeballed — see the mb-8 below too.
       style={{ width: 200, height: 200, top: 48 - 100, left: "50%", transform: "translateX(-50%)" }}
     >
-      {Array.from({ length: rayCount }).map((_, i) => {
-        const angle = (i / rayCount) * Math.PI * 2;
-        const inner = 44;
-        const outer = i % 2 === 0 ? 68 : 55;
-        // Rounded to 2dp — SSR/CSR can otherwise disagree on the last digit
-        // of the raw float (Node vs browser rounding), which trips a
-        // hydration mismatch even though the geometry is identical.
-        const x1 = +(100 + Math.cos(angle) * inner).toFixed(2);
-        const y1 = +(100 + Math.sin(angle) * inner).toFixed(2);
-        const x2 = +(100 + Math.cos(angle) * outer).toFixed(2);
-        const y2 = +(100 + Math.sin(angle) * outer).toFixed(2);
-        return (
-          <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-            stroke={i % 2 === 0 ? "var(--deco-navy)" : "var(--deco-black)"}
-            strokeWidth={1.25} opacity={0.6} strokeLinecap="round" />
-        );
-      })}
+      {/* Rotates as one unit — origin pinned to the svg's own center so it
+          spins in place around the medallion rather than orbiting it. */}
+      <g className="deco-sunburst-spin" style={{ transformOrigin: "100px 100px" }}>
+        {Array.from({ length: rayCount }).map((_, i) => {
+          const angle = (i / rayCount) * Math.PI * 2;
+          const inner = 44;
+          const outer = i % 2 === 0 ? 68 : 55;
+          // Rounded to 2dp — SSR/CSR can otherwise disagree on the last digit
+          // of the raw float (Node vs browser rounding), which trips a
+          // hydration mismatch even though the geometry is identical.
+          const x1 = +(100 + Math.cos(angle) * inner).toFixed(2);
+          const y1 = +(100 + Math.sin(angle) * inner).toFixed(2);
+          const x2 = +(100 + Math.cos(angle) * outer).toFixed(2);
+          const y2 = +(100 + Math.sin(angle) * outer).toFixed(2);
+          const len = +(outer - inner).toFixed(2);
+          return (
+            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+              className="deco-ray"
+              stroke={i % 2 === 0 ? "var(--deco-navy)" : "var(--deco-black)"}
+              strokeWidth={1.25} strokeLinecap="round"
+              style={{
+                strokeDasharray: len,
+                strokeDashoffset: len,
+                // Fan outward from the top (i=0) both ways, so the draw-in
+                // reads as radiating from a single point, not a left-to-right
+                // wipe around the circle.
+                animationDelay: `${0.15 + Math.min(i, rayCount - i) * 0.035}s`,
+              }}
+            />
+          );
+        })}
+      </g>
     </svg>
   );
 }
@@ -136,9 +158,9 @@ export default function Home() {
 
         <div className="relative mb-8 flex items-center justify-center" style={{ width: 96, height: 96 }}>
           <Sunburst />
-          <div className="deco-medallion relative w-20 h-20 flex items-center justify-center select-none"
+          <div className="deco-medallion deco-medallion-in relative w-20 h-20 flex items-center justify-center select-none"
             style={{ background: "var(--deco-bg)" }}>
-            <span className="text-4xl leading-none" style={{ color: "var(--deco-navy)" }}>♞</span>
+            <span className="deco-knight-in text-4xl leading-none" style={{ color: "var(--deco-navy)" }}>♞</span>
           </div>
         </div>
 
@@ -284,6 +306,43 @@ export default function Home() {
         .deco-hairline {
           height: 1px;
           background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--deco-black) 35%, transparent) 20%, color-mix(in oklab, var(--deco-black) 35%, transparent) 80%, transparent);
+        }
+
+        /* Logo signature motion — an assembly sequence (rays fan out, the
+           medallion frame materializes, the knight fades in last), then a
+           near-imperceptible ambient spin once it's settled. A passive
+           page-load reveal, not a gesture, so no bounce/overshoot —
+           critically-damped easing throughout (see apple-design's damping
+           guidance: reserve bounce for momentum-driven interactions). */
+        .deco-ray {
+          animation: decoRayDraw 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        @keyframes decoRayDraw {
+          to { stroke-dashoffset: 0; }
+        }
+        .deco-sunburst-spin {
+          animation: decoSunburstSpin 48s linear infinite;
+          animation-delay: 1.2s;
+        }
+        @keyframes decoSunburstSpin {
+          to { transform: rotate(360deg); }
+        }
+        .deco-medallion-in {
+          animation: decoMedallionIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+        }
+        @keyframes decoMedallionIn {
+          from { transform: scale(0.82); opacity: 0; }
+        }
+        .deco-knight-in {
+          display: inline-block;
+          animation: decoKnightIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.75s both;
+        }
+        @keyframes decoKnightIn {
+          from { transform: scale(0.7); opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .deco-medallion-in, .deco-knight-in, .deco-sunburst-spin { animation: none; }
+          .deco-ray { animation: none; stroke-dashoffset: 0 !important; }
         }
       `}</style>
     </main>
