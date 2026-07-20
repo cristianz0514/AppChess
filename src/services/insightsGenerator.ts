@@ -1,5 +1,7 @@
+import { Chess } from "chess.js";
 import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
+import { detectMotifs } from "@/lib/tacticalMotifs";
 import { hasModernSchema } from "./dashboardData";
 import { coachChat, coachAvailable } from "@/lib/groqCoach";
 import type { Insight } from "@/types";
@@ -68,6 +70,13 @@ interface PlayerSnapshot {
   totalBlunders: number;
   totalMistakes: number;
   peakBlunderMoveRange: string | null; // e.g. "moves 12–18"
+
+  // Concrete error positions — the actual moves where the player hung a piece
+  // (their own piece left undefended), reconstructed from the game PGN and
+  // verified by board geometry (detectMotifs), NOT an aggregate stat. This is
+  // what turns "revisa tus errores" into "colgaste el caballo en f5, el alfil
+  // en c4…" — a real, specific, non-generic diagnosis.
+  hungPieces: { piece: string; square: string; opening: string | null; phase: keyof BlunderPhases }[];
 }
 
 async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
@@ -80,7 +89,7 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   const orderCol = (await hasModernSchema()) ? "played_at" : "created_at";
   const { data: gameRows } = await supabase
     .from("games")
-    .select("id, result, accuracy, pgn, played_as")
+    .select("id, result, accuracy, pgn, played_as, opening")
     .eq("user_id", userId)
     .order(orderCol, { ascending: false, nullsFirst: true }) // matches games_user_played_at_idx (faster)
     .limit(50);
@@ -173,6 +182,47 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     }
   }
 
+  // ── Concrete hung-piece positions (reconstructed from PGN) ────────────────
+  // Replay each game, find the player's OWN blunder/mistake plies, and check
+  // (via board geometry) which of them left one of the player's pieces
+  // undefended — the single most common club-level error. Each hit carries the
+  // real piece + square + opening + phase, so the coach note can name exactly
+  // what happened instead of a generic "revisa tus errores".
+  const phaseOf = (moveNumber: number): keyof BlunderPhases =>
+    moveNumber <= 10 ? "opening" : moveNumber <= 25 ? "middlegame" : "endgame";
+  const hungPieces: PlayerSnapshot["hungPieces"] = [];
+  for (const game of gameRows) {
+    if (hungPieces.length >= 8) break;
+    if (!game.pgn) continue;
+    const playerColor = game.played_as === "white" ? "w" : "b";
+    // Only this game's OWN blunder/mistake moves, keyed by (move_number, SAN).
+    const errs = new Set(
+      (movesByGame.get(game.id) ?? [])
+        .filter((m) => (m.classification === "blunder" || m.classification === "mistake") && m.move)
+        .map((m) => `${m.move_number}:${m.move}`),
+    );
+    if (errs.size === 0) continue;
+    const chess = new Chess();
+    try { chess.loadPgn(game.pgn); } catch { continue; }
+    const hist = chess.history({ verbose: true });
+    for (let ply = 0; ply < hist.length; ply++) {
+      const h = hist[ply];
+      if (h.color !== playerColor) continue;
+      const moveNumber = Math.floor(ply / 2) + 1;
+      if (!errs.has(`${moveNumber}:${h.san}`)) continue;
+      const selfHang = detectMotifs(h.before, h.san).find((mo) => mo.key === "hangs_own");
+      if (selfHang?.pieceName && selfHang.square) {
+        hungPieces.push({
+          piece: selfHang.pieceName,
+          square: selfHang.square,
+          opening: game.opening ? translateOpening(game.opening) : null,
+          phase: phaseOf(moveNumber),
+        });
+        if (hungPieces.length >= 8) break;
+      }
+    }
+  }
+
   // ── Time pressure (from PGN clock annotations) ────────────────────────────
   let timePressureGames = 0;
   let timePressureBlunders = 0;
@@ -238,6 +288,7 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     totalBlunders: blunders.length,
     totalMistakes: mistakes.length,
     peakBlunderMoveRange,
+    hungPieces,
   };
 }
 
@@ -269,6 +320,45 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
         weight: 100 + share,
       });
     }
+  }
+
+  // 1b. Hung pieces — the most concrete, highest-value pattern: the actual
+  // pieces the player left undefended, by real square. Verified by board
+  // geometry, so the coach can name them exactly (weighted above the generic
+  // aggregate facts precisely because it's specific, not templated).
+  if (s.hungPieces.length >= 3) {
+    const n = s.hungPieces.length;
+    const phaseWord = { opening: "la apertura", middlegame: "el medio juego", endgame: "el final" } as const;
+    const phaseCount = s.hungPieces.reduce<Record<string, number>>((acc, h) => {
+      acc[h.phase] = (acc[h.phase] ?? 0) + 1; return acc;
+    }, {});
+    const domPhase = Object.entries(phaseCount).sort((a, b) => b[1] - a[1])[0];
+    const phaseHint = domPhase && domPhase[1] >= Math.ceil(n * 0.6)
+      ? ` Casi siempre en ${phaseWord[domPhase[0] as keyof BlunderPhases]}.`
+      : "";
+
+    // When it's always the same piece (a real, sharper pattern — "you keep
+    // hanging your bishop"), say that; otherwise list the mixed examples.
+    const uniquePieces = [...new Set(s.hungPieces.map((h) => h.piece))];
+    const squares = [...new Set(s.hungPieces.map((h) => h.square))];
+    let message: string;
+    if (uniquePieces.length === 1) {
+      const piece = uniquePieces[0];
+      const sqList = squares.slice(0, 4).join(", ");
+      message = `Colgaste tu ${piece} sin defensa en ${n} jugadas (en ${sqList}${squares.length > 4 ? ", entre otras" : ""}).${phaseHint} Antes de mover tu ${piece}, confirma que quede defendido.`;
+    } else {
+      // Dedupe the shown examples (the same piece+square can recur across
+      // games) while keeping the real occurrence count n.
+      const seen = new Set<string>();
+      const uniqueExamples: string[] = [];
+      for (const h of s.hungPieces) {
+        const e = `el ${h.piece} en ${h.square}`;
+        if (!seen.has(e)) { seen.add(e); uniqueExamples.push(e); }
+      }
+      const examples = uniqueExamples.slice(0, 3).join(", ");
+      message = `Colgaste una pieza sin defensa en ${n} jugadas: ${examples}${uniqueExamples.length > 3 ? ", entre otras" : ""}.${phaseHint} Antes de mover, revisa si tu pieza queda defendida.`;
+    }
+    facts.push({ category: "recurring_blunder", message, severity: n >= 6 ? "high" : "medium", weight: 95 + n, skipDeepen: true });
   }
 
   // 2. Peak error window — where in the game your mistakes cluster.
@@ -372,10 +462,9 @@ Hecho verificado sobre este jugador (ya calculado, con datos reales de sus parti
 "${fact.message}"
 
 Reescríbelo en EXACTAMENTE 2 frases completas (nunca 3, nunca fragmentos), cada una de 12 a 20 palabras:
-- Frase 1: repite el hecho con sus números EXACTOS (ni los redondees ni inventes otros) y explica el IMPACTO — qué le cuesta esto en partidas o puntos de rating. NO inventes una causa táctica o posicional específica (p. ej. "por debilidades en el control del centro", "porque pierdes el hilo") — esos datos no están verificados; quédate en el impacto, no en el diagnóstico de la causa.
-- Frase 2: una acción concreta y específica a este patrón exacto — prohibido "practica más", "ten cuidado", "revisa con calma" o cualquier consejo que serviría igual para cualquier otro problema.
+- Frase 1: repite el hecho con sus datos EXACTOS — números, y también piezas, casillas, fase o apertura si aparecen (ni los redondees ni inventes otros). Apóyate en esos detalles concretos que YA están escritos arriba para explicar el patrón; están verificados, úsalos. Lo único prohibido es inventar piezas, casillas, jugadas, aperturas o causas que NO estén en el texto de arriba.
+- Frase 2: una acción/ejercicio concreto y específico a este patrón exacto (usando las piezas o la fase mencionadas si las hay) — prohibido "practica más", "ten cuidado", "revisa con calma" o cualquier consejo que serviría igual para cualquier otro problema.
 - Tono directo, cercano, de entrenador — no acusador ni condescendiente.
-- Prohibido inventar estadísticas, partidas, jugadas o causas concretas que no estén en el hecho verificado.
 - Solo el texto final, sin comillas ni encabezados.`;
 
   const raw = await coachChat(prompt, { temperature: 0.5, maxTokens: 160 });
@@ -397,6 +486,11 @@ interface GeneratedInsight {
   category: Insight["category"];
   message: string;
   severity: Insight["severity"];
+  // Facts already grounded in concrete, well-phrased specifics (real pieces/
+  // squares) skip the LLM "deepen" rewrite — that step exists to de-genericize
+  // the aggregate stat templates, and running it over an already-specific
+  // sentence only re-introduces awkwardness/repetition. Show these verbatim.
+  skipDeepen?: boolean;
 }
 
 export async function generateInsights(userId: string): Promise<void> {
@@ -410,7 +504,7 @@ export async function generateInsights(userId: string): Promise<void> {
   if (facts.length === 0) return;
 
   const insights = await Promise.all(
-    facts.map(async (f) => ({ ...f, message: await deepenInsight(f) }))
+    facts.map(async (f) => ({ ...f, message: f.skipDeepen ? f.message : await deepenInsight(f) }))
   );
 
   await supabase.from("insights").delete().eq("user_id", userId);
