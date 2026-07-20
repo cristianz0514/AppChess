@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Lock } from "lucide-react";
-import { BackButton } from "@/components/BackButton";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
 import { getChampionProgress } from "@/services/championProgress";
@@ -18,23 +18,17 @@ export default async function ChampionsPage() {
   const progress = await getChampionProgress(userId);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
-      <header className="fixed top-0 w-full z-50 flex items-center gap-3 px-4 h-16 border-b"
-        style={{ background: "var(--background)", borderColor: "var(--border)" }}>
-        <BackButton href="/entrenamiento" />
-        <span className="font-bold text-base tracking-tight">Nacimiento de un Campeón</span>
-      </header>
+    <AppLayout username={username}>
+      <div className="space-y-4 max-w-lg mx-auto"
+        style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
-      <main className="flex-1 pt-24 px-4 max-w-lg mx-auto w-full pb-8 space-y-4">
-        {/* A pawn's shadow already shaped like a queen — the whole mode in one
-            image, better than any copy could say it. */}
-        <div className="-mx-4 -mt-2 mb-1 overflow-hidden" style={{ maxHeight: 160 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- small, fixed local asset */}
-          <img src="/campeones/hero-sombra-reina.jpg" alt="" className="w-full h-full object-cover" style={{ objectPosition: "center 30%" }} />
+        <div>
+          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Modo</p>
+          <h1 className="font-deco text-2xl mt-0.5 uppercase">Nacimiento de un Campeón</h1>
+          <p className="text-sm text-muted-foreground mt-1 text-balance">
+            Elige una leyenda y revive su historia — desde sus primeras partidas hasta la cima del ajedrez mundial.
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground text-center text-balance">
-          Elige una leyenda y revive su historia — desde sus primeras partidas hasta la cima del ajedrez mundial.
-        </p>
 
         <div className="space-y-3">
           {CHAMPIONS.map((champion) => {
@@ -45,9 +39,9 @@ export default async function ChampionsPage() {
 
             const content = (
               <>
-                <ChampionAvatar initials={champion.initials} color={champion.color} size={64} locked={champion.locked} />
+                <ChampionAvatar initials={champion.initials} color={champion.color} size={56} locked={champion.locked} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-base font-bold font-display">{champion.name}</p>
+                  <p className="text-base font-bold">{champion.name}</p>
                   <p className="text-xs text-muted-foreground">{champion.years}</p>
                   {champion.locked ? (
                     <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>Próximamente</p>
@@ -82,7 +76,7 @@ export default async function ChampionsPage() {
             );
           })}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

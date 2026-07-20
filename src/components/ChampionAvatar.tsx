@@ -1,8 +1,10 @@
-// Stylized/iconic avatar for "Nacimiento de un Campeón" — deliberately NOT a
-// realistic portrait of a real person (initials + color + a chess glyph,
-// same "game token" register as KnightBadge), since generating a lifelike
-// likeness of a real, living public figure is a different, more sensitive
-// thing than an abstract badge.
+// Champion token for "Nacimiento de un Campeón" — a FLAT geometric badge
+// (solid fill, condensed initials), matching the rest of the app's flat
+// neofuturism. Was a glossy 3D domed token with radial gradients + inset
+// shadows, which read as a different visual world from the flat coach-tool
+// pages; that gloss is gone now so the mode sits in one system with everything
+// else. Deliberately NOT a realistic portrait of a real person — initials +
+// color, an abstract badge.
 export function ChampionAvatar({
   initials, color, size = 72, locked = false,
 }: {
@@ -13,23 +15,18 @@ export function ChampionAvatar({
 }) {
   return (
     <div
-      className="relative flex items-center justify-center rounded-full shrink-0 select-none"
+      className="relative flex items-center justify-center shrink-0 select-none rounded-full"
       style={{
-        width: size, height: size,
-        background: locked ? "oklch(0.5 0.01 265)" : color,
-        boxShadow: "inset 0 1px 1.5px rgba(255,255,255,.3), inset 0 -4px 8px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25)",
+        width: size,
+        height: size,
+        background: locked ? "oklch(0.62 0.01 265)" : color,
         opacity: locked ? 0.6 : 1,
       }}
     >
-      <div
-        className="absolute rounded-full pointer-events-none"
-        style={{
-          width: size * 0.6, height: size * 0.32, top: size * 0.1, left: size * 0.2,
-          background: "linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,255,255,0))",
-          filter: "blur(0.5px)",
-        }}
-      />
-      <span className="font-display font-bold" style={{ fontSize: size * 0.32, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.3)" }}>
+      <span
+        className="font-deco leading-none"
+        style={{ fontSize: size * 0.36, color: "#fff" }}
+      >
         {initials}
       </span>
     </div>

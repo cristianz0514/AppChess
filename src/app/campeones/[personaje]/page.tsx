@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle2, Lock } from "lucide-react";
-import { BackButton } from "@/components/BackButton";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId } from "@/services/dashboardData";
 import { getChampionProgress } from "@/services/championProgress";
@@ -23,21 +23,15 @@ export default async function ChampionChaptersPage({ params }: Props) {
   const progress = await getChampionProgress(userId);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
-      <header className="fixed top-0 w-full z-50 flex items-center gap-3 px-4 h-16 border-b"
-        style={{ background: "var(--background)", borderColor: "var(--border)" }}>
-        <BackButton href="/campeones" />
-        <span className="font-bold text-base tracking-tight">{champion.name}</span>
-      </header>
+    <AppLayout username={username}>
+      <div className="space-y-4 max-w-lg mx-auto"
+        style={{ animation: "bvFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
-      <main className="flex-1 pt-24 px-4 max-w-lg mx-auto w-full pb-8 space-y-4">
-        {/* Budapest at dusk — this is where the story starts, before any of
-            the tournament halls the chapters actually happen in. */}
-        <div className="-mx-4 -mt-2 mb-1 overflow-hidden" style={{ maxHeight: 130 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- small, fixed local asset */}
-          <img src="/campeones/budapest-atardecer.jpg" alt="" className="w-full h-full object-cover" />
+        <div>
+          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">Historia</p>
+          <h1 className="font-deco text-2xl mt-0.5 uppercase">{champion.name}</h1>
+          <p className="text-sm text-muted-foreground mt-1 text-balance">{champion.tagline}</p>
         </div>
-        <p className="text-sm text-muted-foreground text-center text-balance">{champion.tagline}</p>
 
         <div className="space-y-3">
           {champion.chapters.map((chapter, i) => {
@@ -51,7 +45,7 @@ export default async function ChampionChaptersPage({ params }: Props) {
             const content = (
               <>
                 <div
-                  className="flex items-center justify-center rounded-full shrink-0 font-display font-bold"
+                  className="flex items-center justify-center rounded-full shrink-0 font-deco text-lg leading-none"
                   style={{ width: 40, height: 40, background: unlocked ? champion.color : "var(--muted-foreground)", color: "#fff" }}
                 >
                   {unlocked ? i + 1 : <Lock size={16} />}
@@ -87,7 +81,7 @@ export default async function ChampionChaptersPage({ params }: Props) {
             );
           })}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

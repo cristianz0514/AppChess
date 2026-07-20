@@ -94,7 +94,7 @@ function ResultModal({
     >
       <div
         ref={panelRef}
-        className="w-full max-w-sm rounded-3xl p-6 text-center space-y-4"
+        className="deco-step w-full max-w-sm p-6 text-center space-y-4"
         style={{ background: "var(--card)", border: "1px solid var(--border)" }}
       >
         {expressionVariant ? (
@@ -110,7 +110,7 @@ function ResultModal({
           </div>
         )}
         <div>
-          <h2 className="font-display text-xl font-bold">{title}</h2>
+          <h2 className="font-deco text-2xl uppercase">{title}</h2>
           <p className="text-sm text-muted-foreground mt-1">Vs {chapter.opponentName} · ELO {chapter.eloTarget}</p>
         </div>
 
@@ -137,7 +137,7 @@ function ResultModal({
           <button
             onClick={onContinue}
             disabled={analyzing}
-            className="w-full py-3 rounded-2xl font-bold border transition-transform active:scale-[0.98] disabled:opacity-60"
+            className="deco-step w-full py-3 font-bold border transition-transform active:scale-[0.98] disabled:opacity-60"
             style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
           >
             Continuar la historia
