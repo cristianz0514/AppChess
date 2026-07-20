@@ -435,7 +435,13 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
     chosen.push(f);
     seenCat.add(f.category);
   }
-  return chosen.map(({ weight: _w, ...rest }) => rest);
+  // Drop the internal `weight` field — callers only need the insight shape.
+  return chosen.map((f): GeneratedInsight => ({
+    category: f.category,
+    message: f.message,
+    severity: f.severity,
+    skipDeepen: f.skipDeepen,
+  }));
 }
 
 // ─── Deepen (LLM rewrite of an already-correct fact) ────────────────────────

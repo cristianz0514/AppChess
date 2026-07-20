@@ -60,12 +60,15 @@ export async function startBatch(userId: string): Promise<{ started: boolean; to
         // user opened a specific game and its analysis is running, wait for it
         // rather than analyzing a second game concurrently (two full analyses
         // at once can OOM the free tier). Give up the wait if the batch is
-        // stopped meanwhile.
-        while (!tryBeginAnalysis()) {
-          if (!state.running) break;
+        // stopped meanwhile. `acquired` is only true when tryBeginAnalysis
+        // actually took the lock, so a stop-while-waiting breaks WITHOUT a held
+        // lock, and a lock we did take is always released in the finally.
+        let acquired = false;
+        while (state.running) {
+          if (tryBeginAnalysis()) { acquired = true; break; }
           await new Promise((r) => setTimeout(r, 500));
         }
-        if (!state.running) break;
+        if (!acquired) break;
         try { await analyzeGame(id, pgn); }
         catch { /* skip failing game */ }
         finally { endAnalysis(); }

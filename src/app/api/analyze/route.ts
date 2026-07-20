@@ -31,17 +31,30 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ busy: true }), { status: 503 });
   }
 
-  const { data: game } = await supabase
-    .from("games")
-    .select("id, pgn")
-    .eq("id", gameId)
-    .single();
+  // Once the gate is acquired, EVERY path out must release it — otherwise a
+  // thrown DB fetch (or a stream that never starts) would leak the lock and
+  // block all future analysis until the process restarts. The stream's own
+  // finally handles the happy path; this try/catch covers the fetch and any
+  // error before the stream is handed back.
+  let game: { id: string; pgn: string } | null = null;
+  try {
+    const { data } = await supabase
+      .from("games")
+      .select("id, pgn")
+      .eq("id", gameId)
+      .single();
+    game = data;
+  } catch {
+    endAnalysis();
+    return new Response(JSON.stringify({ error: "Analysis failed" }), { status: 500 });
+  }
 
   if (!game) {
     endAnalysis();
     return new Response(JSON.stringify({ error: "Game not found" }), { status: 404 });
   }
 
+  const theGame = game;
   // Stream progress via newline-delimited JSON so the client can show a progress bar.
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -51,7 +64,7 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        await analyzeGame(game.id, game.pgn, (done, total, label) => {
+        await analyzeGame(theGame.id, theGame.pgn, (done, total, label) => {
           send({ done, total, label });
         });
         send({ done: 1, total: 1, finished: true });

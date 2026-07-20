@@ -31,42 +31,12 @@ function persistSolved(ids: Set<string>) {
 export function ErrorTrainer({ exercises }: { exercises: ErrorExercise[] }) {
   const [index, setIndex] = useState(0);
   const [solved, setSolved] = useState<Set<string>>(new Set());
-  const [solution, setSolution] = useState<Solution | null>(null);
-  const [solutionError, setSolutionError] = useState(false);
-  const [status, setStatus] = useState<"loading" | "playing" | "correct" | "revealed">("loading");
-  const [wrongTries, setWrongTries] = useState(0);
-  const [fen, setFen] = useState(exercises[0]?.fen ?? "");
-  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
-  const [shake, setShake] = useState(false);
 
-  const ex = exercises[index];
-
+  // localStorage is client-only — read it AFTER mount so the server render
+  // (which has no localStorage) and the first client render match; reading it
+  // in a lazy initializer instead would risk a hydration mismatch.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setSolved(loadSolved()); }, []);
-
-  // Load this exercise's solution (best move + acceptable set) on demand.
-  useEffect(() => {
-    if (!ex) return;
-    let cancelled = false;
-    setStatus("loading");
-    setSolution(null);
-    setSolutionError(false);
-    setWrongTries(0);
-    setFen(ex.fen);
-    setLastMove(null);
-    fetch("/api/exercise", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fen: ex.fen }),
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d: Solution) => {
-        if (cancelled) return;
-        setSolution(d);
-        setStatus("playing");
-      })
-      .catch(() => { if (!cancelled) { setSolutionError(true); setStatus("playing"); } });
-    return () => { cancelled = true; };
-  }, [ex]);
 
   const markSolved = useCallback((id: string) => {
     setSolved((prev) => {
@@ -78,6 +48,64 @@ export function ErrorTrainer({ exercises }: { exercises: ErrorExercise[] }) {
     });
   }, []);
 
+  const ex = exercises[index];
+  if (!ex) return null;
+  const solvedCount = exercises.filter((e) => solved.has(e.id)).length;
+
+  return (
+    // key={ex.id}: each exercise gets a fresh mount, so per-exercise state
+    // (solution, tries, board) resets naturally instead of via an effect.
+    <ExerciseView
+      key={ex.id}
+      exercise={ex}
+      index={index}
+      total={exercises.length}
+      solvedCount={solvedCount}
+      alreadySolved={solved.has(ex.id)}
+      onSolved={markSolved}
+      onNav={setIndex}
+    />
+  );
+}
+
+function ExerciseView({
+  exercise: ex, index, total, solvedCount, alreadySolved, onSolved, onNav,
+}: {
+  exercise: ErrorExercise;
+  index: number;
+  total: number;
+  solvedCount: number;
+  alreadySolved: boolean;
+  onSolved: (id: string) => void;
+  onNav: (next: number) => void;
+}) {
+  const [solution, setSolution] = useState<Solution | null>(null);
+  const [solutionError, setSolutionError] = useState(false);
+  const [status, setStatus] = useState<"loading" | "playing" | "correct" | "revealed">("loading");
+  const [wrongTries, setWrongTries] = useState(0);
+  const [fen, setFen] = useState(ex.fen);
+  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [shake, setShake] = useState(false);
+
+  // Load this exercise's solution on mount (setState only fires in the async
+  // callback, never synchronously in the effect body).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/exercise", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fen: ex.fen }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("no solution"))))
+      .then((d: Solution) => {
+        if (cancelled) return;
+        setSolution(d);
+        setStatus("playing");
+      })
+      .catch(() => { if (!cancelled) { setSolutionError(true); setStatus("playing"); } });
+    return () => { cancelled = true; };
+  }, [ex.fen]);
+
   function playMoveOnBoard(uci: string) {
     const c = new Chess(ex.fen);
     try {
@@ -88,16 +116,14 @@ export function ErrorTrainer({ exercises }: { exercises: ErrorExercise[] }) {
 
   function handleMove(from: string, to: string, promotion?: "q" | "r" | "b" | "n") {
     if (status !== "playing" || !solution) return;
-    const key = `${from}${to}`;
-    if (solution.acceptable.includes(key)) {
-      // Show the move played, mark solved, celebrate.
+    if (solution.acceptable.includes(`${from}${to}`)) {
       const c = new Chess(ex.fen);
       try {
         const mv = c.move({ from, to, promotion: promotion ?? "q" });
         if (mv) { setFen(c.fen()); setLastMove({ from, to }); }
       } catch { /* ignore */ }
       setStatus("correct");
-      markSolved(ex.id);
+      onSolved(ex.id);
       playSound("brilliant");
     } else {
       setWrongTries((n) => n + 1);
@@ -113,21 +139,19 @@ export function ErrorTrainer({ exercises }: { exercises: ErrorExercise[] }) {
     setStatus("revealed");
   }
 
-  function go(next: number) {
-    setIndex(Math.max(0, Math.min(exercises.length - 1, next)));
+  function retry() {
+    setStatus("playing");
+    setFen(ex.fen);
+    setLastMove(null);
+    setWrongTries(0);
   }
-
-  if (!ex) return null;
-
-  const solvedCount = exercises.filter((e) => solved.has(e.id)).length;
-  const alreadySolved = solved.has(ex.id);
 
   return (
     <div className="space-y-3 pb-6">
       {/* Progress */}
       <div className="flex items-center justify-between px-1">
         <p className="text-[11px] font-bold tracking-widest uppercase text-muted-foreground">
-          Ejercicio {index + 1} / {exercises.length}
+          Ejercicio {index + 1} / {total}
         </p>
         <p className="text-[11px] font-bold tabular-nums" style={{ color: "var(--bv-electric)" }}>
           {solvedCount} resueltos
@@ -207,20 +231,20 @@ export function ErrorTrainer({ exercises }: { exercises: ErrorExercise[] }) {
       {/* Nav */}
       <div className="flex items-center gap-2">
         {index > 0 && (
-          <button onClick={() => go(index - 1)}
+          <button onClick={() => onNav(index - 1)}
             className="deco-step-sm flex-1 py-3 text-sm font-bold border transition active:scale-[0.98]"
             style={{ borderColor: "var(--border)", color: "var(--foreground)" }}>
             Anterior
           </button>
         )}
-        {(status === "correct" || status === "revealed" || alreadySolved) && index < exercises.length - 1 ? (
-          <button onClick={() => go(index + 1)}
+        {(status === "correct" || status === "revealed" || alreadySolved) && index < total - 1 ? (
+          <button onClick={() => onNav(index + 1)}
             className="deco-step-sm flex-[2] py-3 text-white font-bold transition active:scale-[0.98]"
             style={{ background: "var(--bv-electric)" }}>
             Siguiente ejercicio →
           </button>
-        ) : index < exercises.length - 1 ? (
-          <button onClick={() => go(index + 1)}
+        ) : index < total - 1 ? (
+          <button onClick={() => onNav(index + 1)}
             className="deco-step-sm flex-1 py-3 text-sm font-bold border transition active:scale-[0.98]"
             style={{ borderColor: "var(--border)", color: "var(--muted-foreground)" }}>
             Saltar
@@ -233,7 +257,7 @@ export function ErrorTrainer({ exercises }: { exercises: ErrorExercise[] }) {
           </Link>
         )}
         {(status === "correct" || status === "revealed") && (
-          <button onClick={() => { setStatus("playing"); setFen(ex.fen); setLastMove(null); setWrongTries(0); }}
+          <button onClick={retry}
             aria-label="Reintentar" title="Reintentar"
             className="deco-step-sm py-3 px-4 border transition active:scale-[0.98]"
             style={{ borderColor: "var(--border)", color: "var(--muted-foreground)" }}>
