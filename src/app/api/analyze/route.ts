@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { analyzeGame } from "@/services/blunderDetector";
-import { isEngineBusy } from "@/services/stockfish";
+import { tryBeginAnalysis, endAnalysis } from "@/services/stockfish";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
@@ -23,8 +23,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // If Stockfish is already analyzing another game, tell the client to retry.
-  if (isEngineBusy()) {
+  // If another full game analysis is already running, tell the client to
+  // retry. This gate covers the WHOLE analyzeGame (not just the shallow sweep),
+  // so two interactive analyses can't overlap and OOM the free-tier instance.
+  // Atomic check-and-set — safe to acquire here before the async DB fetch.
+  if (!tryBeginAnalysis()) {
     return new Response(JSON.stringify({ busy: true }), { status: 503 });
   }
 
@@ -35,6 +38,7 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (!game) {
+    endAnalysis();
     return new Response(JSON.stringify({ error: "Game not found" }), { status: 404 });
   }
 
@@ -54,6 +58,7 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "Analysis failed" });
       } finally {
+        endAnalysis();
         controller.close();
       }
     },

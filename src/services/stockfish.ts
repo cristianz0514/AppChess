@@ -73,6 +73,25 @@ let engineBusy = false;
 
 export function isEngineBusy(): boolean { return engineBusy; }
 
+// A game-level analysis gate, separate from `engineBusy`. `engineBusy` is only
+// true during the shallow sweep (analyzeAllFens) — it goes false during the
+// deep re-evals, MultiPV lines, PV lookups and the LLM coach loop that make up
+// the rest of analyzeGame. Gating an interactive /api/analyze on engineBusy
+// alone let a SECOND full analysis start during those phases, so two games
+// could analyze at once and (on the 512MB/0.1CPU free tier) blow up memory and
+// time into a 502. This flag stays true for the WHOLE duration of one game's
+// analysis. tryBeginAnalysis() checks-and-sets synchronously (no await between
+// the two), so it's atomic under Node's single-threaded model — two requests
+// can't both win the check.
+let analysisActive = false;
+export function isAnalysisActive(): boolean { return analysisActive; }
+export function tryBeginAnalysis(): boolean {
+  if (analysisActive) return false;
+  analysisActive = true;
+  return true;
+}
+export function endAnalysis(): void { analysisActive = false; }
+
 function runExclusive<T>(task: () => Promise<T>): Promise<T> {
   const result = chain.then(task, task);
   chain = result.catch(() => {});

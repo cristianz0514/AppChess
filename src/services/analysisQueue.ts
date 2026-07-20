@@ -1,6 +1,7 @@
 import { analyzeGame } from "./blunderDetector";
 import { generateInsights } from "./insightsGenerator";
 import { getUnanalyzedGameIds } from "./dashboardData";
+import { tryBeginAnalysis, endAnalysis } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 
 // Server-side background analysis queue.
@@ -55,7 +56,19 @@ export async function startBatch(userId: string): Promise<{ started: boolean; to
       if (!state.running) break;
       const pgn = pgnById.get(id);
       if (pgn) {
-        try { await analyzeGame(id, pgn); } catch { /* skip failing game */ }
+        // Share the same one-at-a-time gate as interactive /api/analyze: if a
+        // user opened a specific game and its analysis is running, wait for it
+        // rather than analyzing a second game concurrently (two full analyses
+        // at once can OOM the free tier). Give up the wait if the batch is
+        // stopped meanwhile.
+        while (!tryBeginAnalysis()) {
+          if (!state.running) break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        if (!state.running) break;
+        try { await analyzeGame(id, pgn); }
+        catch { /* skip failing game */ }
+        finally { endAnalysis(); }
       }
       state.done++;
       // Breathe between games so the single-CPU server keeps serving requests.
