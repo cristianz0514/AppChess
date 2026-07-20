@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, Target, Crown } from "lucide-react";
+import { ChevronRight, Target, Crown, Crosshair } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 
@@ -25,6 +25,20 @@ export default async function EntrenamientoPage() {
         </div>
 
         <div className="space-y-3">
+          <Link href="/entrenamiento/errores"
+            className="deco-step flex items-center gap-4 p-4 border transition active:scale-[0.98]"
+            style={{ borderColor: "color-mix(in oklab, var(--bv-electric) 30%, transparent)", background: "color-mix(in oklab, var(--bv-electric) 8%, transparent)" }}>
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+              style={{ background: "color-mix(in oklab, var(--bv-electric) 15%, transparent)" }}>
+              <Crosshair size={22} style={{ color: "var(--bv-electric)" }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold">Entrena tus errores</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Vuelve a tus posiciones de blunder y encuentra la mejor jugada</p>
+            </div>
+            <ChevronRight size={18} className="text-muted-foreground shrink-0" />
+          </Link>
+
           <Link href="/practica-mate"
             className="deco-step flex items-center gap-4 p-4 border transition active:scale-[0.98]"
             style={{ borderColor: "oklch(0.34 0.10 264 / 0.25)", background: "oklch(0.34 0.10 264 / 0.08)" }}>
