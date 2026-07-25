@@ -3,6 +3,7 @@ import { analyzeAllFens, evaluatePosition, getTopLines } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
 import { composeCoachComment, type Motif } from "@/lib/coachComment";
+import { isBookMove } from "@/lib/openingBook";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -476,6 +477,7 @@ export async function analyzeGame(
   // fallback ("Equilibrio (+0.2).") on the other ~25, which read as if nothing
   // had changed.
   const richIdx = new Set(chosen);
+  const sanHistory = history.map((m) => m.san);
   const quietUpdates: { ply: number; text: string }[] = [];
   for (let i = 0; i < history.length; i++) {
     if (!isPlayerPly(i) || richIdx.has(i)) continue;
@@ -509,6 +511,10 @@ export async function analyzeGame(
       developsPiece: (h.piece === "n" || h.piece === "b") && /[18]$/.test(h.from),
       toCenter: ["d4", "e4", "d5", "e5"].includes(h.to),
       gaveCheck: /\+/.test(h.san),
+      // The opening book already existed for the viewer's 📖 badge but was
+      // never used for commentary — so four consecutive theory moves each got
+      // "sacas la pieza y ganas actividad".
+      isBook: isBookMove(sanHistory, i),
     });
     if (text) quietUpdates.push({ ply: i, text });
   }

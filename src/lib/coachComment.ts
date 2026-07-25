@@ -67,6 +67,7 @@ export interface MoveFacts {
   developsPiece?: boolean;   // knight/bishop leaving its starting square
   toCenter?: boolean;        // lands on d4/e4/d5/e5
   gaveCheck?: boolean;
+  isBook?: boolean;          // still inside a known opening line
 }
 
 const ART: Record<string, string> = {
@@ -110,6 +111,49 @@ function band(e: number): Band {
   if (e < 1) return "igualada";
   if (e < 3) return "mejor";
   return "ganando";
+}
+
+// Descriptive tier for moves the engine did NOT flag as errors. Needs no engine
+// search — just the move's own shape plus the shallow eval — which is why every
+// move can afford a comment now. Book moves get chess.com's "jugada de libro"
+// treatment instead of a fourth repeat of "sacas la pieza y ganas actividad".
+function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
+  const s = f.variantSeed;
+  const where = band(f.evalAfter);
+  const standing =
+    where === "ganando" ? "con ventaja decisiva" : where === "mejor" ? "con ventaja" :
+    where === "igualada" ? "en una posición equilibrada" : where === "peor" ? "aún en desventaja" :
+    "en una posición muy difícil";
+
+  if (f.isBook) {
+    if (f.isCastle) return { text: `Jugada de libro: enrocas y pones el rey a salvo.`, namesMaterial: false };
+    if (f.developsPiece) return { text: pick([
+      `Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.`,
+      `Teoría: ${art(f.playedPiece)} va a ${f.playedTo} para entrar en juego.`,
+    ], s), namesMaterial: false };
+    if (f.toCenter) return { text: `Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
+    return { text: pick([
+      `Jugada de libro: ${art(f.playedPiece)} a ${f.playedTo} sigue la teoría.`,
+      `Teoría de la apertura, ${art(f.playedPiece)} a ${f.playedTo}.`,
+    ], s), namesMaterial: false };
+  }
+
+  if (f.isPromotion) return { text: `Coronas en ${f.playedTo} y quedas ${standing}.`, namesMaterial: true };
+  if (f.isCastle) return { text: pick([`Enrocas y pones el rey a salvo.`, `Enrocas: el rey queda protegido y la torre entra en juego.`], s), namesMaterial: false };
+  if (f.capturedPiece) return { text: pick([
+    `Cambias en ${f.playedTo} y quedas ${standing}.`,
+    `Capturas ${art(f.capturedPiece)} en ${f.playedTo}.`,
+  ], s), namesMaterial: true };
+  if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
+  if (f.developsPiece) return { text: pick([
+    `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
+    `Sacas ${art(f.playedPiece)} a ${f.playedTo} y ganas actividad.`,
+  ], s), namesMaterial: false };
+  if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
+  return { text: pick([
+    `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
+    `Jugada sólida, quedas ${standing}.`,
+  ], s), namesMaterial: false };
 }
 
 // ── Slot A — what happened ───────────────────────────────────────────────────
@@ -156,6 +200,14 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
   }
 
   // ── errors ──
+  // Only a move the engine actually judged as an error may use the error
+  // templates. Without this gate, a perfectly fine capture (classified best or
+  // good) got the headline "el alfil de f3 se queda colgado" — technically the
+  // piece is en prise, but that's the normal recapture that follows a trade,
+  // not a mistake. Quiet/strong moves fall through to the descriptive tier.
+  const isError = f.classification === "inaccuracy" || f.classification === "mistake" || f.classification === "blunder";
+  if (!isError) return quietComment(f);
+
   if (f.missedForcedMate) {
     return { text: pick([
       `Tenías jaque mate forzado y se te escapó.`,
@@ -204,41 +256,22 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     ], s), namesMaterial: false, usedBestMotif: true };
   }
 
-  // Quiet move: no error worth flagging and no tactic to name. Describe what
-  // the move actually does — this is the tier that replaces the old terse
-  // "Equilibrio (+0.2)." and it needs no engine work at all.
-  const quietish = f.classification === "best" || f.classification === "excellent" || f.classification === "good";
-  if (quietish) {
-    const where = band(f.evalAfter);
-    const standing =
-      where === "ganando" ? "con ventaja decisiva" : where === "mejor" ? "con ventaja" :
-      where === "igualada" ? "en una posición equilibrada" : where === "peor" ? "aún en desventaja" : "en una posición muy difícil";
-    if (f.isPromotion) return { text: `Coronas en ${f.playedTo} y quedas ${standing}.`, namesMaterial: true };
-    if (f.isCastle) return { text: pick([`Enrocas y pones el rey a salvo.`, `Enrocas: el rey queda protegido y la torre entra en juego.`], s), namesMaterial: false };
-    if (f.capturedPiece) return { text: pick([
-      `Cambias en ${f.playedTo} y quedas ${standing}.`,
-      `Capturas ${art(f.capturedPiece)} en ${f.playedTo}.`,
-    ], s), namesMaterial: true };
-    if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
-    if (f.developsPiece) return { text: pick([
-      `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
-      `Sacas ${art(f.playedPiece)} a ${f.playedTo} y ganas actividad.`,
-    ], s), namesMaterial: false };
-    if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
-    return { text: pick([
-      `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
-      `Jugada sólida, quedas ${standing}.`,
-    ], s), namesMaterial: false };
-  }
-
-  // Nothing concrete detected — fall back to the size of the mistake.
-  const lost = Math.abs(f.evalAfter - f.evalBefore);
-  if (Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG && lost >= 0.5) {
-    const n = lost.toFixed(1);
-    return { text: f.classification === "inaccuracy"
-      ? pick([`Imprecisión: se te van unos ${n} peones de ventaja.`, `Pequeña imprecisión, unos ${n} peones.`], s)
-      : pick([`Pierdes unos ${n} peones de ventaja.`, `Esta jugada te cuesta unos ${n} peones.`], s),
-      namesMaterial: false };
+  // Nothing concrete detected — say it qualitatively. Deliberately NO pawn
+  // count: chess.com shows the number in its own badge and keeps the prose
+  // qualitative ("ahora tu oponente tiene ventaja"), and "pierdes 1.8 peones"
+  // is engine jargon — a club player thinks "quedé peor", not in centipawns.
+  // Our UI already shows the eval separately in the bar, so the number here was
+  // both off-register and redundant. Slot B supplies the "how it changed" half.
+  if (Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG) {
+    if (f.classification === "inaccuracy") {
+      return { text: pick([`Imprecisión: cedes algo de terreno.`, `No es grave, pero hay algo mejor aquí.`], s), namesMaterial: false };
+    }
+    if (f.classification === "blunder") {
+      return { text: pick([`Error grave: la posición se te complica de golpe.`, `Esta jugada le entrega la partida al rival.`], s), namesMaterial: false };
+    }
+    if (f.classification === "mistake") {
+      return { text: pick([`Error: le das la iniciativa al rival.`, `Con esta jugada pierdes el hilo de la posición.`], s), namesMaterial: false };
+    }
   }
   return null;
 }
