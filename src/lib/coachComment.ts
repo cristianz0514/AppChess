@@ -1,0 +1,266 @@
+// Deterministic coach comments — template-based NLG, no LLM in the main path.
+//
+// Why templates instead of the model: chess.com's own Game Review text is
+// template-interpolated (its Spanish has slot-seam grammar bugs like "Tu mejor
+// opción era ataca el centro con un peón" — an LLM never writes that). Their
+// comments read well precisely BECAUSE they're deterministic: short,
+// consistent, and incapable of hallucinating. Depth comes from classifying the
+// situation well and naming the concrete consequence, not from prose skill.
+//
+// Structure (conditional composition): a comment is assembled from independent
+// slots, each rendered only when its data is verified.
+//   A — what happened (always)
+//   B — how the game changed (sometimes)
+//   C — what was better (sometimes)
+// At most TWO slots render, so the result stays chess.com-short. A handful of
+// written fragments therefore produce hundreds of distinct comments.
+
+export interface Motif {
+  key: string;        // fork | pin | skewer | discovered | hanging | hangs_own
+  label: string;      // Spanish term ("horquilla", "clavada"…)
+  piece?: string;     // Spanish piece name
+  square?: string;
+}
+
+export interface MoveFacts {
+  variantSeed: number;        // stable per move (use the ply) so text never flickers
+
+  playedPiece: string;        // Spanish piece name of the moved piece
+  playedTo: string;
+  isMate: boolean;
+  capturedPiece: string | null;
+
+  classification: string | null;
+  good: boolean;
+
+  evalBefore: number;         // player's perspective, pawns (mate ≈ ±10000)
+  evalAfter: number;
+
+  bestPiece: string | null;
+  bestTo: string | null;
+  bestCapturedPiece: string | null;
+  bestGivesCheck: boolean;
+  bestIsCastle: boolean;
+  bestIsCenterPawn: boolean;  // pawn move into d4/e4/d5/e5
+  bestDefendsHung: boolean;   // the best move defends the piece you left hanging
+  onlyGoodMove: boolean;
+  missedForcedMate: boolean;
+
+  selfHang: { piece: string; square: string } | null;
+  playedMotifs: Motif[];      // threats the played move created
+  bestMotifs: Motif[];        // threats the best move would have created
+
+  materialLostPiece: string | null;  // biggest piece lost in the punishment line
+  materialNet: number;               // pawns the player ends up down
+  materialSettled: boolean;          // line doesn't end mid-exchange
+  materialTrades: boolean;
+
+  oppCapturesPiece: string | null;   // piece the opponent's reply captures
+  isSacrificeConfirmed: boolean;
+}
+
+const ART: Record<string, string> = {
+  "peón": "el peón", caballo: "el caballo", alfil: "el alfil",
+  torre: "la torre", dama: "la dama", rey: "el rey",
+};
+const art = (p: string | null | undefined) => (p ? ART[p] ?? `el ${p}` : "la pieza");
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Motif labels carry their own article because Spanish gender isn't guessable
+// from the word: "una horquilla" but "un pincho". A blanket `una ${label}`
+// produced "una pincho".
+const MOTIF_ART: Record<string, string> = {
+  horquilla: "una horquilla",
+  clavada: "una clavada",
+  pincho: "un pincho",
+  "ataque a la descubierta": "un ataque a la descubierta",
+  "doble amenaza": "una doble amenaza",
+  "doble amenaza con jaque": "una doble amenaza con jaque",
+};
+const motifArt = (label: string) => MOTIF_ART[label] ?? `una ${label}`;
+
+// "pieza colgada" is not a tactic you *execute* — it's a piece sitting there
+// undefended. It needs its own phrasing instead of "montabas una pieza colgada".
+const isHanging = (m: Motif) => m.key === "hanging" || m.key === "hangs_own";
+function hangingPhrase(m: Motif): string {
+  return m.piece && m.square
+    ? `podías capturar ${art(m.piece)} de ${m.square}, que estaba sin defensa`
+    : `había una pieza sin defensa`;
+}
+// Stable pick — the same move always renders the same text, but different moves
+// rotate through the variants so consecutive comments don't read as one mold.
+const pick = (variants: string[], seed: number) => variants[Math.abs(seed) % variants.length];
+
+const MATE_MAG = 90; // |eval| at/above this means mate, not a pawn count
+
+type Band = "perdida" | "peor" | "igualada" | "mejor" | "ganando";
+function band(e: number): Band {
+  if (e <= -3) return "perdida";
+  if (e <= -1) return "peor";
+  if (e < 1) return "igualada";
+  if (e < 3) return "mejor";
+  return "ganando";
+}
+
+// ── Slot A — what happened ───────────────────────────────────────────────────
+// Ordered by how much it explains: a named material consequence beats a vague
+// "you lost some advantage" every time.
+function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMotif?: boolean } | null {
+  const s = f.variantSeed;
+
+  if (f.isMate && f.evalAfter > 0) {
+    return { text: pick([
+      `¡Jaque mate! ${cap(art(f.playedPiece))} remata en ${f.playedTo}.`,
+      `¡Jaque mate con ${art(f.playedPiece)} en ${f.playedTo}! Se acabó la partida.`,
+    ], s), namesMaterial: false };
+  }
+
+  if (f.good) {
+    if (f.onlyGoodMove) {
+      return { text: pick([
+        `¡Solo había una jugada buena y la encontraste!`,
+        `Era la única jugada que servía, y la viste.`,
+      ], s), namesMaterial: false };
+    }
+    const m = f.playedMotifs.find((x) => x.key !== "hangs_own");
+    if (m) {
+      if (isHanging(m)) {
+        return { text: `Muy buena: ${hangingPhrase(m)}.`, namesMaterial: true };
+      }
+      const target = m.piece && m.square ? ` sobre ${art(m.piece)} de ${m.square}` : "";
+      return { text: pick([
+        `Muy buena: montas ${motifArt(m.label)}${target}.`,
+        `Excelente, encuentras ${motifArt(m.label)}${target}.`,
+      ], s), namesMaterial: false };
+    }
+    if (f.isSacrificeConfirmed) {
+      return { text: `Sacrificio correcto: entregas ${art(f.playedPiece)} y el motor confirma que hay compensación.`, namesMaterial: true };
+    }
+    if (f.capturedPiece) {
+      return { text: pick([
+        `Ganas ${art(f.capturedPiece)}.`,
+        `Te llevas ${art(f.capturedPiece)}.`,
+      ], s), namesMaterial: true };
+    }
+    return { text: `Jugada precisa: el motor la confirma como la mejor de la posición.`, namesMaterial: false };
+  }
+
+  // ── errors ──
+  if (f.missedForcedMate) {
+    return { text: pick([
+      `Tenías jaque mate forzado y se te escapó.`,
+      `Había mate forzado a tu favor: esta jugada lo deja ir.`,
+    ], s), namesMaterial: false };
+  }
+
+  if (f.selfHang) {
+    const p = art(f.selfHang.piece), sq = f.selfHang.square;
+    return { text: pick([
+      `${cap(p)} de ${sq} queda sin defensa.`,
+      `Dejas ${p} de ${sq} sin ningún defensor.`,
+      `${cap(p)} de ${sq} se queda colgado.`,
+    ], s), namesMaterial: true };
+  }
+
+  if (f.materialLostPiece && f.materialSettled && f.materialNet >= 2) {
+    const p = art(f.materialLostPiece);
+    return { text: f.materialTrades
+      ? pick([
+          `Tras los cambios pierdes ${p}.`,
+          `La secuencia de cambios te cuesta ${p}.`,
+        ], s)
+      : pick([
+          `Con esta jugada pierdes ${p}.`,
+          `Esto entrega ${p} sin compensación.`,
+        ], s), namesMaterial: true };
+  }
+
+  if (f.oppCapturesPiece) {
+    return { text: pick([
+      `El rival te captura ${art(f.oppCapturesPiece)}.`,
+      `Le regalas ${art(f.oppCapturesPiece)} al rival.`,
+    ], s), namesMaterial: true };
+  }
+
+  const bm = f.bestMotifs.find((x) => x.key !== "hangs_own");
+  if (bm) {
+    if (isHanging(bm)) {
+      return { text: `${cap(hangingPhrase(bm))}.`, namesMaterial: true, usedBestMotif: true };
+    }
+    const target = bm.piece && bm.square ? ` sobre ${art(bm.piece)} de ${bm.square}` : "";
+    return { text: pick([
+      `Tenías ${motifArt(bm.label)}${target} y la dejas pasar.`,
+      `Había ${motifArt(bm.label)}${target} disponible.`,
+    ], s), namesMaterial: false, usedBestMotif: true };
+  }
+
+  // Nothing concrete detected — fall back to the size of the mistake.
+  const lost = Math.abs(f.evalAfter - f.evalBefore);
+  if (Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG && lost >= 0.5) {
+    const n = lost.toFixed(1);
+    return { text: f.classification === "inaccuracy"
+      ? pick([`Imprecisión: se te van unos ${n} peones de ventaja.`, `Pequeña imprecisión, unos ${n} peones.`], s)
+      : pick([`Pierdes unos ${n} peones de ventaja.`, `Esta jugada te cuesta unos ${n} peones.`], s),
+      namesMaterial: false };
+  }
+  return null;
+}
+
+// ── Slot B — how the game changed ────────────────────────────────────────────
+// Skipped when slot A already named a concrete material loss: "pierdes la dama"
+// followed by "ahora el rival manda" states the obvious.
+function slotB(f: MoveFacts, aNamesMaterial: boolean): string | null {
+  if (f.good || aNamesMaterial) return null;
+  if (Math.abs(f.evalBefore) >= MATE_MAG || Math.abs(f.evalAfter) >= MATE_MAG) return null;
+  const b = band(f.evalBefore), a = band(f.evalAfter);
+  const wasGood = b === "mejor" || b === "ganando";
+  const nowBad = a === "peor" || a === "perdida";
+  const s = f.variantSeed;
+  if (b === "igualada" && nowBad) return pick(["Estaba parejo y ahora el rival toma la ventaja.", "De una posición igualada pasas a estar peor."], s);
+  if (wasGood && a === "igualada") return pick(["Tenías ventaja y la dejas escapar: queda igualada.", "Se te va la ventaja y la partida se iguala."], s);
+  if (wasGood && nowBad) return pick(["Ibas con ventaja y ahora estás peor.", "Pasas de mandar en la partida a estar en desventaja."], s);
+  if (b === "perdida" && a === "perdida") return pick(["Ya venías mal, así que esto no la decide, pero tampoco ayuda.", "La posición ya era difícil de antes."], s);
+  if (b === "ganando" && a === "ganando") return pick(["Sigues ganando, pero desperdicias parte de la ventaja.", "Aún ganas, aunque cediste terreno."], s);
+  return null;
+}
+
+// ── Slot C — what was better ─────────────────────────────────────────────────
+// Never shown on a good move (you don't tell someone who found the best move
+// that something else was better) or on a mate.
+function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
+  if (f.good || f.isMate || !f.bestPiece || !f.bestTo) return null;
+  const s = f.variantSeed;
+  const bp = art(f.bestPiece), sq = f.bestTo;
+
+  // When the headline is a missed mate, the alternative has to be about the
+  // mate — "te llevabas el peón" badly undersells it.
+  if (f.missedForcedMate) return `Con ${bp} a ${sq} forzabas el mate.`;
+  if (f.bestDefendsHung && f.selfHang) return `Con ${bp} a ${sq} lo defendías.`;
+  if (f.bestCapturedPiece) return pick([
+    `Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.`,
+    `${cap(bp)} a ${sq} capturaba ${art(f.bestCapturedPiece)}.`,
+  ], s);
+  // Skipped when slot A already named this same motif, so the two halves don't
+  // repeat each other ("Había un pincho. Con el alfil montabas un pincho.").
+  const bm = usedBestMotif ? undefined : f.bestMotifs.find((x) => x.key !== "hangs_own" && !isHanging(x));
+  if (bm) return `Con ${bp} a ${sq} montabas ${motifArt(bm.label)}.`;
+  if (f.bestGivesCheck) return `${cap(bp)} a ${sq} daba jaque y cambiaba el ritmo.`;
+  if (f.bestIsCastle) return `Enrocar primero dejaba al rey a salvo.`;
+  if (f.bestIsCenterPawn) return `Atacar el centro con el peón a ${sq} era mejor.`;
+  return pick([`${cap(bp)} a ${sq} era mejor.`, `Lo indicado era ${bp} a ${sq}.`], s);
+}
+
+// Composes the final comment: A always, then B or C — whichever adds more —
+// never all three, so the text stays short.
+export function composeCoachComment(f: MoveFacts): string | null {
+  const a = slotA(f);
+  if (!a) return null;
+  if (f.isMate && f.evalAfter > 0) return a.text;
+
+  const b = slotB(f, a.namesMaterial);
+  const c = slotC(f, a.usedBestMotif ?? false);
+  // C (a concrete alternative) teaches more than B (context), so it wins when
+  // both are available.
+  const second = c ?? b;
+  return second ? `${a.text} ${second}` : a.text;
+}
