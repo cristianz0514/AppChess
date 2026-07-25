@@ -1,3 +1,5 @@
+import { ECO_LINES } from "./ecoOpenings";
+
 // A curated list of common opening lines (SAN, from the starting position)
 // used to flag "book"/theory moves — chess.com-style — during game review.
 //
@@ -72,8 +74,13 @@ const OPENING_LINES: string[] = [
   "f4 d5",
 ];
 
+// The curated list above stays as a fallback, but the real coverage now comes
+// from the full ECO dataset (lichess-org/chess-openings, CC0 — 3.8k lines
+// generated into ecoOpenings.ts). With only the 73 curated lines an English
+// Opening left the book at move 2, so four consecutive theory moves each got
+// the generic "sacas la pieza y ganas actividad" comment.
 const bookPrefixes = new Set<string>();
-for (const line of OPENING_LINES) {
+for (const line of [...OPENING_LINES, ...ECO_LINES]) {
   const sans = line.split(" ");
   for (let i = 1; i <= sans.length; i++) {
     bookPrefixes.add(sans.slice(0, i).join("|"));
