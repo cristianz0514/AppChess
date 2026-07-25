@@ -6,7 +6,7 @@ import { ChessBoard } from "./ChessBoard";
 import type { Arrow } from "./ChessBoard";
 import { Piece } from "./pieces";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Sparkles, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
 import { estimateEloFromAcpl } from "@/lib/eloEstimate";
 import { isBookMove } from "@/lib/openingBook";
@@ -934,9 +934,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                       sentence comments are the thing actually needing space.
                       Still taps to expand for anything longer than that. */}
                   {ai ? (
-                    <p className={`text-xs leading-snug flex items-start gap-1 text-foreground ${commentExpanded ? "" : "line-clamp-5"}`}>
-                      <Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: "var(--bv-purple)" }} />
-                      <span>{ai}</span>
+                    // No sparkles icon: it used to mark "written by the AI",
+                    // but stored comments are now generated deterministically
+                    // from engine facts + templates, so the badge would be
+                    // claiming something untrue.
+                    <p className={`text-xs leading-snug text-foreground ${commentExpanded ? "" : "line-clamp-5"}`}>
+                      {ai}
                     </p>
                   ) : (
                     <p className={`text-xs text-muted-foreground ${commentExpanded ? "" : "line-clamp-5"}`}>

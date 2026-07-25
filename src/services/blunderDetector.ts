@@ -468,5 +468,63 @@ export async function analyzeGame(
     // Keep the event loop responsive between heavy calls on the free tier.
     await new Promise((r) => setTimeout(r, 20));
   }
+  // ── Pass 4: a comment for EVERY other move of the player's ─────────────────
+  // chess.com comments every move, and now that comments are deterministic
+  // there's no reason not to: a quiet move needs no engine search, only the
+  // shallow eval from pass 1 plus the move's own shape. Without this, stepping
+  // through a game showed a good comment on ~8 moves and the terse client-side
+  // fallback ("Equilibrio (+0.2).") on the other ~25, which read as if nothing
+  // had changed.
+  const richIdx = new Set(chosen);
+  const quietUpdates: { ply: number; text: string }[] = [];
+  for (let i = 0; i < history.length; i++) {
+    if (!isPlayerPly(i) || richIdx.has(i)) continue;
+    const h = history[i];
+    const fenBefore = i === 0 ? new Chess().fen() : fens[i - 1];
+    const moverWhite = i % 2 === 0;
+    const evalAfter = whiteEval[i] == null ? 0 : (moverWhite ? whiteEval[i]! : -whiteEval[i]!);
+    const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
+    const rawMotifs = detectMotifs(fenBefore, moves[i].move);
+    const selfHang = rawMotifs.find((m) => m.key === "hangs_own");
+    const text = composeCoachComment({
+      variantSeed: i,
+      playedPiece: PIECE_ES[h.piece] ?? "pieza",
+      playedTo: h.to,
+      isMate: /#/.test(moves[i].move),
+      capturedPiece: h.captured ? (PIECE_ES[h.captured] ?? null) : null,
+      classification: moves[i].classification,
+      good: false,
+      evalBefore, evalAfter,
+      // No engine data at this tier — that's the point.
+      bestPiece: null, bestTo: null, bestCapturedPiece: null, bestGivesCheck: false,
+      bestIsCastle: false, bestIsCenterPawn: false, bestDefendsHung: false,
+      onlyGoodMove: false, missedForcedMate: false,
+      selfHang: selfHang?.pieceName && selfHang.square ? { piece: selfHang.pieceName, square: selfHang.square } : null,
+      playedMotifs: rawMotifs.filter((m) => m.key !== "hangs_own").map((m) => ({ key: m.key, label: m.label, piece: m.pieceName, square: m.square })),
+      bestMotifs: [],
+      materialLostPiece: null, materialNet: 0, materialSettled: false, materialTrades: false,
+      oppCapturesPiece: null, isSacrificeConfirmed: false,
+      isCastle: h.san.startsWith("O-O"),
+      isPromotion: h.promotion != null,
+      developsPiece: (h.piece === "n" || h.piece === "b") && /[18]$/.test(h.from),
+      toCenter: ["d4", "e4", "d5", "e5"].includes(h.to),
+      gaveCheck: /\+/.test(h.san),
+    });
+    if (text) quietUpdates.push({ ply: i, text });
+  }
+  // Write in small concurrent batches — one round-trip per move would add ~25
+  // sequential requests to every analysis.
+  for (let k = 0; k < quietUpdates.length; k += 8) {
+    await Promise.all(quietUpdates.slice(k, k + 8).map(async ({ ply, text }) => {
+      try {
+        const { error } = await supabase.from("moves").update({ explanation: text }).eq("game_id", gameId).eq("ply", ply);
+        if (error) {
+          await supabase.from("moves").update({ explanation: text })
+            .eq("game_id", gameId).eq("move_number", moves[ply].move_number).eq("move", moves[ply].move);
+        }
+      } catch { /* column may not exist yet */ }
+    }));
+  }
+
   onProgress?.(chosen.length, chosen.length, "Análisis completado");
 }

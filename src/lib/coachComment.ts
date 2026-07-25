@@ -57,6 +57,16 @@ export interface MoveFacts {
 
   oppCapturesPiece: string | null;   // piece the opponent's reply captures
   isSacrificeConfirmed: boolean;
+
+  // Quiet-move shape. Set for EVERY move (it's free — no engine needed), so
+  // ordinary moves get a real sentence instead of the old terse fallback
+  // ("Equilibrio (+0.2)."). chess.com comments every move; capping commentary
+  // only made sense while each one cost an engine search plus an LLM call.
+  isCastle?: boolean;
+  isPromotion?: boolean;
+  developsPiece?: boolean;   // knight/bishop leaving its starting square
+  toCenter?: boolean;        // lands on d4/e4/d5/e5
+  gaveCheck?: boolean;
 }
 
 const ART: Record<string, string> = {
@@ -192,6 +202,33 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
       `Tenías ${motifArt(bm.label)}${target} y la dejas pasar.`,
       `Había ${motifArt(bm.label)}${target} disponible.`,
     ], s), namesMaterial: false, usedBestMotif: true };
+  }
+
+  // Quiet move: no error worth flagging and no tactic to name. Describe what
+  // the move actually does — this is the tier that replaces the old terse
+  // "Equilibrio (+0.2)." and it needs no engine work at all.
+  const quietish = f.classification === "best" || f.classification === "excellent" || f.classification === "good";
+  if (quietish) {
+    const where = band(f.evalAfter);
+    const standing =
+      where === "ganando" ? "con ventaja decisiva" : where === "mejor" ? "con ventaja" :
+      where === "igualada" ? "en una posición equilibrada" : where === "peor" ? "aún en desventaja" : "en una posición muy difícil";
+    if (f.isPromotion) return { text: `Coronas en ${f.playedTo} y quedas ${standing}.`, namesMaterial: true };
+    if (f.isCastle) return { text: pick([`Enrocas y pones el rey a salvo.`, `Enrocas: el rey queda protegido y la torre entra en juego.`], s), namesMaterial: false };
+    if (f.capturedPiece) return { text: pick([
+      `Cambias en ${f.playedTo} y quedas ${standing}.`,
+      `Capturas ${art(f.capturedPiece)} en ${f.playedTo}.`,
+    ], s), namesMaterial: true };
+    if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
+    if (f.developsPiece) return { text: pick([
+      `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
+      `Sacas ${art(f.playedPiece)} a ${f.playedTo} y ganas actividad.`,
+    ], s), namesMaterial: false };
+    if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
+    return { text: pick([
+      `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
+      `Jugada sólida, quedas ${standing}.`,
+    ], s), namesMaterial: false };
   }
 
   // Nothing concrete detected — fall back to the size of the mistake.
