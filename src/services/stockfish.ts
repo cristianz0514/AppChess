@@ -124,7 +124,13 @@ function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promi
           // can show "mate in N". Sign = side-to-move perspective.
           const n = parseInt(mateMatch[1]);
           const mag = 10000 - Math.min(Math.abs(n), 99);
-          best = { score: (n >= 0 ? mag : -mag), mate: n };
+          // `mate N` with N>0 = the side to move DELIVERS mate; N<0 = it gets
+          // mated. N==0 is what Stockfish reports for an ALREADY-mated
+          // position, i.e. the worst possible score for the side to move —
+          // lumping it in with n>0 flipped the sign and made a checkmate the
+          // player delivered read as "mate forzado en contra" in the coach
+          // comment.
+          best = { score: (n > 0 ? mag : -mag), mate: n };
         } else if (cpMatch) {
           best = { score: parseInt(cpMatch[1]) / 100, mate: null };
         }

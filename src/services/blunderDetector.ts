@@ -10,7 +10,11 @@ export type MoveClassification = Move["classification"];
 // How many moves get an AI coach comment. Only the moves that matter (errors +
 // brilliant/great) — the ones an expert actually reads. Bounded to keep the
 // pre-view analysis window reasonable.
-const MAX_EXPLAIN = 16;
+// Raised from 16: the player reviews ~10 games/day and asked for more of the
+// AI's output, and the real bottleneck is the ENGINE (two deep searches per
+// commented move), not Groq — so this is a deliberate, bounded step up rather
+// than an open-ended one.
+const MAX_EXPLAIN = 20;
 // Depth for the coach lines. Tuned to what the free-tier CPU can actually FINISH
 // within the engine timeout — too deep and it times out with EMPTY lines, which
 // strips the comment of its grounding and makes it worse, not better.
@@ -21,6 +25,78 @@ const fmtP = (e: number) => (Math.abs(e) >= 90 ? (e > 0 ? "mate a favor" : "mate
 
 const PIECE_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
 const ART_ES: Record<string, string> = { p: "el peón", n: "el caballo", b: "el alfil", r: "la torre", q: "la dama", k: "el rey" };
+const PIECE_VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+// "caballo" → "el caballo". detectMotifs hands back Spanish piece NAMES, so
+// this saves reverse-mapping through PIECE_ES at each use site.
+const ART_BY_NAME: Record<string, string> = Object.fromEntries(
+  Object.entries(PIECE_ES).map(([k, name]) => [name, ART_ES[k]]),
+);
+const artFor = (pieceName: string | undefined) =>
+  (pieceName ? ART_BY_NAME[pieceName] : null) ?? `el ${pieceName ?? "pieza"}`;
+
+// ── Concrete, verifiable context for the coach (chess.com-style) ─────────────
+// These compute the things chess.com's coach actually says — "se pierde un
+// alfil", "la partida estaba igualada pero ahora tu rival tiene ventaja",
+// "solo había una jugada buena" — in CODE, so the model narrates real facts
+// instead of guessing at them.
+
+// Which side ends up down material over the engine's line, and the biggest
+// piece the player loses in it. This is what turns a vague "permites algo
+// malo" into "pierdes un alfil" / "gana una torre tras los intercambios".
+function materialOverLine(fromFen: string, sans: string[], playerColor: "w" | "b"): {
+  net: number;                    // >0 = the player ends up DOWN this many pawns
+  biggestLostType: string | null; // piece type letter (p/n/b/r/q) the player loses
+  trades: boolean;                // captures on both sides (an exchange sequence)
+  settled: boolean;               // the line does NOT end mid-exchange
+} {
+  const c = new Chess(fromFen);
+  let net = 0, biggest = 0, byPlayer = 0, byOpponent = 0;
+  let biggestLostType: string | null = null;
+  let lastWasOpponentCapture = false;
+  for (const san of sans) {
+    let mv;
+    try { mv = c.move(san); } catch { break; }
+    if (!mv) break;
+    if (!mv.captured) { lastWasOpponentCapture = false; continue; }
+    const v = PIECE_VAL[mv.captured] ?? 0;
+    if (mv.color === playerColor) { net -= v; byPlayer++; lastWasOpponentCapture = false; }
+    else {
+      net += v; byOpponent++; lastWasOpponentCapture = true;
+      if (v > biggest) { biggest = v; biggestLostType = mv.captured; }
+    }
+  }
+  // The engine's PV is truncated (6 plies), so a line that ENDS on the
+  // opponent capturing is very likely mid-exchange — the recapture just falls
+  // outside the window. Claiming "se pierde el caballo" off such a line
+  // overstates the loss, so callers must treat it as unsettled.
+  return { net, biggestLostType, trades: byPlayer > 0 && byOpponent > 0, settled: !lastWasOpponentCapture };
+}
+
+// Evaluation bands from the PLAYER's perspective (pawns) — the vocabulary
+// chess.com uses to frame how the game's state changed, rather than raw numbers.
+type EvalBand = "perdida" | "peor" | "igualada" | "mejor" | "ganando";
+function evalBand(e: number): EvalBand {
+  if (e <= -3) return "perdida";
+  if (e <= -1) return "peor";
+  if (e < 1) return "igualada";
+  if (e < 3) return "mejor";
+  return "ganando";
+}
+
+// The narrative sentence for how the position CHANGED — chess.com's
+// "La partida estaba bastante igualada, pero ahora tu oponente tiene ventaja"
+// and "Estabas en una posición difícil, pero esa jugada no ha sido nada buena".
+function bandNarrative(before: number, after: number): string | null {
+  const b = evalBand(before), a = evalBand(after);
+  const wasGood = b === "mejor" || b === "ganando";
+  const nowBad = a === "peor" || a === "perdida";
+  if (b === "igualada" && nowBad) return "la partida estaba igualada y ahora el rival toma la ventaja";
+  if (wasGood && a === "igualada") return "tenía ventaja y la dejó escapar: ahora está igualada";
+  if (wasGood && nowBad) return "iba con ventaja y ahora está peor";
+  if (b === "perdida" && a === "perdida") return "ya venía de una posición difícil, así que esto no la decidió, pero tampoco ayudó";
+  if (b === "ganando" && a === "ganando") return "sigue ganando, pero desperdició parte de la ventaja";
+  return null;
+}
 
 // Turn a SAN move into plain Spanish ("la torre a b8", "el alfil captura el
 // caballo en e5") so comments never speak in codes like "Rb8"/"Bxd5".
@@ -45,31 +121,136 @@ function describeMove(fen: string, san: string): string {
 // fact — 2-3 sentences instead of one, since a single 20-word sentence
 // can't carry both "what happened" and "why it matters".
 async function coachComment(args: {
-  fenBefore: string; san: string; bestMove: string | null; moveNumber: number;
-  evalBefore: number; evalAfter: number; good: boolean; facts: string;
+  playedDesc: string; bestDesc: string | null;
+  evalBefore: number; evalAfter: number;
+  classification: string | null; good: boolean; facts: string;
+  onlyGoodMove: boolean; materialLine: string | null; narrative: string | null;
 }): Promise<string | null> {
   if (!coachAvailable) return null;
-  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, good, facts } = args;
-  const swing = Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
-  const RULES = `Reglas: usa SOLO los datos de los campos, no inventes nada más — ni variantes, ni patrones tácticos, ni planes que no estén ahí. Si ves un campo "Patrón verificado: X", eso es una ETIQUETA INTERNA para ti, no la copies literalmente — teje el nombre del patrón (X: horquilla/clavada/pincho/pieza colgada/pieza propia colgada) de forma natural dentro de la frase, como lo diría un humano ("...con una horquilla sobre el rey y la torre", nunca "el patrón verificado es horquilla" ni "el Patrón verificado es..."). Si NO hay ese campo, no menciones ningún patrón táctico por tu cuenta. Nombres de piezas y casillas siempre; PROHIBIDO usar notación tipo "Rb8"/"Bxd5" o casillas sueltas sin pieza — es una IA hablando con una persona. Cuando cites la jugada correcta o la respuesta del rival, repite la descripción TAL CUAL viene en los campos (no la reformules como "mover X"). PROHIBIDAS las frases de relleno: "mejorar la posición", "obtener ventaja", "no aprovechaste la oportunidad" (sin explicar qué oportunidad). No menciones cifras ni la palabra "evaluación". Español, tono de entrenador directo, cercano y con profundidad real — explica la IDEA o el plan detrás del hecho, no solo lo señales. MUY IMPORTANTE, limite estricto: máximo 2 frases completas, cada una de 10 a 16 palabras (el texto se muestra en una tarjeta pequeña de máximo 6 líneas — más largo se corta). Devuelve SOLO el texto, sin comillas ni encabezados.`;
-  const prompt = good
-    ? `Eres un entrenador de ajedrez explicando a tu alumno por qué acaba de hacer una gran jugada. Explica QUÉ consigue a fondo — no solo "gana material", sino qué hace esa ganancia con la posición (activa piezas, evita contrajuego, sentencia la partida, etc.) apoyándote en la línea posterior si está en los datos.
-${facts}
-${RULES}`
-    : `Eres un entrenador de ajedrez explicando a tu alumno un error que acaba de cometer. No te quedes en "permite esto" — explica POR QUÉ eso es grave (qué pieza/casilla/plan queda comprometido) y qué lograba la jugada correcta más allá de evitar el problema puntual.
-${facts}
-${RULES}`;
-  const raw = await coachChat(prompt, { temperature: 0.45, maxTokens: 130 });
+  const {
+    playedDesc, bestDesc, evalBefore, evalAfter,
+    classification, good, facts, onlyGoodMove, materialLine, narrative,
+  } = args;
+  // Mate is encoded as a huge magnitude (|score| ~10000), so a plain
+  // difference produced absurd output like "te cuesta unos 9987.4 peones".
+  // Mate transitions get an explicit sentence instead of a pawn count.
+  const mateBefore = Math.abs(evalBefore) >= 90;
+  const mateAfter = Math.abs(evalAfter) >= 90;
+  const swing = mateBefore || mateAfter
+    ? null
+    : Math.abs(Math.round((evalAfter - evalBefore) * 10) / 10);
+  const mateNote =
+    mateAfter && evalAfter > 0 ? "Esta jugada DA JAQUE MATE: el alumno GANA la partida aquí mismo."
+    : mateAfter && evalAfter < 0 ? "Tras esta jugada el alumno queda con mate forzado EN CONTRA: pierde."
+    : mateBefore && evalBefore > 0 ? "El alumno TENÍA un jaque mate forzado a su favor y lo dejó escapar con esta jugada."
+    : mateBefore && evalBefore < 0 ? "El alumno ya venía con mate forzado en contra antes de esta jugada."
+    : null;
+
+  // Shared voice. Modeled on chess.com's Game Review coach: SHORT, concrete,
+  // and consequence-first. Its depth comes from naming the exact thing that
+  // happens ("se pierde un alfil"), not from more words — so the limit stays
+  // tight while the CONTENT gets much richer than before.
+  const STYLE = `CÓMO ESCRIBIR (imita al coach de la revisión de partidas de Chess.com):
+- Español, 2 frases completas y naturales. Entre 25 y 45 palabras en TOTAL: ni telegráfico ni un párrafo. Segunda persona ("dejas", "pierdes", "encontraste").
+- NO enumeres la línea de jugadas que viene después ("luego el alfil a e4, la dama a c8 y la torre a d1"): eso suena a listado de motor, no a entrenador. Di la IDEA, no la secuencia.
+- VARÍA el arranque. NO empieces siempre igual: evita abrir todos los comentarios con "Pierdes…". Alterna entre nombrar la pieza y la casilla, lo que el rival consigue, la idea que dejaste pasar, o cómo cambió la partida.
+- PROHIBIDO escribir notación algebraica (nada de "Bxh3", "exd5", "Rf4", "O-O"). Habla siempre en palabras: "el alfil captura en h3", "el enroque corto".
+- Frase 1 = LA CONSECUENCIA CONCRETA: qué se pierde o qué se gana. Si en los datos hay una consecuencia material, dila con esa pieza exacta ("con esta jugada se pierde un alfil", "permites que capturen la torre y ganen material tras los cambios").
+- Frase 2 = el POR QUÉ / la alternativa: qué lograba la jugada correcta, o qué idea deja pasar. Usa la descripción de la jugada correcta tal como viene en los datos.
+- USA el vocabulario ajedrecístico exacto cuando esté verificado en los datos: horquilla, clavada, pincho, ataque a la descubierta, pieza colgada, doble ataque, jaque mate forzado. Tejido natural en la frase ("...con una horquilla sobre la dama y la torre"), nunca como etiqueta ("el patrón verificado es...").
+- Puedes mencionar la ventaja en peones si aporta (ej. "casi 4 peones de ventaja"). Nada de la palabra "evaluación".
+- Nombra piezas y casillas ("el alfil de c4"), NUNCA notación suelta tipo "Bxd5" o "Rb8".
+- PROHIBIDO: inventar variantes, piezas, patrones o causas que no estén en los datos. PROHIBIDO el relleno: "mejorar la posición", "obtener ventaja", "controlar el centro" (salvo que sea literalmente el punto).
+- PROHIBIDA la muletilla "dejaste pasar la oportunidad de…". Di directamente qué había: "el alfil de f5 clavaba la dama", "tenías una horquilla con el caballo", "la torre de b8 ganaba el alfil de b2".
+- Si el dato de ventaja perdida trae un número, escríbelo completo ("unos 1.1 peones"); nunca "unos peones" a secas.
+- CUIDADO CON QUIÉN HACE QUÉ. "Jugada del alumno" la hizo el ALUMNO (tú, el lector). Si el alumno captura algo, es él quien captura: escribe "capturas el peón", nunca "dejas que el rival capture". Si el rival captura algo del alumno, escribe "el rival te captura…". Nunca inviertas los papeles.
+- No transformes piezas: una pieza no "se convierte" en otra ni cambia de tipo. Solo se mueve, captura, o es capturada.
+- Devuelve SOLO el texto del comentario, sin comillas ni encabezados.`;
+
+  // Verified context block — everything here was computed from the real board
+  // or the engine, so the model can narrate it freely without hallucinating.
+  // A checkmate needs no LLM: the content is fully determined by the move, and
+  // every model pass added a hallucinated contradiction ("ganas con jaque mate.
+  // Dejaste pasar la oportunidad de evitar el jaque mate") no matter how
+  // explicitly the prompt forbade it. Deterministic text = always correct, and
+  // it saves a Groq call on the most common decisive moment.
+  if (mateAfter && evalAfter > 0) {
+    const desc = playedDesc.replace(/\s*\((?:jaque mate|jaque)\)\s*$/i, "").trim();
+    return `¡Jaque mate! ${desc.charAt(0).toUpperCase()}${desc.slice(1)} remata la partida.`;
+  }
+
+  const ctx = [
+    // Deliberately NO algebraic notation here. Handing the model the SAN made
+    // it echo raw notation ("Bxh3", "exd5") straight into the comment, which
+    // reads like an engine dump — and the UI already shows the SAN in the
+    // header right above this text, so repeating it adds nothing.
+    `Jugada del alumno: ${playedDesc}`,
+    // The real evaluation, restored: chess.com shows this number right next to
+    // the comment, and hiding it from the model was part of why comments felt
+    // weightless. Player's perspective, so + always means "good for you".
+    `Evaluación antes → después (perspectiva del alumno): ${fmtP(evalBefore)} → ${fmtP(evalAfter)}`,
+    // A move that already delivers mate has no "better alternative" worth
+    // naming — offering one produced the absurd "you missed a fork" on a
+    // checkmating move.
+    // No "the correct move was X" on a move that was itself strong: the
+    // classification comes from the shallow sweep while bestDesc comes from a
+    // deeper search, so they can disagree — and telling the player their
+    // brilliancy was wrong is both confusing and demoralizing. Also suppressed
+    // once the played move already mates.
+    bestDesc && !good ? `Jugada correcta según el motor: ${bestDesc}` : null,
+    mateNote ? `DATO DECISIVO (menciónalo, manda sobre todo lo demás): ${mateNote}` : null,
+    materialLine ? `Consecuencia material verificada: ${materialLine}` : null,
+    narrative ? `Cómo cambió la partida: ${narrative}` : null,
+    swing != null && swing >= 0.5 && !good ? `Ventaja perdida: unos ${swing.toFixed(1)} peones` : null,
+    onlyGoodMove && good ? `Dato: era la ÚNICA jugada buena de la posición (las demás empeoraban bastante)` : null,
+    // On a mating move every other fact (forks, material counts, "the best
+    // move was…") is noise the model turns into self-contradictions — it wrote
+    // "you mated" and "the correct move was a fork" in the same comment. When
+    // the move ends the game, that IS the whole story.
+    mateAfter && evalAfter > 0 ? null : facts,
+  ].filter(Boolean).join("\n");
+
+  // Per-classification framing — chess.com doesn't use one voice for
+  // everything: a blunder, a slight inaccuracy and a brilliancy each get a
+  // different opening beat. One shared prompt was a big part of why every
+  // comment here sounded the same.
+  // Note: the mate-delivered case returned deterministically above, so it
+  // needs no role here.
+  let role: string;
+  if (good && onlyGoodMove) {
+    role = `Eres el coach de una revisión de partida. El alumno encontró la ÚNICA jugada buena. Empieza reconociéndolo con energía (estilo "¡Solo había una jugada buena y la encontraste!") y di en concreto qué logra: qué amenaza para, qué material gana o qué mate fuerza.
+IMPORTANTE: es una jugada BUENA. Nunca la presentes como pérdida ni como error. Si entrega material, es un SACRIFICIO con compensación: dilo así ("entregas el alfil a cambio de…"), nunca "pierdes el alfil".`;
+  } else if (good) {
+    role = `Eres el coach de una revisión de partida. El alumno acaba de hacer una jugada muy fuerte. Di en concreto qué consigue (material, mate forzado, una táctica nombrada) y qué le hace eso a la posición.
+IMPORTANTE: es una jugada BUENA. Nunca la presentes como pérdida ni como error. Si entrega material, es un SACRIFICIO con compensación: dilo así ("entregas el alfil a cambio de…"), nunca "pierdes el alfil".`;
+  } else if (classification === "inaccuracy") {
+    role = `Eres el coach de una revisión de partida. El alumno jugó una imprecisión: no es grave, así que NO dramatices. Di qué pequeña ventaja o idea deja escapar y qué era mejor.`;
+  } else if (classification === "blunder") {
+    role = `Eres el coach de una revisión de partida. El alumno cometió un error GRAVE. Empieza por la consecuencia material o táctica concreta (qué pierde exactamente) y luego qué debía jugar.`;
+  } else {
+    role = `Eres el coach de una revisión de partida. El alumno cometió un error. Di la consecuencia concreta y qué era mejor.`;
+  }
+
+  const raw = await coachChat(`${role}\n\nDATOS VERIFICADOS DE ESTA JUGADA (no inventes nada fuera de aquí):\n${ctx}\n\n${STYLE}`,
+    // Tokens deliberately tight: with a bigger budget the model padded the
+    // comment out with the engine's move list until it hit the character cap
+    // and got cut mid-sentence. Short prompt + short budget = chess.com's
+    // punchy register.
+    // Low temperature + a hard token ceiling: at 0.5/150 the model invented
+    // (a bishop "turning into a pawn"), inverted who captured whom, and padded
+    // to the character cap until it got cut mid-sentence. ~100 tokens is about
+    // 45 Spanish words — the chess.com register — and it can't ramble past it.
+    { temperature: 0.3, maxTokens: 100 });
   if (!raw) return null;
   let text = raw.replace(/^["“]|["”]$/g, "");
-  // Soft length cap only — do NOT split on the first "." (that would cut inside
-  // decimals like "+1.5" and mangle the comment). Trim at a word boundary.
-  // ~200 chars keeps the comment within the coach card's 6-line cap even on a
-  // narrow phone (was 340, which could run to 7-8 lines).
-  if (text.length > 200) {
-    const cut = text.slice(0, 200);
+  // Soft length cap at a word boundary — do NOT split on the first "." (that
+  // would cut inside decimals like "+1.5"). Raised from 200 to fit a real
+  // consequence + alternative; the coach card clamps to 5 lines and expands
+  // on tap, so a slightly longer comment is readable rather than truncated.
+  if (text.length > 300) {
+    const cut = text.slice(0, 300);
     const lastSpace = cut.lastIndexOf(" ");
-    text = (lastSpace > 140 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
+    text = (lastSpace > 220 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
   }
   return text || null;
 }
@@ -277,8 +458,25 @@ export async function analyzeGame(
   // if the column is absent or GROQ is unset.
   if (!coachAvailable) return;
 
+  // Only comment the TRACKED PLAYER's own moves. Every comment is written in
+  // "you played this" framing, and GameViewer deliberately shows it only for
+  // the player's own plies (an opponent move can't be "your" mistake) — so
+  // commenting both colors silently threw away half the budget: half the Groq
+  // calls AND half the deep engine searches produced text nothing ever renders.
+  // Filtering here doubles the comments the player actually sees at no extra
+  // cost. Falls back to commenting everything if played_as is unavailable, so
+  // an older/incomplete row degrades instead of losing all commentary.
+  let playerIsWhite: boolean | null = null;
+  try {
+    const { data: g } = await supabase.from("games").select("played_as").eq("id", gameId).single();
+    if (g?.played_as === "white") playerIsWhite = true;
+    else if (g?.played_as === "black") playerIsWhite = false;
+  } catch { /* keep null → comment both colors */ }
+  const isPlayerPly = (i: number) => playerIsWhite === null || (i % 2 === 0) === playerIsWhite;
+
   const notable = moves
     .map((m, i) => ({ i, cls: m.classification, loss: m.centipawn_loss ?? 0 }))
+    .filter((m) => isPlayerPly(m.i))
     .filter((m) => (m.cls && EXPLAIN_CLASSES.has(m.cls)) || punishingBest.has(m.i))
     // Skip trivial inaccuracies (e.g. +3.5→+3.0): a comment there is just noise.
     .filter((m) => m.cls !== "inaccuracy" || m.loss >= 80);
@@ -320,7 +518,8 @@ export async function analyzeGame(
     };
 
     const h = history[i];
-    const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+    const VAL = PIECE_VAL;
+    const playerColor: "w" | "b" = moverWhite ? "w" : "b";
     const movedVal = VAL[h.piece] ?? 0;
     const capturedVal = h.captured ? (VAL[h.captured] ?? 0) : 0;
     const movedName = PIECE_ES[h.piece] ?? "pieza";
@@ -328,13 +527,23 @@ export async function analyzeGame(
 
     // Deep multi-line engine analysis from BEFORE the move: the best line +
     // alternatives. Deeper than the sweep (quality for the coach).
+    // MultiPV 3 (was 2): the 2nd/3rd lines are what make "era la única jugada
+    // buena" a verifiable fact instead of a guess — same search, negligible
+    // extra cost.
     let lines: { mate: number | null; scoreCp: number | null; pv: string[] }[] = [];
-    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 2); } catch { /* ignore */ }
+    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 3); } catch { /* ignore */ }
     const mainSans = lines[0] ? pvToSan(fenBefore, lines[0].pv) : [];
     const bestSan = mainSans[0] ?? null;
     const mainLineSan = mainSans.join(" ");
-    const altSans = lines.slice(1).map((l) => pvToSan(fenBefore, l.pv)[0]).filter(Boolean).slice(0, 2);
     const forcedMate = lines[0]?.mate != null;
+
+    // "Only good move": the best line is decisively better than the 2nd best.
+    // Scores are side-to-move (the mover), so a big positive gap = everything
+    // else drops off a cliff.
+    const cpOf = (l: { mate: number | null; scoreCp: number | null } | undefined) =>
+      l == null ? null : l.mate != null ? (l.mate > 0 ? 100000 - l.mate : -100000 - l.mate) : l.scoreCp;
+    const c0 = cpOf(lines[0]), c1 = cpOf(lines[1]);
+    const onlyGoodMove = c0 != null && c1 != null && c0 - c1 >= 150;
 
     // Sacrifice: can the OPPONENT recapture the moved piece with something cheaper?
     let cheapestRecapture: number | null = null;
@@ -359,6 +568,7 @@ export async function analyzeGame(
 
     // Verifiable tactical phrase (never invented).
     let facts = "";
+    let materialLine: string | null = null;
     if (good) {
       let tactic: string | null = null;
       if (forcedMate || /#/.test(mainLineSan)) tactic = "conduce a un jaque mate forzado a favor del alumno";
@@ -366,42 +576,43 @@ export async function analyzeGame(
       else if (doubleAttack >= 2) tactic = "crea un doble ataque sobre dos piezas";
       else if (gaveCheck) tactic = "la jugada da jaque";
 
-      // Describe the continuation AFTER the played move in plain Spanish.
-      const contSans = mainSans.slice(1, 4);
-      let contNat: string | null = null;
-      if (contSans.length) {
-        const cc = new Chess(fens[i]); const parts: string[] = [];
-        for (const s of contSans) { parts.push(describeMove(cc.fen(), s)); try { cc.move(s); } catch { break; } }
-        contNat = parts.join(", luego ");
-      }
-
       let material: string | null = null;
       if (isSacrifice && capturedName) material = `es un sacrificio de calidad: entrega ${movedName} por ${capturedName}, pero el motor la confirma como la mejor jugada (hay compensación)`;
       else if (isSacrifice) material = `es un sacrificio: entrega ${movedName} sin recuperar material equivalente, y el motor la confirma como la mejor`;
       else if (capturedName && capturedVal >= movedVal) material = `gana material: captura ${capturedName} con ${movedName}`;
       else if (capturedName) material = `captura ${capturedName}`;
 
+      // Net material across the engine's whole line — catches "wins a piece
+      // after the exchanges", which the single-capture check above can't see.
+      if (mainSans.length > 1) {
+        const { net } = materialOverLine(fenBefore, mainSans, playerColor);
+        if (net <= -2) materialLine = `en el balance de la línea el alumno gana unos ${-net} peones de material`;
+      }
+
       // Rule-based tactical-pattern detection (real board geometry) — names
       // the exact pattern (horquilla/clavada/pincho) when there genuinely is
       // one, instead of the model vaguely describing "a good tactic".
       const playedMotifs = detectMotifs(fenBefore, moves[i].move).filter((m) => m.key !== "hangs_own");
       const motifLine = playedMotifs.length
-        ? `Patrón verificado: ${playedMotifs.map((m) => `${m.label}${m.square ? ` sobre el ${m.pieceName} en ${m.square}` : ""}`).join(", ")}.`
+        ? `Patrón verificado: ${playedMotifs.map((m) => m.key === "hanging" && m.pieceName && m.square
+            ? `deja ${artFor(m.pieceName)} de ${m.square} sin defensa`
+            : `${m.label}${m.square && m.pieceName ? ` sobre ${artFor(m.pieceName)} de ${m.square}` : ""}`).join(", ")}.`
         : null;
 
       const fieldLines: string[] = [`El motor confirma que es la mejor jugada de la posición.`];
       if (material) fieldLines.push(`Detalle de material: ${material}`);
       if (tactic) fieldLines.push(`Táctica: ${tactic}`);
       if (motifLine) fieldLines.push(motifLine);
-      if (contNat) fieldLines.push(`Después sigue esta línea: ${contNat}`);
       facts = fieldLines.join("\n");
     } else {
       // What does the move ALLOW? The opponent's best reply from the after-position
       // — grounds "what went wrong" instead of only "you should've played X".
       let concede: string | null = null;
+      let oppSans: string[] = [];
       try {
         const opp = await getTopLines(fens[i], DEEP_DEPTH, 1);
-        const oppSan = opp[0] ? pvToSan(fens[i], opp[0].pv)[0] : null;
+        oppSans = opp[0] ? pvToSan(fens[i], opp[0].pv) : [];
+        const oppSan = oppSans[0] ?? null;
         if (oppSan) {
           const cc = new Chess(fens[i]);
           const mv = cc.moves({ verbose: true }).find((x) => x.san === oppSan);
@@ -411,17 +622,18 @@ export async function analyzeGame(
         }
       } catch { /* ignore */ }
 
-      // What was the PLAN behind the correct move, not just its first move —
-      // the same depth signal already used in the "good" branch, so a
-      // blunder explanation can say "this also set up X", not just name it.
-      const contSans = mainSans.slice(1, 4);
-      let contNat: string | null = null;
-      if (bestSan && contSans.length) {
-        const cc = new Chess(fenBefore);
-        try { cc.move(bestSan); } catch { /* ignore */ }
-        const parts: string[] = [];
-        for (const s of contSans) { parts.push(describeMove(cc.fen(), s)); try { cc.move(s); } catch { break; } }
-        contNat = parts.join(", luego ");
+      // The concrete material consequence over the opponent's whole punishment
+      // line — this is what lets the comment say "se pierde un alfil" or
+      // "gana una torre tras los cambios" the way chess.com does, instead of
+      // only naming the opponent's first reply.
+      if (oppSans.length) {
+        const { net, biggestLostType, trades, settled } = materialOverLine(fens[i], oppSans, playerColor);
+        if (net >= 2 && biggestLostType && settled) {
+          const lost = ART_ES[biggestLostType] ?? "la pieza";
+          materialLine = trades
+            ? `tras los intercambios el rival gana material: se pierde ${lost} (unos ${net} peones netos)`
+            : `con esta jugada se pierde ${lost} sin compensación`;
+        }
       }
 
       // Rule-based tactical-pattern detection (real board geometry, not the
@@ -434,10 +646,17 @@ export async function analyzeGame(
       const bestMotifs = bestSan ? detectMotifs(fenBefore, bestSan) : [];
       const playedSelfHang = playedMotifs.find((m) => m.key === "hangs_own");
       const bestThreats = bestMotifs.filter((m) => m.key !== "hangs_own");
+      // Phrase each motif the way a human says it. "pieza colgada sobre el
+      // alfil en b2" (the old generic template) is confusing word order — a
+      // hanging piece IS the piece, it isn't "on" it.
+      const motifPhrase = (m: { key: string; label: string; square?: string; pieceName?: string }) =>
+        (m.key === "hanging" || m.key === "hangs_own") && m.pieceName && m.square
+          ? `${artFor(m.pieceName)} de ${m.square} queda sin defensa`
+          : `${m.label}${m.square && m.pieceName ? ` sobre ${artFor(m.pieceName)} de ${m.square}` : ""}`;
       const motifLine = playedSelfHang
-        ? `Patrón verificado: la jugada del alumno deja su ${playedSelfHang.pieceName} en ${playedSelfHang.square} sin defensor (pieza propia colgada) — esta es la causa real del error.`
+        ? `Patrón verificado: tras esta jugada ${artFor(playedSelfHang.pieceName)} de ${playedSelfHang.square} se queda sin ningún defensor — esta es la causa real del error.`
         : bestThreats.length
-          ? `Patrón verificado en la jugada correcta: ${bestThreats.map((m) => `${m.label}${m.square ? ` sobre el ${m.pieceName} en ${m.square}` : ""}`).join(", ")} — esto es lo que el alumno dejó pasar.`
+          ? `Patrón verificado que el alumno dejó pasar (lo lograba la jugada correcta): ${bestThreats.map(motifPhrase).join(", ")}.`
           : null;
 
       // Labeled fields (not a run-on paragraph) — the LLM composes a cleaner,
@@ -445,16 +664,23 @@ export async function analyzeGame(
       const fieldLines: string[] = [];
       fieldLines.push(`Pieza que movió el alumno: ${ART_ES[h.piece] ?? movedName}${capturedName ? ` (capturó ${capturedName})` : ""}`);
       if (concede) fieldLines.push(`Lo que esto permite al rival: ${concede}`);
-      if (bestSan) fieldLines.push(`La jugada correcta era: ${describeMove(fenBefore, bestSan)}`);
-      if (contNat) fieldLines.push(`El plan detrás de esa jugada correcta sigue así: ${contNat}`);
       if (motifLine) fieldLines.push(motifLine);
       if (forcedMate) fieldLines.push(`Dato importante: el alumno tenía un jaque mate forzado a su favor y lo dejó pasar`);
       facts = fieldLines.join("\n");
     }
 
     const text = await coachComment({
-      fenBefore, san: moves[i].move, bestMove: bestSan,
-      moveNumber: moves[i].move_number, evalBefore, evalAfter, good, facts,
+      playedDesc: describeMove(fenBefore, moves[i].move),
+      // Never hand back the played move AS the correction — on a good move the
+      // engine's best IS what was played, and the model then wrote the absurd
+      // "la jugada correcta era la misma que jugaste".
+      bestDesc: bestSan && bestSan !== moves[i].move ? describeMove(fenBefore, bestSan) : null,
+      evalBefore, evalAfter,
+      classification: moves[i].classification,
+      good, facts, onlyGoodMove, materialLine,
+      // Only for errors: the band narrative describes advantage being LOST, so
+      // it would read backwards on a brilliancy.
+      narrative: good ? null : bandNarrative(evalBefore, evalAfter),
     });
 
     if (text) {
