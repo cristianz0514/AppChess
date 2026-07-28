@@ -112,6 +112,67 @@ function tradeVerdictFor(fenAfter: string, h: { to: string; piece: string; captu
   } catch { return null; }
 }
 
+// Quiescence search — keep playing only the forcing moves until the position
+// goes quiet, then read the material off the board.
+//
+// This is what SEE can't do. SEE settles one square: it answers "who wins the
+// exchange on d4" and nothing else. It cannot see that the recapture arrives
+// with check, or that the whole sequence ends with a fork on a different
+// square. Quiescence follows captures AND checks wherever they lead, which is
+// exactly the "two or three moves ahead" the player asked for — the material
+// after the dust settles, not on one square.
+//
+// Only captures and checks are searched (never quiet moves), so the tree stays
+// tiny and it costs microseconds instead of an engine call.
+function quiesce(fen: string, me: "w" | "b", depth = 4): number {
+  const material = (b: Chess) => {
+    let sum = 0;
+    for (const row of b.board()) {
+      for (const c of row) if (c) sum += (PIECE_VAL[c.type] ?? 0) * (c.color === me ? 1 : -1);
+    }
+    return sum;
+  };
+
+  const search = (board: Chess, d: number): number => {
+    const standPat = material(board);
+    if (d === 0) return standPat;
+    const forcing = board.moves({ verbose: true })
+      .filter((m) => m.captured || m.san.includes("+") || m.san.includes("#"));
+    if (forcing.length === 0) return standPat;
+
+    const maximizing = board.turn() === me;
+    // Stand-pat: a side is never forced to capture, so it can always decline and
+    // keep what it has. Without this, quiescence reports the value of a forced
+    // losing sequence that nobody would actually play.
+    let best = standPat;
+    for (const mv of forcing) {
+      try { board.move(mv.san); } catch { continue; }
+      const score = search(board, d - 1);
+      board.undo();
+      if (maximizing ? score > best : score < best) best = score;
+    }
+    return best;
+  };
+
+  try { return search(new Chess(fen), depth); } catch { return 0; }
+}
+
+/**
+ * Material the player ends up with once every capture and check has played out,
+ * compared with what's on the board right now. Positive = the tactics are
+ * going to win them material; negative = they're going to lose some.
+ */
+function materialAfterDust(fenAfter: string, me: "w" | "b"): number {
+  try {
+    const board = new Chess(fenAfter);
+    let now = 0;
+    for (const row of board.board()) {
+      for (const c of row) if (c) now += (PIECE_VAL[c.type] ?? 0) * (c.color === me ? 1 : -1);
+    }
+    return quiesce(fenAfter, me) - now;
+  } catch { return 0; }
+}
+
 // The piece just moved is attacked and every square it can reach is attacked
 // too — it's still on the board, but it has nowhere safe to go.
 function trappedPieceAfter(fenAfter: string, h: { to: string; piece: string }):
@@ -818,6 +879,7 @@ export async function analyzeGame(
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
       ...endgameFlags(h, moverWhite, fens[i]),
+      dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     });
 
     if (text) {
@@ -890,6 +952,7 @@ export async function analyzeGame(
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
       ...endgameFlags(h, moverWhite, fens[i]),
+      dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     });
     if (text) quietUpdates.push({ ply: i, text });
   }

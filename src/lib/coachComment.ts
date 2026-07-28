@@ -127,6 +127,10 @@ export interface MoveFacts {
   // Endgame vocabulary. The rules invert here — a king walking to the centre is
   // an error with pieces on and the whole point of a pawn ending — so these
   // only ever fire once the board has emptied out.
+  // From the quiescence search: pawns the player gains (+) or loses (−) once
+  // every capture and check has played out. This is the answer SEE can't give —
+  // SEE settles ONE square, this follows the tactics wherever they go.
+  dustMaterial?: number;
   isEndgame?: boolean;
   kingActivates?: boolean;
   opposition?: boolean;
@@ -232,6 +236,13 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     ], s), namesMaterial: true };
   }
   if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
+
+  // The positive side of the same reading: the tactics on the board are going
+  // to win material even though this move didn't capture anything.
+  if ((f.dustMaterial ?? 0) >= 3) return { text: pick([
+    `Los cambios que vienen te dejan material de más.`,
+    `Cuando se resuelvan las capturas, sales ganando material.`,
+  ], s), namesMaterial: true };
 
   // A threat the opponent must answer outranks any description of the move: it
   // was landing below "Desarrollas el alfil a d3" and so never appeared once in
@@ -457,6 +468,19 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     return { text: pick([
       `Ese avance de dos casillas se puede capturar al paso, y pierdes el peón.`,
       `Cuidado con la captura al paso: el peón de ${f.playedTo} cae igual.`,
+    ], s), namesMaterial: true };
+  }
+
+  // What the tactics are worth once they finish. Ranked above the positional
+  // signals because material outranks everything, and above `ignoredThreat`
+  // because it counts the WHOLE sequence rather than the opponent's best single
+  // capture — this is the "two or three moves ahead" case: you take, they take,
+  // you take again, and only then does the balance show.
+  const dust = f.dustMaterial ?? 0;
+  if (dust <= -3) {
+    return { text: pick([
+      `Cuando terminen los cambios te quedas con material de menos.`,
+      `La secuencia de capturas no te favorece: acabas perdiendo material.`,
     ], s), namesMaterial: true };
   }
 
