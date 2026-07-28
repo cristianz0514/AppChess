@@ -103,6 +103,21 @@ export interface MoveFacts {
   rookToSemiOpen?: boolean;    // rook to a file with no pawns of your own
   supportsPawnChain?: boolean; // the pawn now defends another of your pawns
   outpost?: boolean;           // minor on a square no enemy pawn can challenge
+
+  // ── From the attack table, the pawn-structure reader and the eval terms ────
+  // The three tools that let the coach say WHY a position got worse instead of
+  // only that it did.
+  overloaded?: { piece: string; count: number } | null; // your sole defender has two jobs
+  underDefended?: { piece: string; square: string } | null; // attacked more times than defended
+  structure?: {
+    gaveSelfDoubled: string | null;
+    gaveSelfIsolated: string | null;
+    createdPassed: string | null;
+    brokeTheirStructure: string | null;
+    isolatedTheirs: string | null;
+  } | null;
+  dominantTerm?: { term: string; delta: number } | null;  // which part of the eval moved
+  theirKingWorse?: boolean;    // your move added real pressure to their king
 }
 
 const ART: Record<string, string> = {
@@ -110,6 +125,13 @@ const ART: Record<string, string> = {
   torre: "la torre", dama: "la dama", rey: "el rey",
 };
 const art = (p: string | null | undefined) => (p ? ART[p] ?? `el ${p}` : "la pieza");
+// Spanish contracts "de + el" into "del". Interpolating art() after a bare "de"
+// produced "los defensores de el peón" — the exact class of slot-seam grammar
+// bug that gives template text away.
+const deArt = (p: string | null | undefined) => {
+  const a = art(p);
+  return a.startsWith("el ") ? `del ${a.slice(3)}` : `de ${a}`;
+};
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // Motif labels carry their own article because Spanish gender isn't guessable
@@ -251,10 +273,37 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     `Sacas ${art(f.playedPiece)} a ${f.playedTo} y ganas actividad.`,
   ], s), namesMaterial: false };
   if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
+  // Structural gains — a passed pawn or a wrecked enemy structure outlives any
+  // tactic on the board and is worth naming even on an ordinary move.
+  if (f.structure?.createdPassed) return { text: pick([
+    `Creas un peón pasado en ${f.structure.createdPassed}: nada lo frena camino a coronar.`,
+    `El peón de ${f.structure.createdPassed} queda pasado, y eso pesa en el final.`,
+  ], s), namesMaterial: false };
+  if (f.structure?.brokeTheirStructure) return { text: `Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.`, namesMaterial: false };
+  if (f.structure?.isolatedTheirs) return { text: `Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`, namesMaterial: false };
+  if (f.theirKingWorse) return { text: pick([
+    `Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.`,
+    `${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.`,
+  ], s), namesMaterial: false };
   if (f.supportsPawnChain) return { text: pick([
     `Refuerzas la cadena: el peón de ${f.playedTo} sostiene a su compañero.`,
     `El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.`,
   ], s), namesMaterial: false };
+  // Last stop before the wildcard: name whichever part of the position the move
+  // actually improved. "Jugada sólida" says nothing; "ganas movilidad" is true,
+  // measured, and teaches the player what the move was for.
+  const dq = f.dominantTerm;
+  if (dq && dq.delta > 0) {
+    if (dq.term === "mobility") return { text: pick([
+      `Ganas movilidad: tus piezas cubren más casillas desde aquí.`,
+      `${cap(art(f.playedPiece))} a ${f.playedTo} le da aire a tus piezas.`,
+    ], s), namesMaterial: false };
+    if (dq.term === "space") return { text: pick([
+      `Ganas espacio en el campo rival.`,
+      `Avanzas tu frente y le quitas terreno al rival.`,
+    ], s), namesMaterial: false };
+    if (dq.term === "development") return { text: `Sumas una pieza al juego: vas por delante en desarrollo.`, namesMaterial: false };
+  }
   return { text: pick([
     `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
     `Jugada sólida, quedas ${standing}.`,
@@ -370,6 +419,37 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     ], s), namesMaterial: true };
   }
 
+  // Attacked more times than it's defended. Distinct from "hanging": the piece
+  // HAS a defender, it just doesn't have enough of them, which is why it looks
+  // safe to a club player and isn't.
+  if (f.underDefended) {
+    const ud = f.underDefended;
+    return { text: pick([
+      `${cap(art(ud.piece))} de ${ud.square} recibe más ataques que defensas.`,
+      `No alcanzan los defensores ${deArt(ud.piece)} en ${ud.square}.`,
+    ], s), namesMaterial: true };
+  }
+
+  // An overloaded defender is the classic invisible loss: every piece looks
+  // defended, but one defender is doing two jobs and can only do one.
+  if (f.overloaded) {
+    return { text: pick([
+      `${cap(art(f.overloaded.piece))} está sobrecargado: defiende dos cosas a la vez y no puede con ambas.`,
+      `Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.`,
+    ], s), namesMaterial: false };
+  }
+
+  // Structural damage you did to yourself — permanent, unlike a lost tempo.
+  if (f.structure?.gaveSelfDoubled) {
+    return { text: pick([
+      `Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: se defienden mal y no avanzan.`,
+      `Doblas tus peones en la columna ${f.structure.gaveSelfDoubled}, un defecto que ya no se arregla.`,
+    ], s), namesMaterial: false };
+  }
+  if (f.structure?.gaveSelfIsolated) {
+    return { text: `El peón de ${f.structure.gaveSelfIsolated} queda aislado: ningún peón tuyo puede defenderlo.`, namesMaterial: false };
+  }
+
   // Weakening the castled king's pawn cover — the most common positional
   // error in the sample (4 of 17 wildcards, one of them a blunder).
   if (f.weakensKingShield) {
@@ -456,6 +536,28 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
   // is engine jargon — a club player thinks "quedé peor", not in centipawns.
   // Our UI already shows the eval separately in the bar, so the number here was
   // both off-register and redundant. Slot B supplies the "how it changed" half.
+  // Before falling back to a wildcard: the eval is a SUM of terms, and the term
+  // that moved most IS the reason. This is what "pierdes el hilo de la posición"
+  // was standing in for — now we can name it.
+  const dt = f.dominantTerm;
+  if (dt && dt.delta < 0 && dt.term !== "material") {
+    const phrase =
+      dt.term === "mobility" ? [
+        `Tus piezas se quedan sin casillas: pierdes movilidad.`,
+        `Después de esta jugada tus piezas tienen mucho menos por dónde moverse.`,
+      ] : dt.term === "space" ? [
+        `Cedes espacio: el rival manda ahora en tu mitad del tablero.`,
+        `Le entregas terreno al rival.`,
+      ] : dt.term === "kingSafety" ? [
+        `Tu rey queda más expuesto tras esta jugada.`,
+        `La jugada deja al rey con menos cobertura.`,
+      ] : [
+        `Te retrasas en el desarrollo y el rival toma la delantera.`,
+        `Pierdes tiempo de desarrollo.`,
+      ];
+    return { text: pick(phrase, s), namesMaterial: false };
+  }
+
   if (Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG) {
     if (f.classification === "inaccuracy") {
       return { text: pick([`Imprecisión: cedes algo de terreno.`, `No es grave, pero hay algo mejor aquí.`], s), namesMaterial: false };

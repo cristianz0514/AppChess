@@ -4,6 +4,9 @@ import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
 import { composeCoachComment, type Motif } from "@/lib/coachComment";
 import { isBookMove } from "@/lib/openingBook";
+import { overloadedDefender, underDefended } from "@/lib/attackMap";
+import { structureChange } from "@/lib/pawnStructure";
+import { dominantChange, pressureOnOpponent } from "@/lib/evalTerms";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -299,6 +302,31 @@ function positionalFlags(
     supportsPawnChain,
     outpost,
   };
+}
+
+// Facts read off the board with the attack table, the pawn-structure reader and
+// the eval-term decomposition. Grouped in one helper because both comment tiers
+// need exactly the same set, and last time they drifted apart the deep tier —
+// the one covering the WORST moves — silently lost its positional vocabulary.
+function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: boolean) {
+  const me = moverWhite ? "w" : "b";
+  try {
+    const ud = underDefended(fenAfter, me)
+      .sort((a, b) => (PIECE_VAL[b.type] ?? 0) - (PIECE_VAL[a.type] ?? 0))[0];
+    const ov = overloadedDefender(fenAfter, me);
+    const dom = dominantChange(fenBefore, fenAfter, me);
+    return {
+      underDefended: ud ? { piece: PIECE_ES[ud.type] ?? "pieza", square: ud.square } : null,
+      overloaded: ov ? { piece: PIECE_ES[ov.piece] ?? "pieza", count: ov.duties.length } : null,
+      structure: structureChange(fenBefore, fenAfter, me),
+      dominantTerm: dom ? { term: dom.term, delta: dom.delta } : null,
+      theirKingWorse: pressureOnOpponent(fenBefore, fenAfter, me).theirKingWorse,
+    };
+  } catch {
+    // A malformed FEN must never cost the move its comment — the rest of the
+    // facts are still perfectly good on their own.
+    return { underDefended: null, overloaded: null, structure: null, dominantTerm: null, theirKingWorse: false };
+  }
 }
 
 // Two-pass analysis:
@@ -703,6 +731,7 @@ export async function analyzeGame(
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
+      ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
     });
 
     if (text) {
@@ -773,6 +802,7 @@ export async function analyzeGame(
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
+      ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
     });
     if (text) quietUpdates.push({ ply: i, text });
   }
