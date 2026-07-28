@@ -137,6 +137,12 @@ export interface MoveFacts {
   rookBehindPassed?: boolean;
   pawnRunsToPromote?: boolean;
   connectsRooks?: boolean;
+  // Rule of the square: an exact, provable verdict on whether the passed pawn
+  // gets through. Only set in genuine king-and-pawn endings.
+  squareRule?: { pawnSquare: string; promotes: boolean; margin: number } | null;
+  // The piece the player has forgotten about — badly placed for its type and
+  // with nowhere to go.
+  passivePiece?: { piece: string; square: string; stillHome: boolean; reason: string } | null;
 }
 
 const ART: Record<string, string> = {
@@ -258,6 +264,19 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   }
 
   // ── Endgame ────────────────────────────────────────────────────────────────
+  // The square rule outranks every other endgame remark because it's the only
+  // one with a provable answer: the pawn either gets through or it doesn't.
+  if (f.squareRule) {
+    const sr = f.squareRule;
+    if (sr.promotes) return { text: pick([
+      `El rey rival ya no entra en el cuadrado: el peón de ${sr.pawnSquare} corona solo.`,
+      `Cuenta el cuadrado: el peón de ${sr.pawnSquare} llega antes que el rey rival.`,
+    ], s), namesMaterial: false };
+    return { text: pick([
+      `El rey rival está dentro del cuadrado y detiene el peón de ${sr.pawnSquare}: hace falta acercar tu rey.`,
+      `Así el peón de ${sr.pawnSquare} no corona solo; el rey rival llega. Tienes que apoyarlo con el tuyo.`,
+    ], s), namesMaterial: false };
+  }
   if (f.pawnRunsToPromote) return { text: pick([
     `El peón pasado avanza a ${f.playedTo}: cada casilla lo acerca a coronar.`,
     `Empujas el peón pasado hasta ${f.playedTo}. El rival tendrá que gastar una pieza en frenarlo.`,
@@ -355,6 +374,27 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
       `Avanzas tu frente y le quitas terreno al rival.`,
     ], s), namesMaterial: false };
     if (dq.term === "development") return { text: `Sumas una pieza al juego: vas por delante en desarrollo.`, namesMaterial: false };
+  }
+  // Last resort before the wildcard: the piece the player has forgotten. It
+  // isn't about the move that was played, which is exactly why it belongs here —
+  // when there's nothing to say about the move, there's still something worth
+  // saying about the position.
+  if (f.passivePiece) {
+    const pp = f.passivePiece;
+    if (pp.stillHome) return { text: pick([
+      `${cap(art(pp.piece))} de ${pp.square} sigue sin entrar en juego.`,
+      `Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
+    ], s), namesMaterial: false };
+    if (pp.reason === "entombed") {
+      return { text: pick([
+        `${cap(art(pp.piece))} de ${pp.square} está encerrado por tus propias piezas.`,
+        `${cap(art(pp.piece))} de ${pp.square} casi no tiene casillas: conviene darle aire.`,
+      ], s), namesMaterial: false };
+    }
+    return { text: pick([
+      `${cap(art(pp.piece))} de ${pp.square} está en un mal sitio: desde la banda controla muy poco.`,
+      `${cap(art(pp.piece))} de ${pp.square} pinta poco ahí; su lugar está más al centro.`,
+    ], s), namesMaterial: false };
   }
   return { text: pick([
     `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,

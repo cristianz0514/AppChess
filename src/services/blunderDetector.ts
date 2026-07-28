@@ -8,6 +8,8 @@ import { overloadedDefender, underDefended } from "@/lib/attackMap";
 import { structureChange, pawnStructure } from "@/lib/pawnStructure";
 import { dominantChange, pressureOnOpponent } from "@/lib/evalTerms";
 import { ignoredThreat, ownThreat } from "@/lib/threats";
+import { ruleOfTheSquare } from "@/lib/endgameRules";
+import { passivePiece } from "@/lib/pieceSquares";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -376,13 +378,17 @@ function endgameFlags(
   h: { piece: string; from: string; to: string },
   moverWhite: boolean,
   fenAfter: string,
+  ply: number,
 ): {
   isEndgame: boolean; kingActivates: boolean; opposition: boolean;
   rookBehindPassed: boolean; pawnRunsToPromote: boolean; connectsRooks: boolean;
+  squareRule: { pawnSquare: string; promotes: boolean; margin: number } | null;
+  passivePiece: { piece: string; square: string; stillHome: boolean; reason: string } | null;
 } {
   const none = {
     isEndgame: false, kingActivates: false, opposition: false,
     rookBehindPassed: false, pawnRunsToPromote: false, connectsRooks: false,
+    squareRule: null, passivePiece: null,
   };
   try {
     const me: "w" | "b" = moverWhite ? "w" : "b";
@@ -390,7 +396,19 @@ function endgameFlags(
     const cells = board.board().flat().filter(Boolean) as { type: string; color: string; square: string }[];
     const pieces = cells.filter((c) => c.type !== "p" && c.type !== "k").length;
     const isEndgame = pieces <= 4;
-    if (!isEndgame) return none;
+
+    // A forgotten piece is a MIDDLEGAME complaint, so it's computed before the
+    // endgame gate. Held off until the opening is over: "te falta desarrollar el
+    // caballo de b1" is true on move 1 and useless there.
+    const forgotten = ply >= 20 ? passivePiece(fenAfter, me) : null;
+    const passive = forgotten
+      ? {
+          piece: PIECE_ES[forgotten.type] ?? "pieza", square: forgotten.square,
+          stillHome: forgotten.stillHome, reason: forgotten.reason,
+        }
+      : null;
+
+    if (!isEndgame) return { ...none, passivePiece: passive };
 
     const fileOf = (s: string) => s.charCodeAt(0) - 97;
     // Chebyshev distance to the centre four squares.
@@ -433,6 +451,9 @@ function endgameFlags(
       pawnRunsToPromote: h.piece === "p" && passed.includes(h.to)
         && (moverWhite ? Number(h.to[1]) >= 6 : Number(h.to[1]) <= 3),
       connectsRooks,
+      // fenAfter has the opponent to move, and that tempo is often the whole game.
+      squareRule: ruleOfTheSquare(fenAfter, me, me === "w" ? "b" : "w", passed),
+      passivePiece: passive,
     };
   } catch { return none; }
 }
@@ -878,7 +899,7 @@ export async function analyzeGame(
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
-      ...endgameFlags(h, moverWhite, fens[i]),
+      ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     });
 
@@ -951,7 +972,7 @@ export async function analyzeGame(
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
-      ...endgameFlags(h, moverWhite, fens[i]),
+      ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     });
     if (text) quietUpdates.push({ ply: i, text });
