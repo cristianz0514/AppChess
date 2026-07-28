@@ -459,6 +459,7 @@ export async function analyzeGame(
     let oppCapturesPiece: string | null = null;
     let materialLostPiece: string | null = null;
     let materialNet = 0, materialSettled = false, materialTrades = false;
+    let allowsMotif: Motif | null = null;
     if (!good) {
       try {
         const opp = await getTopLines(fens[i], DEEP_DEPTH, 1);
@@ -470,9 +471,20 @@ export async function analyzeGame(
           const r = materialOverLine(fens[i], oppSans, playerColor);
           materialNet = r.net; materialSettled = r.settled; materialTrades = r.trades;
           if (r.biggestLostType) materialLostPiece = PIECE_ES[r.biggestLostType] ?? null;
+          // Which named tactic the opponent's reply lands against us. Same
+          // geometry detector, just pointed at THEIR move — this is what turns
+          // "pierdes el hilo de la posición" into "permites una horquilla".
+          const om = detectMotifs(fens[i], oppSans[0]).find((m) => m.key !== "hangs_own" && m.key !== "hanging");
+          if (om) allowsMotif = { key: om.key, label: om.label, piece: om.pieceName, square: om.square };
         }
       } catch { /* ignore */ }
     }
+
+    // NOTE: no "you moved a pinned piece" detector here on purpose. An
+    // absolute pin makes the move illegal in the first place, so anything that
+    // reached this point either moved ALONG the pin ray (perfectly fine) or
+    // was only relatively pinned — which needs a material check this cheap
+    // geometry pass can't do reliably. Better silent than wrong.
 
     // Best-move shape, for the "what was better" slot.
     let bestPiece: string | null = null, bestTo: string | null = null;
@@ -517,6 +529,7 @@ export async function analyzeGame(
       materialLostPiece, materialNet, materialSettled, materialTrades,
       oppCapturesPiece,
       isSacrificeConfirmed: isSacrifice && good,
+      allowsMotif,
     });
 
     if (text) {

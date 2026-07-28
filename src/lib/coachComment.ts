@@ -74,6 +74,10 @@ export interface MoveFacts {
   tradeVerdict?: "gana" | "pareja" | "pierde" | null;
   trappedPiece?: { piece: string; square: string } | null; // yours, no safe square
   backRankRisk?: boolean;    // your king is boxed in on its own back rank
+  // A tactic the OPPONENT's best reply now lands against you (fork, pin,
+  // skewer, discovered attack). Naming it beats the "pierdes el hilo" wildcard:
+  // it tells the player exactly what they walked into.
+  allowsMotif?: Motif | null;
 }
 
 const ART: Record<string, string> = {
@@ -263,6 +267,18 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
       `El rival te captura ${art(f.oppCapturesPiece)}.`,
       `Le regalas ${art(f.oppCapturesPiece)} al rival.`,
     ], s), namesMaterial: true };
+  }
+
+  // Walked into a tactic: the opponent's best reply lands a named pattern.
+  // This is the single biggest replacement for the "pierdes el hilo" wildcard —
+  // it names exactly what the move allowed.
+  if (f.allowsMotif && !isHanging(f.allowsMotif)) {
+    const am = f.allowsMotif;
+    const target = am.piece && am.square ? ` sobre ${art(am.piece)} de ${am.square}` : "";
+    return { text: pick([
+      `Permites ${motifArt(am.label)}${target}.`,
+      `El rival responde con ${motifArt(am.label)}${target}.`,
+    ], s), namesMaterial: false };
   }
 
   // Trapped piece: it still stands, but every square it can reach loses it.
