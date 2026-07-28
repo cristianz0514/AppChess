@@ -92,6 +92,17 @@ export interface MoveFacts {
   fianchetto?: boolean;        // bishop to b2/g2/b7/g7
   isRecapture?: boolean;       // retakes on the square just captured on
   kingToCenter?: boolean;      // king wanders centre-ward outside the endgame
+  // Second diagnosis round, from a 42-move game where these exact moves fell
+  // through to "Jugada sólida" / "pierdes el hilo".
+  allowsEnPassant?: boolean;   // two-square advance the opponent can take en passant
+  movesPieceTwice?: boolean;   // same piece moved again in the opening
+  queenOutEarly?: boolean;     // queen leaves home before development is done
+  pawnBreak?: boolean;         // pawn advance that hits an enemy pawn
+  attacksBigger?: string | null; // Spanish name of the bigger enemy piece now attacked
+  knightToCenter?: boolean;    // knight lands on d4/e4/d5/e5
+  rookToSemiOpen?: boolean;    // rook to a file with no pawns of your own
+  supportsPawnChain?: boolean; // the pawn now defends another of your pawns
+  outpost?: boolean;           // minor on a square no enemy pawn can challenge
 }
 
 const ART: Record<string, string> = {
@@ -184,6 +195,28 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     ], s), namesMaterial: true };
   }
   if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
+  // Attacking something bigger than what you moved wins a tempo — the opponent
+  // has to answer. Ranked high because it's the concrete point of the move.
+  if (f.attacksBigger) return { text: pick([
+    `${cap(art(f.playedPiece))} a ${f.playedTo} ataca ${art(f.attacksBigger)}: el rival tiene que responder.`,
+    `Ganas un tiempo: desde ${f.playedTo} amenazas ${art(f.attacksBigger)}.`,
+  ], s), namesMaterial: false };
+  // A pawn break is how you open the position — nameable, and it was landing
+  // on "Jugada sólida" before.
+  if (f.pawnBreak) return { text: pick([
+    `Ruptura de peones: el peón de ${f.playedTo} golpea la cadena rival.`,
+    `Atacas la estructura del rival con el peón a ${f.playedTo}.`,
+  ], s), namesMaterial: false };
+  // An outpost is the best square a minor can get, and naming it teaches the
+  // idea: it's not just "a good square", it's one no pawn can ever kick.
+  if (f.outpost) return { text: pick([
+    `${cap(art(f.playedPiece))} se instala en ${f.playedTo}: apoyado por tu peón y sin peones rivales que lo echen.`,
+    `Puesto avanzado en ${f.playedTo}. Ningún peón rival puede desalojar ${art(f.playedPiece)} de ahí.`,
+  ], s), namesMaterial: false };
+  if (f.knightToCenter) return { text: pick([
+    `Centralizas el caballo en ${f.playedTo}, desde donde controla más casillas.`,
+    `El caballo en ${f.playedTo} está en su mejor sitio: el centro.`,
+  ], s), namesMaterial: false };
   // King sidestep that opens an escape square — a real, nameable idea that was
   // landing on "Jugada sólida" before.
   if (f.givesKingLuft) return { text: pick([
@@ -203,12 +236,25 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     `Colocas la torre en la columna ${f.playedTo[0]}, que está abierta.`,
     `La torre toma la columna abierta ${f.playedTo[0]}.`,
   ], s), namesMaterial: false };
+  if (f.rookToSemiOpen) return { text: pick([
+    `La torre toma la columna ${f.playedTo[0]}, semiabierta: presiona el peón rival.`,
+    `Torre a la columna ${f.playedTo[0]}, donde no tienes peones que te estorben.`,
+  ], s), namesMaterial: false };
   if (f.fianchetto) return { text: `Fianchetto: el alfil a ${f.playedTo} apunta a la diagonal larga.`, namesMaterial: false };
+  if (f.queenOutEarly) return { text: `Sacas la dama pronto: cuidado, el rival puede ganar tiempos atacándola.`, namesMaterial: false };
+  if (f.movesPieceTwice) return { text: pick([
+    `Vuelves a mover ${art(f.playedPiece)} en vez de sacar una pieza nueva.`,
+    `${cap(art(f.playedPiece))} se mueve otra vez; quedan piezas por desarrollar.`,
+  ], s), namesMaterial: false };
   if (f.developsPiece) return { text: pick([
     `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
     `Sacas ${art(f.playedPiece)} a ${f.playedTo} y ganas actividad.`,
   ], s), namesMaterial: false };
   if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
+  if (f.supportsPawnChain) return { text: pick([
+    `Refuerzas la cadena: el peón de ${f.playedTo} sostiene a su compañero.`,
+    `El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.`,
+  ], s), namesMaterial: false };
   return { text: pick([
     `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
     `Jugada sólida, quedas ${standing}.`,
@@ -315,6 +361,15 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     ], s), namesMaterial: false };
   }
 
+  // En passant is the rule club players forget, so the move looks safe and
+  // isn't. Worth ranking above the other positional signals: it costs a pawn.
+  if (f.allowsEnPassant) {
+    return { text: pick([
+      `Ese avance de dos casillas se puede capturar al paso, y pierdes el peón.`,
+      `Cuidado con la captura al paso: el peón de ${f.playedTo} cae igual.`,
+    ], s), namesMaterial: true };
+  }
+
   // Weakening the castled king's pawn cover — the most common positional
   // error in the sample (4 of 17 wildcards, one of them a blunder).
   if (f.weakensKingShield) {
@@ -339,6 +394,22 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     return { text: pick([
       `El caballo en ${f.playedTo} queda en la banda, con pocas casillas útiles.`,
       `Caballo a la banda: desde ${f.playedTo} controla muy poco.`,
+    ], s), namesMaterial: false };
+  }
+
+  // Two opening-principle errors. Both only fire inside the opening, where the
+  // principle actually holds — moving a piece twice is normal in the middlegame.
+  if (f.queenOutEarly) {
+    return { text: pick([
+      `Sacas la dama antes de terminar el desarrollo: el rival gana tiempos atacándola.`,
+      `La dama sale muy pronto y se convierte en blanco de las piezas menores.`,
+    ], s), namesMaterial: false };
+  }
+
+  if (f.movesPieceTwice) {
+    return { text: pick([
+      `Mueves ${art(f.playedPiece)} por segunda vez con piezas sin desarrollar.`,
+      `Otra vez ${art(f.playedPiece)}: pierdes un tiempo que hacía falta para desarrollar.`,
     ], s), namesMaterial: false };
   }
 

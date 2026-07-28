@@ -160,14 +160,18 @@ function backRankBoxedIn(fenAfter: string, playerColor: "w" | "b"): boolean {
 // piece-specific on purpose — a rook on the h-file is normal play, a knight
 // there is not.
 function positionalFlags(
-  h: { piece: string; from: string; to: string },
+  h: { piece: string; from: string; to: string; captured?: string },
   moverWhite: boolean,
   fenAfter: string,
   prevTo: string | null,
+  history: { piece: string; from: string; to: string }[],
+  idx: number,
 ): {
   weakensKingShield: boolean; retreats: boolean; knightToRim: boolean; givesKingLuft: boolean;
   rookToOpenFile: boolean; rookToSeventh: boolean; doublesRooks: boolean; fianchetto: boolean;
-  isRecapture: boolean; kingToCenter: boolean;
+  isRecapture: boolean; kingToCenter: boolean; allowsEnPassant: boolean; movesPieceTwice: boolean;
+  queenOutEarly: boolean; pawnBreak: boolean; attacksBigger: string | null;
+  knightToCenter: boolean; rookToSemiOpen: boolean; supportsPawnChain: boolean; outpost: boolean;
 } {
   const fromRank = Number(h.from[1]), toRank = Number(h.to[1]);
   const forward = moverWhite ? toRank > fromRank : toRank < fromRank;
@@ -175,22 +179,97 @@ function positionalFlags(
   const me: "w" | "b" = moverWhite ? "w" : "b";
   const file = h.to[0];
 
-  let rookToOpenFile = false, doublesRooks = false, heavyPieces = 0;
+  let rookToOpenFile = false, doublesRooks = false, semiOpen = false, heavyPieces = 0;
+  let allowsEnPassant = false, pawnBreak = false, attacksBigger: string | null = null;
+  let undevelopedMinors = 0;
   try {
     const b = new Chess(fenAfter);
     if (h.piece === "r") {
-      // Open file = no pawns of either colour on it.
-      rookToOpenFile = !b.board().some((row) =>
-        row.some((sq) => sq && sq.type === "p" && sq.square[0] === file));
+      const pawnsOnFile = b.board().flat().filter((sq) => sq && sq.type === "p" && sq.square[0] === file);
+      rookToOpenFile = pawnsOnFile.length === 0;
+      // Semi-open = none of YOUR pawns, but the opponent still has one to press.
+      semiOpen = !rookToOpenFile && pawnsOnFile.every((sq) => sq!.color !== me);
       // Another friendly rook/queen already on the same file.
       doublesRooks = b.board().some((row) =>
         row.some((sq) => sq && sq.color === me && (sq.type === "r" || sq.type === "q")
           && sq.square[0] === file && sq.square !== h.to));
     }
     for (const row of b.board()) {
-      for (const sq of row) if (sq && (sq.type === "q" || sq.type === "r" || sq.type === "b" || sq.type === "n")) heavyPieces++;
+      for (const sq of row) {
+        if (!sq) continue;
+        if (sq.type === "q" || sq.type === "r" || sq.type === "b" || sq.type === "n") heavyPieces++;
+        // Minor still sitting on its starting square.
+        if ((sq.type === "b" || sq.type === "n") && sq.color === me
+          && sq.square[1] === String(moverWhite ? 1 : 8)) undevelopedMinors++;
+      }
+    }
+
+    // fenAfter has the OPPONENT to move, so their legal moves list directly
+    // answers "can they take this en passant?".
+    if (h.piece === "p" && Math.abs(toRank - fromRank) === 2) {
+      allowsEnPassant = b.moves({ verbose: true }).some((m) => m.flags.includes("e"));
+    }
+
+    // What OUR piece now hits: flip the side to move and read its moves from
+    // the landing square. Same trick trappedPieceAfter uses.
+    const flipped = new Chess(fenAfter.replace(/ (w|b) /, (_m, c) => (c === "w" ? " b " : " w ")));
+    const hits = flipped.moves({ square: h.to as Square, verbose: true }).filter((m) => m.captured);
+    if (h.piece === "p" && !h.captured) {
+      pawnBreak = hits.some((m) => m.captured === "p");
+    }
+    const mine = PIECE_VAL[h.piece] ?? 0;
+    const biggest = hits
+      .map((m) => m.captured!)
+      .filter((c) => (PIECE_VAL[c] ?? 0) > mine)
+      .sort((a, b2) => (PIECE_VAL[b2] ?? 0) - (PIECE_VAL[a] ?? 0))[0];
+    // Only worth saying when the move CREATED the threat, not when the piece
+    // just captured something (that already has its own comment).
+    if (biggest && !h.captured) attacksBigger = PIECE_ES[biggest] ?? null;
+  } catch { /* ignore */ }
+
+  // Pawn-chain support and outposts. Both are read off the board after the
+  // move: whether the pawn that just moved now protects a friendly pawn, and
+  // whether a minor landed on a square no enemy pawn can ever challenge.
+  let supportsPawnChain = false, outpost = false;
+  try {
+    const b = new Chess(fenAfter);
+    const toFile = h.to.charCodeAt(0) - 97;
+    const fwd = moverWhite ? 1 : -1;
+    const at = (fIdx: number, r: number) =>
+      fIdx < 0 || fIdx > 7 || r < 1 || r > 8 ? null : b.get((String.fromCharCode(97 + fIdx) + r) as Square);
+
+    if (h.piece === "p") {
+      // The pawn defends whatever sits diagonally in front of it.
+      supportsPawnChain = [-1, 1].some((df) => {
+        const p = at(toFile + df, toRank + fwd);
+        return !!p && p.type === "p" && p.color === me;
+      });
+    }
+
+    if ((h.piece === "n" || h.piece === "b") && (moverWhite ? toRank >= 4 && toRank <= 6 : toRank >= 3 && toRank <= 5)) {
+      const defendedByPawn = [-1, 1].some((df) => {
+        const p = at(toFile + df, toRank - fwd);
+        return !!p && p.type === "p" && p.color === me;
+      });
+      // No enemy pawn on an adjacent file that could still advance to kick it.
+      const kickable = [-1, 1].some((df) => {
+        for (let r = toRank + fwd; r >= 1 && r <= 8; r += fwd) {
+          const p = at(toFile + df, r);
+          if (p && p.type === "p" && p.color !== me) return true;
+        }
+        return false;
+      });
+      outpost = defendedByPawn && !kickable;
     }
   } catch { /* ignore */ }
+
+  // Opening-principle checks. Both are only true while the opening is still
+  // being played — moving a piece twice is perfectly normal later on.
+  const inOpening = idx < 24 && undevelopedMinors >= 2;
+  let movedFrom = false;
+  for (let k = idx - 2; k >= 0; k -= 2) {
+    if (history[k].to === h.from) { movedFrom = true; break; }
+  }
 
   return {
     weakensKingShield:
@@ -208,6 +287,17 @@ function positionalFlags(
     // there's still real material on the board.
     kingToCenter: h.piece === "k" && heavyPieces >= 6 && ["c", "d", "e", "f"].includes(file)
       && (moverWhite ? toRank >= 3 : toRank <= 6),
+    allowsEnPassant,
+    // A capture or a check is a reason to move the same piece again, so those
+    // don't count as wasting a tempo.
+    movesPieceTwice: inOpening && movedFrom && h.piece !== "p" && h.piece !== "k" && !h.captured,
+    queenOutEarly: inOpening && h.piece === "q" && h.from === `d${moverWhite ? 1 : 8}`,
+    pawnBreak,
+    attacksBigger,
+    knightToCenter: h.piece === "n" && ["d4", "e4", "d5", "e5"].includes(h.to),
+    rookToSemiOpen: semiOpen && !doublesRooks,
+    supportsPawnChain,
+    outpost,
   };
 }
 
@@ -600,6 +690,19 @@ export async function analyzeGame(
       oppCapturesPiece,
       isSacrificeConfirmed: isSacrifice && good,
       allowsMotif,
+      // The deep tier needs these too. Without them the engine-analysed moves —
+      // the WORST ones, the ones the player most wants explained — were the only
+      // ones that could still fall through to "pierdes el hilo", because the
+      // positional signals only reached the cheap tier.
+      isCastle: h.san.startsWith("O-O"),
+      isPromotion: h.promotion != null,
+      developsPiece: (h.piece === "n" || h.piece === "b") && /[18]$/.test(h.from),
+      toCenter: ["d4", "e4", "d5", "e5"].includes(h.to),
+      gaveCheck: /\+/.test(h.san),
+      tradeVerdict: tradeVerdictFor(fens[i], h),
+      trappedPiece: trappedPieceAfter(fens[i], h),
+      backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
+      ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
     });
 
     if (text) {
@@ -669,7 +772,7 @@ export async function analyzeGame(
       tradeVerdict: tradeVerdictFor(fens[i], h),
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
-      ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null),
+      ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
     });
     if (text) quietUpdates.push({ ply: i, text });
   }
