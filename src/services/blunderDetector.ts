@@ -20,10 +20,11 @@ export type MoveClassification = Move["classification"];
 // generated deterministically from templates, so there's no API quota or
 // latency attached to them at all.
 const MAX_EXPLAIN = 20;
-// Depth for the coach lines. Tuned to what the free-tier CPU can actually FINISH
-// within the engine timeout — too deep and it times out with EMPTY lines, which
-// strips the comment of its grounding and makes it worse, not better.
-const EXPLAIN_DEPTH = 14;
+// Depth for the coach lines. Both the plain eval and getTopLines KEEP the
+// deepest line they saw before the deadline, so a timeout costs depth rather
+// than producing nothing — the earlier worry about "empty lines" only applies if
+// the very first iteration doesn't land, which measurement showed doesn't happen.
+const EXPLAIN_DEPTH = 16;
 const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
 
 const PIECE_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
@@ -501,8 +502,8 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
 //  Pass 2 — a DEEP re-evaluation of only those few error positions (and the move
 //           before), so the important moments get strong analysis without paying
 //           the deep cost on all ~70 positions. Concentrates CPU where it matters.
-const SHALLOW_DEPTH = 8;
-const DEEP_DEPTH = 12;      // deep enough to be reliable, short enough not to freeze the free-tier CPU
+const SHALLOW_DEPTH = 12;
+const DEEP_DEPTH = 16;      // deep enough to be reliable, short enough not to freeze the free-tier CPU
 const MAX_DEEP_MOVES = 8;   // cap how many error positions we deepen
 
 function classify(centipawnLoss: number): MoveClassification {
@@ -760,7 +761,11 @@ export async function analyzeGame(
     // buena" a verifiable fact instead of a guess — same search, negligible
     // extra cost.
     let lines: { mate: number | null; scoreCp: number | null; pv: string[] }[] = [];
-    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 3); } catch { /* ignore */ }
+    // MultiPV 2, not 3: only lines[0] and lines[1] are ever read (the best move,
+    // and the gap to the second best for "only good move" detection). The third
+    // line was being searched to full depth and thrown away — a third of the
+    // most expensive stage in the whole analysis, spent on nothing.
+    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 2); } catch { /* ignore */ }
     const mainSans = lines[0] ? pvToSan(fenBefore, lines[0].pv) : [];
     const bestSan = mainSans[0] ?? null;
 
