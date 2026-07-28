@@ -1,152 +1,185 @@
 # Catálogo de categorías del coach — AnaliChess IA
 
-Documento de trabajo para redactar las plantillas. **Cristian corrige la columna
-"Frase"; el resto es información técnica de apoyo.**
+Documento de trabajo. **Cristian corrige la columna "Frase"; el resto es
+información técnica de apoyo.**
+
+- ✅ implementada · 🆕 recién implementada · ⚠️ comodín (hay que matarla) · ⬜ pendiente
+- **Costo**: `geo` = geometría pura, gratis · `motor` = usa Stockfish (ya disponible) · `caro` = búsqueda extra
 
 ## Cómo se arma un comentario
 
-Cada comentario se compone de hasta **dos ranuras** (nunca tres, para que quede
-corto como chess.com):
+Hasta **dos ranuras**, nunca tres (para que quede corto como chess.com):
 
 - **A — Qué pasó** (siempre): la consecuencia concreta.
-- **B — Cómo cambió la partida** (a veces): el contexto de evaluación.
+- **B — Cómo cambió la partida** (a veces): contexto de evaluación.
 - **C — Qué era mejor** (a veces): la alternativa.
 
-Regla: siempre A, más B **o** C. Si A ya nombra material perdido, B se omite
-(sería obvio). C nunca aparece en jugadas buenas ni en mates.
+Siempre A, más B **o** C. Si A ya nombra material perdido, B se omite. C nunca
+en jugadas buenas ni en mates. Cada categoría admite 2-3 redacciones,
+elegidas por el número de jugada.
 
-Cada categoría admite **2-3 redacciones alternativas**, elegidas por el número
-de jugada — así la misma jugada siempre da el mismo texto, pero jugadas
-distintas no suenan calcadas.
+### Reglas de estilo
 
-### Convenciones de estilo acordadas
-
-- **Sin cifras de peones en la prosa.** Chess.com muestra el número en un
-  recuadro aparte y mantiene la frase cualitativa. Nuestra barra ya lo muestra.
-- **Sin notación algebraica** (`Bxd5`). Se dice "el alfil captura en d5".
-- **Segunda persona** para el jugador ("dejas", "pierdes", "encontraste").
-- Vocabulario ajedrecístico exacto cuando esté verificado: horquilla, clavada,
-  pincho, ataque a la descubierta, pieza colgada, doble amenaza.
+Sin cifras de peones en la prosa · sin notación algebraica · segunda persona ·
+español LatAm · vocabulario exacto (horquilla, clavada, pincho, ataque a la
+descubierta, pieza colgada) · nombrar pieza y casilla · sin relleno ·
+concordancia de género · nunca invertir quién hace qué.
 
 ---
 
-## RANURA A — Qué pasó
+## RANURA A1 — Jugadas buenas
 
-### A1. Jugadas buenas / fuertes
+| # | Categoría | Detección | Costo | Estado | Frase |
+|---|---|---|---|---|---|
+| 1 | Jaque mate | SAN con `#` | geo | ✅ | ¡Jaque mate! El caballo remata en f7. |
+| 2 | Única jugada buena | 1ª línea supera a la 2ª por ≥1.5 | motor | ✅ | ¡Solo había una jugada buena y la encontraste! |
+| 3 | Táctica ejecutada | Patrón verificado | geo | ✅ | Muy buena: montas una horquilla sobre la dama de d8. |
+| 4 | Sacrificio correcto | Entrega material, motor lo confirma | motor | ✅ | Sacrificio correcto: entregas el alfil y hay compensación. |
+| 5 | Gana material | Captura sin recaptura | geo | ✅ | Capturas el caballo en f3 y ganas material. |
+| 6 | Jugada precisa | Es la mejor, nada más que destacar | motor | ✅ | Jugada precisa: el motor la confirma como la mejor. |
+| 7 | Defensa exacta | Estabas peor y encontraste la única defensa | motor | ⬜ | |
+| 8 | Contraataque | Respondes a una amenaza creando otra mayor | geo | ⬜ | |
+| 9 | Profilaxis | Impides el plan del rival antes de que empiece | caro | ⬜ | |
+| 10 | Simplificación ganadora | Con ventaja, cambias piezas hacia un final ganado | geo | ⬜ | |
+| 11 | Rey a la caja | Metes al rey rival en una red de mate | motor | ⬜ | |
+| 12 | Peón pasado creado | Tu jugada genera un peón pasado | geo | ⬜ | |
 
-| # | Categoría | Cuándo se dispara | Estado | Frase actual (corregir) |
-|---|---|---|---|---|
-| 1 | Jaque mate | La jugada da mate | ✅ Hecho | ¡Jaque mate! El caballo remata en f7. |
-| 2 | Única jugada buena | La 1ª línea del motor supera a la 2ª por ≥1.5 peones | ✅ Hecho | ¡Solo había una jugada buena y la encontraste! |
-| 3 | Táctica ejecutada | Patrón verificado por geometría | ✅ Hecho | Muy buena: montas una horquilla sobre la dama de d8. |
-| 4 | Sacrificio correcto | Entrega material y el motor lo confirma | ✅ Hecho | Sacrificio correcto: entregas el alfil y el motor confirma que hay compensación. |
-| 5 | Gana material | Captura sin recaptura posible | ✅ Hecho | Capturas el caballo en f3 y ganas material. |
-| 6 | Jugada precisa | Es la mejor, sin nada más que destacar | ✅ Hecho | Jugada precisa: el motor la confirma como la mejor de la posición. |
+## RANURA A2 — Errores
 
-### A2. Errores (solo si el motor la clasificó como imprecisión / error / error grave)
+| # | Categoría | Detección | Costo | Estado | Frase |
+|---|---|---|---|---|---|
+| 13 | Mate desperdiciado | Tenías mate forzado | motor | ✅ | Tenías jaque mate forzado y se te escapó. |
+| 14 | Pieza propia colgada | Tu pieza sin defensor | geo | ✅ | El alfil de c4 queda sin defensa. |
+| 15 | Pérdida de material | Línea de castigo te cuesta una pieza | motor | ✅ | Con esta jugada pierdes el alfil. |
+| 16 | Pérdida tras cambios | Igual, en secuencia de capturas | motor | ✅ | Tras los cambios pierdes la dama. |
+| 17 | Captura gratis del rival | Su respuesta te quita una pieza | motor | ✅ | El rival te captura el alfil. |
+| 18 | Pieza atrapada | Sin casilla segura | geo | 🆕 | El caballo de a5 queda atrapado: no tiene casilla segura. |
+| 19 | Rey en última fila | Encerrado tras sus peones | geo | 🆕 | Tu rey queda encerrado en la última fila. |
+| 20 | Táctica desperdiciada | Había patrón y no lo viste | geo | ✅ | Tenías un pincho sobre la torre de b2 y la dejas pasar. |
+| 21 | Permites horquilla | Su respuesta crea horquilla | geo | ⬜ | |
+| 22 | Permites clavada | Su respuesta clava una pieza tuya | geo | ⬜ | |
+| 23 | Permites descubierta | Su respuesta es ataque a la descubierta | geo | ⬜ | |
+| 24 | Mueves pieza clavada | La pieza estaba clavada | geo | ⬜ | |
+| 25 | Rompes tu enroque | Mueves un peón del escudo del rey | geo | ⬜ | |
+| 26 | Rey al centro | Rey sale sin necesidad en medio juego | geo | ⬜ | |
+| 27 | Dama atrapada | La dama pierde casillas de escape | geo | ⬜ | |
+| 28 | Ignoras la amenaza | Había amenaza y no la atiendes | motor | ⬜ | |
+| 29 | Cambio desfavorable | Cambias tu pieza buena por una mala suya | geo | ⬜ | |
+| 30 | Debilitas casillas | El avance de peón deja huecos permanentes | geo | ⬜ | |
+| 31 | Peón retrasado | Creas un peón que no puede avanzar | geo | ⬜ | |
+| 32 | Peones doblados | El cambio te deja peones doblados | geo | ⬜ | |
+| 33 | Peón aislado | Creas un peón sin apoyo de vecinos | geo | ⬜ | |
+| 34 | Pierdes la pareja de alfiles | Cambias un alfil sin motivo | geo | ⬜ | |
+| 35 | Pieza a la banda | Caballo al borde sin destino | geo | ⬜ | |
+| 36 | Repites jugadas | Mueves atrás y adelante, pierdes tiempo | geo | ⬜ | |
+| 37 | Torre pasiva | Tu torre queda encerrada por su propio rey | geo | ⬜ | |
+| 38 | Permites peón pasado | Su jugada crea un pasado y no lo frenas | geo | ⬜ | |
+| 39 | Sueltas la columna abierta | Cedes la única columna abierta | geo | ⬜ | |
+| 40 | Error genérico | Nada concreto detectado | — | ⚠️ | Con esta jugada pierdes el hilo de la posición. |
 
-| # | Categoría | Cuándo se dispara | Estado | Frase actual (corregir) |
-|---|---|---|---|---|
-| 7 | Mate desperdiciado | Tenías mate forzado y no lo jugaste | ✅ Hecho | Tenías jaque mate forzado y se te escapó. |
-| 8 | Pieza propia colgada | Tu pieza queda sin defensor | ✅ Hecho | El alfil de c4 queda sin defensa. |
-| 9 | Pérdida de material | La línea de castigo te cuesta una pieza | ✅ Hecho | Con esta jugada pierdes el alfil. |
-| 10 | Pérdida tras cambios | Igual, pero en secuencia de capturas | ✅ Hecho | Tras los cambios pierdes la dama. |
-| 11 | Captura gratis del rival | Su respuesta te quita una pieza | ✅ Hecho | El rival te captura el alfil. |
-| 12 | Pieza atrapada | Tu pieza no tiene casilla segura | 🆕 Nuevo | El caballo de a5 queda atrapado: no tiene casilla segura. |
-| 13 | Rey en última fila | Rey encerrado tras sus peones, sin escape | 🆕 Nuevo | Tu rey queda encerrado en la última fila, sin casilla de escape. |
-| 14 | Táctica desperdiciada | Había un patrón verificado y no lo viste | ✅ Hecho | Tenías un pincho sobre la torre de b2 y la dejas pasar. |
-| 15 | Error genérico | Nada concreto detectado | ⚠️ Comodín | Con esta jugada pierdes el hilo de la posición. |
+## RANURA A3 — Jugadas normales
 
-### A3. Jugadas normales (sin error)
-
-| # | Categoría | Cuándo se dispara | Estado | Frase actual (corregir) |
-|---|---|---|---|---|
-| 16 | Jugada de libro | Está en el libro ECO (3.807 líneas) | ✅ Hecho | Jugada de libro: disputas el centro con el peón en e5. |
-| 17 | Enroque | O-O u O-O-O | ✅ Hecho | Enrocas: el rey queda protegido y la torre entra en juego. |
-| 18 | Coronación | Promoción de peón | ✅ Hecho | Coronas en d8 y quedas con ventaja decisiva. |
-| 19 | Cambio favorable | Captura con saldo positivo | 🆕 Nuevo | Capturas el peón en e5 y ganas material. |
-| 20 | Cambio parejo | Captura con saldo cero | 🆕 Nuevo | Cambias el caballo en f3: un cambio parejo. |
-| 21 | Da jaque | La jugada da jaque | ✅ Hecho | Das jaque con la dama y quedas con ventaja. |
-| 22 | Desarrollo | Caballo/alfil sale de su casilla inicial | ✅ Hecho | Desarrollas el alfil a e7. |
-| 23 | Ocupa el centro | Llega a d4/e4/d5/e5 | ✅ Hecho | Ocupas el centro con el peón en e4. |
-| 24 | Jugada tranquila | Nada de lo anterior | ⚠️ Comodín | Jugada sólida, quedas en una posición equilibrada. |
-
----
+| # | Categoría | Detección | Costo | Estado | Frase |
+|---|---|---|---|---|---|
+| 41 | Jugada de libro | Está en el libro ECO (3.807 líneas) | geo | ✅ | Jugada de libro: disputas el centro con el peón en e5. |
+| 42 | Enroque | O-O / O-O-O | geo | ✅ | Enrocas: el rey queda protegido y la torre entra en juego. |
+| 43 | Coronación | Promoción | geo | ✅ | Coronas en d8 y quedas con ventaja decisiva. |
+| 44 | Cambio favorable | Saldo positivo | geo | 🆕 | Capturas el peón en e5 y ganas material. |
+| 45 | Cambio parejo | Saldo cero | geo | 🆕 | Cambio parejo en f3. |
+| 46 | Da jaque | SAN con `+` | geo | ✅ | Das jaque con la dama y quedas con ventaja. |
+| 47 | Desarrollo | Caballo/alfil sale de casilla inicial | geo | ✅ | Desarrollas el alfil a e7. |
+| 48 | Ocupa el centro | Llega a d4/e4/d5/e5 | geo | ✅ | Ocupas el centro con el peón en e4. |
+| 49 | Torre a columna abierta | Columna sin peones | geo | ⬜ | |
+| 50 | Torre a la séptima | Torre llega a 7ª/2ª fila | geo | ⬜ | |
+| 51 | Conecta las torres | Ya no hay piezas entre ellas | geo | ⬜ | |
+| 52 | Puesto avanzado | Caballo donde ningún peón lo expulsa | geo | ⬜ | |
+| 53 | Fianchetto | Alfil a g2/b2/g7/b7 | geo | ⬜ | |
+| 54 | Cadena de peones | Avance que forma cadena | geo | ⬜ | |
+| 55 | Ruptura de peones | Peón que abre líneas | geo | ⬜ | |
+| 56 | Recaptura | Retomas en la casilla del cambio | geo | ⬜ | |
+| 57 | Retirada a salvo | Sacas la pieza de un ataque | geo | ⬜ | |
+| 58 | Defiendes pieza | Tu jugada defiende algo atacado | geo | ⬜ | |
+| 59 | Bloqueas el paso | Frenas un peón pasado rival | geo | ⬜ | |
+| 60 | Activas el rey (final) | Rey avanza en el final | geo | ⬜ | |
+| 61 | Da aire al rey | Creas casilla de escape | geo | ⬜ | |
+| 62 | Ganas espacio | Avance de peón que gana terreno | geo | ⬜ | |
+| 63 | Doblas torres | Segunda torre a la misma columna | geo | ⬜ | |
+| 64 | Centraliza la dama | Dama a casilla central segura | geo | ⬜ | |
+| 65 | Jugada de espera | No cambia nada, mantiene tensión | motor | ⬜ | |
+| 66 | Jugada tranquila | Nada de lo anterior | — | ⚠️ | Jugada sólida, quedas en una posición equilibrada. |
 
 ## RANURA B — Cómo cambió la partida
 
-Se calcula por **bandas de evaluación**: perdida (≤−3) · peor (−3 a −1) ·
-igualada (−1 a 1) · mejor (1 a 3) · ganando (≥3).
-
-| # | Transición | Estado | Frase actual (corregir) |
+| # | Transición | Estado | Frase |
 |---|---|---|---|
-| 25 | igualada → peor | ✅ Hecho | Estaba parejo y ahora el rival toma la ventaja. |
-| 26 | ventaja → igualada | ✅ Hecho | Tenías ventaja y la dejas escapar: queda igualada. |
-| 27 | ventaja → peor | ✅ Hecho | Ibas con ventaja y ahora estás peor. |
-| 28 | perdida → perdida | ✅ Hecho | Ya venías mal, así que esto no la decide, pero tampoco ayuda. |
-| 29 | ganando → ganando | ✅ Hecho | Sigues ganando, pero desperdicias parte de la ventaja. |
-
----
+| 67 | igualada → peor | ✅ | Estaba parejo y ahora el rival toma la ventaja. |
+| 68 | ventaja → igualada | ✅ | Tenías ventaja y la dejas escapar: queda igualada. |
+| 69 | ventaja → peor | ✅ | Ibas con ventaja y ahora estás peor. |
+| 70 | perdida → perdida | ✅ | Ya venías mal, esto no la decide pero tampoco ayuda. |
+| 71 | ganando → ganando | ✅ | Sigues ganando, pero desperdicias parte de la ventaja. |
+| 72 | peor → igualada | ⬜ | (recuperaste: falta) |
+| 73 | peor → ventaja | ⬜ | (le diste la vuelta: falta) |
+| 74 | igualada → ventaja | ⬜ | (tomaste la iniciativa: falta) |
+| 75 | perdida → peor | ⬜ | (te acercas: falta) |
+| 76 | ganando → decisivo | ⬜ | (sentencias: falta) |
 
 ## RANURA C — Qué era mejor
 
-| # | Condición de la jugada correcta | Estado | Frase actual (corregir) |
+| # | Condición de la jugada correcta | Estado | Frase |
 |---|---|---|---|
-| 30 | Forzaba mate | ✅ Hecho | Con la torre a e7 forzabas el mate. |
-| 31 | Defendía la pieza colgada | ✅ Hecho | Con la torre a e1 lo defendías. |
-| 32 | Capturaba algo | ✅ Hecho | Con el alfil a f5 te llevabas el caballo. |
-| 33 | Montaba una táctica | ✅ Hecho | Con el alfil a c5 montabas un pincho. |
-| 34 | Daba jaque | ✅ Hecho | El alfil a b5 daba jaque y cambiaba el ritmo. |
-| 35 | Enrocaba | ✅ Hecho | Enrocar primero dejaba al rey a salvo. |
-| 36 | Peón al centro | ✅ Hecho | Atacar el centro con el peón a d4 era mejor. |
-| 37 | Genérica | ⚠️ Comodín | Lo indicado era el caballo a a5. |
+| 77 | Forzaba mate | ✅ | Con la torre a e7 forzabas el mate. |
+| 78 | Defendía la pieza colgada | ✅ | Con la torre a e1 lo defendías. |
+| 79 | Capturaba algo | ✅ | Con el alfil a f5 te llevabas el caballo. |
+| 80 | Montaba una táctica | ✅ | Con el alfil a c5 montabas un pincho. |
+| 81 | Daba jaque | ✅ | El alfil a b5 daba jaque y cambiaba el ritmo. |
+| 82 | Enrocaba | ✅ | Enrocar primero dejaba al rey a salvo. |
+| 83 | Peón al centro | ✅ | Atacar el centro con el peón a d4 era mejor. |
+| 84 | Salvaba la pieza atacada | ⬜ | |
+| 85 | Bloqueaba la amenaza | ⬜ | |
+| 86 | Cambiaba a un final ganado | ⬜ | |
+| 87 | Ganaba tiempo con jaque | ⬜ | |
+| 88 | Activaba la torre | ⬜ | |
+| 89 | Creaba un peón pasado | ⬜ | |
+| 90 | Genérica | ⚠️ | Lo indicado era el caballo a a5. |
+
+## Categorías de fase de partida (modificadores)
+
+Ajustan el tono según el momento — no son ranuras propias.
+
+| # | Fase | Detección | Estado |
+|---|---|---|---|
+| 91 | Apertura (1-10) | número de jugada | ⬜ |
+| 92 | Medio juego (11-25) | número de jugada | ⬜ |
+| 93 | Final (26+) | número de jugada + material | ⬜ |
+| 94 | Final de peones | solo peones y reyes | ⬜ |
+| 95 | Final de torres | solo torres y peones | ⬜ |
+| 96 | Apuro de tiempo | reloj bajo 30s (viene en el PGN) | ⬜ |
+
+## Comentarios sobre el rival (tercera persona)
+
+Chess.com los comenta ("Sacan el caballo para aumentar el control del centro").
+Requiere hilar el tratamiento por todas las plantillas y cambiar el visor, que
+hoy solo muestra las jugadas del jugador.
+
+| # | Categoría | Estado |
+|---|---|---|
+| 97 | El rival comete un error | ⬜ |
+| 98 | El rival encuentra la mejor | ⬜ |
+| 99 | El rival te amenaza algo | ⬜ |
+| 100 | El rival sigue teoría | ⬜ |
 
 ---
 
-## Categorías candidatas — NO implementadas
+## Descartadas (no fiables sin búsqueda profunda)
 
-Ordenadas por relación valor/dificultad. Las de arriba son las que más
-reducirían los comodines (#15, #24, #37).
+Zugzwang · atracción · despeje · interferencia · rayos X · sobrecarga táctica ·
+sacrificio posicional a largo plazo. Es fácil afirmarlas mal, y preferimos no
+decir nada antes que decir algo falso.
 
-### Detección barata (geometría, sin motor)
+## Estado
 
-| # | Categoría | Qué detectar |
-|---|---|---|
-| 38 | Peón pasado | Peón sin peones rivales delante en su columna ni adyacentes |
-| 39 | Peón doblado / aislado | Estructura de peones tras la jugada |
-| 40 | Torre en columna abierta | Torre llega a columna sin peones |
-| 41 | Torre en séptima | Torre alcanza la 7ª/2ª fila |
-| 42 | Defensor sobrecargado | Una pieza defiende dos cosas a la vez |
-| 43 | Rey expuesto | Escudo de peones roto tras el enroque |
-| 44 | Desarrollo atrasado | En apertura, pocas piezas menores fuera |
-| 45 | Dama temprana | Dama sale antes de la jugada 6 |
-| 46 | Casilla débil / puesto avanzado | Caballo en casilla que ningún peón puede expulsar |
-| 47 | Pareja de alfiles | Ganas o cedes los dos alfiles |
-| 48 | Centro cedido | Cambio que entrega el centro |
-| 49 | Ataque al enroque | Piezas apuntando al rey enrocado |
-| 50 | Final de peones | Solo quedan peones y reyes |
-
-### Detección media (usa el motor, ya está disponible)
-
-| # | Categoría | Qué detectar |
-|---|---|---|
-| 51 | Jugada forzada | Solo había una legal razonable |
-| 52 | Aguantar la posición | Peor, pero la jugada es la más resistente |
-| 53 | Contrajuego permitido | La respuesta del rival crea amenaza propia |
-| 54 | Recaptura obligada | Cualquier otra pierde material |
-| 55 | Repetición / tablas | La línea lleva a tablas por repetición |
-
-### Descartadas (no fiables sin búsqueda profunda)
-
-Zugzwang · atracción · despeje · interferencia · rayos X · sobrecarga táctica.
-Requieren búsqueda profunda y es fácil afirmarlas mal — preferimos no decir
-nada antes que decir algo falso.
-
----
-
-## Estado actual
-
-- **37 categorías implementadas** (24 en A, 5 en B, 8 en C)
-- **3 comodines** por eliminar: #15, #24, #37
-- **18 candidatas** listadas (38-55)
-- Techo realista: **~55 categorías** con la infraestructura actual
+- **41 implementadas**, 3 comodines por matar (#40, #66, #90)
+- **56 pendientes**, la mayoría de detección barata (geometría)
+- Prioridad sugerida: 21-24 (permites táctica), 25-27 (seguridad del rey),
+  29-33 (estructura de peones), 49-52 (piezas activas), 72-76 (ranura B
+  positiva — hoy solo tenemos transiciones negativas)
