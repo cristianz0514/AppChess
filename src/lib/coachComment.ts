@@ -118,6 +118,21 @@ export interface MoveFacts {
   } | null;
   dominantTerm?: { term: string; delta: number } | null;  // which part of the eval moved
   theirKingWorse?: boolean;    // your move added real pressure to their king
+  // From the null move: what the opponent is about to do, and what you're
+  // threatening. The only genuinely PREDICTIVE facts in the set — everything
+  // else describes the move that was already played.
+  ignoredThreat?: { kind: string; piece: string; square: string } | null;
+  ownThreat?: { kind: string; piece: string; square: string } | null;
+
+  // Endgame vocabulary. The rules invert here — a king walking to the centre is
+  // an error with pieces on and the whole point of a pawn ending — so these
+  // only ever fire once the board has emptied out.
+  isEndgame?: boolean;
+  kingActivates?: boolean;
+  opposition?: boolean;
+  rookBehindPassed?: boolean;
+  pawnRunsToPromote?: boolean;
+  connectsRooks?: boolean;
 }
 
 const ART: Record<string, string> = {
@@ -217,6 +232,32 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     ], s), namesMaterial: true };
   }
   if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
+
+  // A threat the opponent must answer outranks any description of the move: it
+  // was landing below "Desarrollas el alfil a d3" and so never appeared once in
+  // six games, even though it's the most useful thing the coach can say about a
+  // quiet move.
+  if (f.ownThreat) {
+    const ot = f.ownThreat;
+    if (ot.kind === "mate") return { text: `Amenazas mate en ${ot.square}: el rival está obligado a defenderse.`, namesMaterial: false };
+    return { text: pick([
+      `Ahora amenazas ${art(ot.piece)} de ${ot.square}.`,
+      `La jugada arma una amenaza: ${art(ot.piece)} de ${ot.square} está en el aire.`,
+    ], s), namesMaterial: false };
+  }
+
+  // ── Endgame ────────────────────────────────────────────────────────────────
+  if (f.pawnRunsToPromote) return { text: pick([
+    `El peón pasado avanza a ${f.playedTo}: cada casilla lo acerca a coronar.`,
+    `Empujas el peón pasado hasta ${f.playedTo}. El rival tendrá que gastar una pieza en frenarlo.`,
+  ], s), namesMaterial: false };
+  if (f.opposition) return { text: `Tomas la oposición: el rey rival tiene que ceder terreno.`, namesMaterial: false };
+  if (f.kingActivates) return { text: pick([
+    `En el final el rey es una pieza más, y lo llevas al centro.`,
+    `Activas el rey hacia ${f.playedTo}: en el final es donde más pesa.`,
+  ], s), namesMaterial: false };
+  if (f.rookBehindPassed) return { text: `Torre detrás del peón pasado, que es su sitio: lo empuja según avanza.`, namesMaterial: false };
+  if (f.connectsRooks) return { text: `Conectas las torres: ya se defienden entre ellas.`, namesMaterial: false };
   // Attacking something bigger than what you moved wins a tempo — the opponent
   // has to answer. Ranked high because it's the concrete point of the move.
   if (f.attacksBigger) return { text: pick([
@@ -416,6 +457,20 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     return { text: pick([
       `Ese avance de dos casillas se puede capturar al paso, y pierdes el peón.`,
       `Cuidado con la captura al paso: el peón de ${f.playedTo} cae igual.`,
+    ], s), namesMaterial: true };
+  }
+
+  // Ignoring a threat that was already on the board — the single most common way
+  // a club game is lost, and until now nothing in the set could see it, because
+  // every other detector asks what the move DID rather than what it left alone.
+  if (f.ignoredThreat) {
+    const it = f.ignoredThreat;
+    if (it.kind === "mate") {
+      return { text: `Te estaban amenazando mate en ${it.square} y la jugada no lo evita.`, namesMaterial: false };
+    }
+    return { text: pick([
+      `Dejas pasar la amenaza: el rival se lleva ${art(it.piece)} de ${it.square}.`,
+      `La amenaza sobre ${it.square} seguía ahí, y ahora ${art(it.piece)} cae.`,
     ], s), namesMaterial: true };
   }
 

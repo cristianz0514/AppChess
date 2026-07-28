@@ -5,8 +5,9 @@ import { detectMotifs } from "@/lib/tacticalMotifs";
 import { composeCoachComment, type Motif } from "@/lib/coachComment";
 import { isBookMove } from "@/lib/openingBook";
 import { overloadedDefender, underDefended } from "@/lib/attackMap";
-import { structureChange } from "@/lib/pawnStructure";
+import { structureChange, pawnStructure } from "@/lib/pawnStructure";
 import { dominantChange, pressureOnOpponent } from "@/lib/evalTerms";
+import { ignoredThreat, ownThreat } from "@/lib/threats";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -304,6 +305,77 @@ function positionalFlags(
   };
 }
 
+// Endgame vocabulary. Diagnosed the same way as everything else: across six
+// re-analysed games the surviving wildcards clustered on rook moves (13), pawn
+// pushes (14) and king moves (9) — nearly all of them in endgames, where the
+// rules invert. Centralising the king is an ERROR in the middlegame and the
+// single most important idea in a king-and-pawn ending, so the same move needs
+// opposite comments depending on how much material is left.
+function endgameFlags(
+  h: { piece: string; from: string; to: string },
+  moverWhite: boolean,
+  fenAfter: string,
+): {
+  isEndgame: boolean; kingActivates: boolean; opposition: boolean;
+  rookBehindPassed: boolean; pawnRunsToPromote: boolean; connectsRooks: boolean;
+} {
+  const none = {
+    isEndgame: false, kingActivates: false, opposition: false,
+    rookBehindPassed: false, pawnRunsToPromote: false, connectsRooks: false,
+  };
+  try {
+    const me: "w" | "b" = moverWhite ? "w" : "b";
+    const board = new Chess(fenAfter);
+    const cells = board.board().flat().filter(Boolean) as { type: string; color: string; square: string }[];
+    const pieces = cells.filter((c) => c.type !== "p" && c.type !== "k").length;
+    const isEndgame = pieces <= 4;
+    if (!isEndgame) return none;
+
+    const fileOf = (s: string) => s.charCodeAt(0) - 97;
+    // Chebyshev distance to the centre four squares.
+    const centreDist = (s: string) =>
+      Math.max(Math.min(Math.abs(fileOf(s) - 3), Math.abs(fileOf(s) - 4)),
+               Math.min(Math.abs(Number(s[1]) - 4), Math.abs(Number(s[1]) - 5)));
+
+    let opposition = false;
+    if (h.piece === "k") {
+      const theirKing = cells.find((c) => c.type === "k" && c.color !== me);
+      if (theirKing) {
+        const df = Math.abs(fileOf(h.to) - fileOf(theirKing.square));
+        const dr = Math.abs(Number(h.to[1]) - Number(theirKing.square[1]));
+        // Direct opposition: two squares apart on a file or rank, and it's the
+        // OTHER king that has to give ground.
+        opposition = (df === 0 && dr === 2) || (dr === 0 && df === 2);
+      }
+    }
+
+    const passed = pawnStructure(fenAfter, me).passed;
+    const behind = (rookSq: string, pawnSq: string) =>
+      fileOf(rookSq) === fileOf(pawnSq)
+      && (moverWhite ? Number(rookSq[1]) < Number(pawnSq[1]) : Number(rookSq[1]) > Number(pawnSq[1]));
+
+    const backRank = moverWhite ? 1 : 8;
+    const rooks = cells.filter((c) => c.type === "r" && c.color === me);
+    let connectsRooks = false;
+    if (h.piece === "r" && rooks.length === 2 && rooks.every((r) => Number(r.square[1]) === backRank)) {
+      const [a, b] = rooks.map((r) => fileOf(r.square)).sort((x, y) => x - y);
+      connectsRooks = cells.every((c) =>
+        Number(c.square[1]) !== backRank || fileOf(c.square) <= a || fileOf(c.square) >= b);
+    }
+
+    return {
+      isEndgame,
+      kingActivates: h.piece === "k" && centreDist(h.to) < centreDist(h.from),
+      opposition,
+      rookBehindPassed: h.piece === "r" && passed.some((p) => behind(h.to, p)),
+      // A passed pawn on the 6th/7th is a genuine event, not just a pawn move.
+      pawnRunsToPromote: h.piece === "p" && passed.includes(h.to)
+        && (moverWhite ? Number(h.to[1]) >= 6 : Number(h.to[1]) <= 3),
+      connectsRooks,
+    };
+  } catch { return none; }
+}
+
 // Facts read off the board with the attack table, the pawn-structure reader and
 // the eval-term decomposition. Grouped in one helper because both comment tiers
 // need exactly the same set, and last time they drifted apart the deep tier —
@@ -321,11 +393,24 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
       structure: structureChange(fenBefore, fenAfter, me),
       dominantTerm: dom ? { term: dom.term, delta: dom.delta } : null,
       theirKingWorse: pressureOnOpponent(fenBefore, fenAfter, me).theirKingWorse,
+      ignoredThreat: (() => {
+        const t = ignoredThreat(fenBefore, fenAfter, me);
+        return t ? { kind: t.kind, piece: PIECE_ES[t.piece] ?? "pieza", square: t.square } : null;
+      })(),
+      ownThreat: (() => {
+        const t = ownThreat(fenAfter, me);
+        // Only worth mentioning when it's a real prize. Every position has some
+        // pawn hanging somewhere; announcing those as threats is noise.
+        return t && t.gain >= 3 ? { kind: t.kind, piece: PIECE_ES[t.piece] ?? "pieza", square: t.square } : null;
+      })(),
     };
   } catch {
     // A malformed FEN must never cost the move its comment — the rest of the
     // facts are still perfectly good on their own.
-    return { underDefended: null, overloaded: null, structure: null, dominantTerm: null, theirKingWorse: false };
+    return {
+      underDefended: null, overloaded: null, structure: null, dominantTerm: null,
+      theirKingWorse: false, ignoredThreat: null, ownThreat: null,
+    };
   }
 }
 
@@ -732,6 +817,7 @@ export async function analyzeGame(
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
+      ...endgameFlags(h, moverWhite, fens[i]),
     });
 
     if (text) {
@@ -803,6 +889,7 @@ export async function analyzeGame(
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
+      ...endgameFlags(h, moverWhite, fens[i]),
     });
     if (text) quietUpdates.push({ ply: i, text });
   }
