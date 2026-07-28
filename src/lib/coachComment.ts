@@ -68,6 +68,12 @@ export interface MoveFacts {
   toCenter?: boolean;        // lands on d4/e4/d5/e5
   gaveCheck?: boolean;
   isBook?: boolean;          // still inside a known opening line
+  // Verdict on a capture: pure material arithmetic (what you take vs what the
+  // recapture costs you). Turns "Capturas la torre en d4" — which describes
+  // without teaching — into "un cambio parejo" / "y ganas material".
+  tradeVerdict?: "gana" | "pareja" | "pierde" | null;
+  trappedPiece?: { piece: string; square: string } | null; // yours, no safe square
+  backRankRisk?: boolean;    // your king is boxed in on its own back rank
 }
 
 const ART: Record<string, string> = {
@@ -140,10 +146,25 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
 
   if (f.isPromotion) return { text: `Coronas en ${f.playedTo} y quedas ${standing}.`, namesMaterial: true };
   if (f.isCastle) return { text: pick([`Enrocas y pones el rey a salvo.`, `Enrocas: el rey queda protegido y la torre entra en juego.`], s), namesMaterial: false };
-  if (f.capturedPiece) return { text: pick([
-    `Cambias en ${f.playedTo} y quedas ${standing}.`,
-    `Capturas ${art(f.capturedPiece)} en ${f.playedTo}.`,
-  ], s), namesMaterial: true };
+  if (f.capturedPiece) {
+    const cp = art(f.capturedPiece);
+    if (f.tradeVerdict === "gana") return { text: pick([
+      `Capturas ${cp} en ${f.playedTo} y ganas material.`,
+      // No clitic pronoun here: "…recuperarlo" disagreed with feminine pieces
+      // ("la dama … recuperarlo").
+      `Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.`,
+    ], s), namesMaterial: true };
+    if (f.tradeVerdict === "pareja") return { text: pick([
+      `Cambias ${cp} en ${f.playedTo}: un cambio parejo.`,
+      // `standing` can itself be "en una posición equilibrada", which read as
+      // "Cambio equilibrado … posición equilibrada".
+      `Cambio parejo en ${f.playedTo}.`,
+    ], s), namesMaterial: true };
+    return { text: pick([
+      `Capturas ${cp} en ${f.playedTo}.`,
+      `Te llevas ${cp} y quedas ${standing}.`,
+    ], s), namesMaterial: true };
+  }
   if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
   if (f.developsPiece) return { text: pick([
     `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
@@ -242,6 +263,23 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
       `El rival te captura ${art(f.oppCapturesPiece)}.`,
       `Le regalas ${art(f.oppCapturesPiece)} al rival.`,
     ], s), namesMaterial: true };
+  }
+
+  // Trapped piece: it still stands, but every square it can reach loses it.
+  if (f.trappedPiece) {
+    const tp = art(f.trappedPiece.piece);
+    return { text: pick([
+      `${cap(tp)} de ${f.trappedPiece.square} queda atrapado: no tiene casilla segura.`,
+      `Dejas ${tp} de ${f.trappedPiece.square} sin escapatoria.`,
+    ], s), namesMaterial: true };
+  }
+
+  // Back rank: king shut in behind its own pawns, the classic mating pattern.
+  if (f.backRankRisk) {
+    return { text: pick([
+      `Tu rey queda encerrado en la última fila, sin casilla de escape.`,
+      `Cuidado con la última fila: tu rey no tiene por dónde salir.`,
+    ], s), namesMaterial: false };
   }
 
   const bm = f.bestMotifs.find((x) => x.key !== "hangs_own");

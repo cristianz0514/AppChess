@@ -1,4 +1,4 @@
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import { analyzeAllFens, evaluatePosition, getTopLines } from "./stockfish";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
@@ -59,6 +59,74 @@ function materialOverLine(fromFen: string, sans: string[], playerColor: "w" | "b
   // outside the window. Claiming "se pierde el caballo" off such a line
   // overstates the loss, so callers must treat it as unsettled.
   return { net, biggestLostType, trades: byPlayer > 0 && byOpponent > 0, settled: !lastWasOpponentCapture };
+}
+
+// ── Cheap positional detectors (board geometry only, no engine) ──────────────
+// These exist to replace filler like "pierdes el hilo de la posición" and
+// "Capturas la torre en d4" (which describes without teaching) with something
+// a coach would actually say.
+
+// Was the capture worth it? Pure material arithmetic: if the opponent can
+// recapture on that square, the trade nets (taken - mine); if not, it's a
+// clean win of material.
+function tradeVerdictFor(fenAfter: string, h: { to: string; piece: string; captured?: string }):
+  "gana" | "pareja" | "pierde" | null {
+  if (!h.captured) return null;
+  const took = PIECE_VAL[h.captured] ?? 0;
+  const mine = PIECE_VAL[h.piece] ?? 0;
+  try {
+    const after = new Chess(fenAfter);
+    const canRecapture = after.moves({ verbose: true }).some((x) => x.to === h.to && x.captured);
+    if (!canRecapture) return took > 0 ? "gana" : null;
+    const net = took - mine;
+    return net > 0 ? "gana" : net === 0 ? "pareja" : "pierde";
+  } catch { return null; }
+}
+
+// The piece just moved is attacked and every square it can reach is attacked
+// too — it's still on the board, but it has nowhere safe to go.
+function trappedPieceAfter(fenAfter: string, h: { to: string; piece: string }):
+  { piece: string; square: string } | null {
+  if ((PIECE_VAL[h.piece] ?? 0) < 3) return null;
+  try {
+    // fenAfter has the OPPONENT to move, so their captures enumerate directly.
+    const after = new Chess(fenAfter);
+    const attacked = new Set<string>(after.moves({ verbose: true }).filter((m) => m.captured).map((m) => m.to));
+    if (!attacked.has(h.to)) return null;
+    // Flip the side to move to see where our piece could run to.
+    const flipped = new Chess(fenAfter.replace(/ (w|b) /, (_m, c) => (c === "w" ? " b " : " w ")));
+    const escapes = flipped.moves({ square: h.to as Square, verbose: true });
+    if (escapes.length === 0) return null; // pinned/blocked is a different story
+    const safe = escapes.some((e) => !attacked.has(e.to));
+    return safe ? null : { piece: PIECE_ES[h.piece] ?? "pieza", square: h.to };
+  } catch { return null; }
+}
+
+// Classic back-rank shape: king still on its home rank, the three squares in
+// front of it filled by its own pawns, and no legal king move.
+function backRankBoxedIn(fenAfter: string, playerColor: "w" | "b"): boolean {
+  try {
+    const board = new Chess(fenAfter.replace(/ (w|b) /, () => ` ${playerColor} `));
+    const homeRank = playerColor === "w" ? "1" : "8";
+    const pawnRank = playerColor === "w" ? "2" : "7";
+    let kingSq: string | null = null;
+    for (const row of board.board()) {
+      for (const sq of row) {
+        if (sq && sq.type === "k" && sq.color === playerColor) kingSq = sq.square;
+      }
+    }
+    if (!kingSq || kingSq[1] !== homeRank) return false;
+    if (board.moves({ square: kingSq as Square, verbose: true }).length > 0) return false;
+    const file = kingSq.charCodeAt(0) - 97;
+    let shield = 0;
+    for (const df of [-1, 0, 1]) {
+      const f = file + df;
+      if (f < 0 || f > 7) continue;
+      const p = board.get((String.fromCharCode(97 + f) + pawnRank) as Square);
+      if (p && p.type === "p" && p.color === playerColor) shield++;
+    }
+    return shield >= 2;
+  } catch { return false; }
 }
 
 // Two-pass analysis:
@@ -515,6 +583,9 @@ export async function analyzeGame(
       // never used for commentary — so four consecutive theory moves each got
       // "sacas la pieza y ganas actividad".
       isBook: isBookMove(sanHistory, i),
+      tradeVerdict: tradeVerdictFor(fens[i], h),
+      trappedPiece: trappedPieceAfter(fens[i], h),
+      backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
     });
     if (text) quietUpdates.push({ ply: i, text });
   }
