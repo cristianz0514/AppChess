@@ -212,8 +212,14 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     if (f.developsPiece) return { text: pick([
       `Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.`,
       `Teoría: ${art(f.playedPiece)} va a ${f.playedTo} para entrar en juego.`,
+      `Desarrollo de libro. ${cap(art(f.playedPiece))} a ${f.playedTo} es la jugada principal aquí.`,
+      `Sigues la teoría: ${art(f.playedPiece)} a ${f.playedTo}.`,
     ], s), namesMaterial: false };
-    if (f.toCenter) return { text: `Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
+    if (f.toCenter) return { text: pick([
+      `Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`,
+      `Teoría. ${cap(art(f.playedPiece))} a ${f.playedTo} reclama su parte del centro.`,
+      `De libro: plantas ${art(f.playedPiece)} en ${f.playedTo}, en plena disputa del centro.`,
+    ], s), namesMaterial: false };
     return { text: pick([
       `Jugada de libro: ${art(f.playedPiece)} a ${f.playedTo} sigue la teoría.`,
       `Teoría de la apertura, ${art(f.playedPiece)} a ${f.playedTo}.`,
@@ -229,12 +235,16 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
       // No clitic pronoun here: "…recuperarlo" disagreed with feminine pieces
       // ("la dama … recuperarlo").
       `Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.`,
+      `${cap(cp)} de ${f.playedTo} cae gratis: el rival no lo recupera.`,
+      `Ganas material en ${f.playedTo}: la captura sale a tu favor.`,
     ], s), namesMaterial: true };
     if (f.tradeVerdict === "pareja") return { text: pick([
       `Cambias ${cp} en ${f.playedTo}: un cambio parejo.`,
       // `standing` can itself be "en una posición equilibrada", which read as
       // "Cambio equilibrado … posición equilibrada".
       `Cambio parejo en ${f.playedTo}.`,
+      `Te llevas ${cp} y el rival recupera: quedan iguales.`,
+      `Cambio de piezas en ${f.playedTo}, sin ventaja para ninguno.`,
     ], s), namesMaterial: true };
     return { text: pick([
       `Capturas ${cp} en ${f.playedTo}.`,
@@ -260,6 +270,7 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     return { text: pick([
       `Ahora amenazas ${art(ot.piece)} de ${ot.square}.`,
       `La jugada arma una amenaza: ${art(ot.piece)} de ${ot.square} está en el aire.`,
+      `Con esto pones ${art(ot.piece)} de ${ot.square} en el punto de mira.`,
     ], s), namesMaterial: false };
   }
 
@@ -319,6 +330,7 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   if (f.retreats) return { text: pick([
     `Repliegas ${art(f.playedPiece)} a ${f.playedTo} para reagrupar.`,
     `Retiras ${art(f.playedPiece)} a ${f.playedTo}.`,
+    `${cap(art(f.playedPiece))} vuelve a ${f.playedTo} y espera mejor momento.`,
   ], s), namesMaterial: false };
   if (f.rookToSeventh) return { text: pick([
     `Metes la torre en la séptima: desde ${f.playedTo} muerde los peones y encierra al rey.`,
@@ -339,9 +351,15 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     `Vuelves a mover ${art(f.playedPiece)} en vez de sacar una pieza nueva.`,
     `${cap(art(f.playedPiece))} se mueve otra vez; quedan piezas por desarrollar.`,
   ], s), namesMaterial: false };
+  // Four variants, not two: measured over six games, "Sacas … y ganas actividad"
+  // and "Desarrollas …" were the two most repeated sentences in the whole engine
+  // (19 and 15 uses). "Y ganas actividad" is also filler by our own rule — it
+  // asserts something we haven't measured — so it's gone.
   if (f.developsPiece) return { text: pick([
     `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
-    `Sacas ${art(f.playedPiece)} a ${f.playedTo} y ganas actividad.`,
+    `${cap(art(f.playedPiece))} entra en juego desde ${f.playedTo}.`,
+    `Pones ${art(f.playedPiece)} en ${f.playedTo}, fuera de su casilla inicial.`,
+    `Sumas ${art(f.playedPiece)} al juego: sale a ${f.playedTo}.`,
   ], s), namesMaterial: false };
   if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
   // Structural gains — a passed pawn or a wrecked enemy structure outlives any
@@ -359,6 +377,7 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   if (f.supportsPawnChain) return { text: pick([
     `Refuerzas la cadena: el peón de ${f.playedTo} sostiene a su compañero.`,
     `El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.`,
+    `Cadena de peones: ${f.playedTo} respalda al peón de delante.`,
   ], s), namesMaterial: false };
   // Last stop before the wildcard: name whichever part of the position the move
   // actually improved. "Jugada sólida" says nothing; "ganas movilidad" is true,
@@ -399,6 +418,8 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   return { text: pick([
     `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
     `Jugada sólida, quedas ${standing}.`,
+    `Jugada tranquila. La posición sigue ${standing}.`,
+    `${cap(art(f.playedPiece))} a ${f.playedTo} sin cambiar nada: ${standing}.`,
   ], s), namesMaterial: false };
 }
 
@@ -679,13 +700,28 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
 
   if (Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG) {
     if (f.classification === "inaccuracy") {
-      return { text: pick([`Imprecisión: cedes algo de terreno.`, `No es grave, pero hay algo mejor aquí.`], s), namesMaterial: false };
+      return { text: pick([
+        `Imprecisión: cedes algo de terreno.`,
+        `No es grave, pero hay algo mejor aquí.`,
+        `Se puede jugar mejor, aunque no es un error de bulto.`,
+        `Pequeña imprecisión; la posición aguanta.`,
+      ], s), namesMaterial: false };
     }
     if (f.classification === "blunder") {
-      return { text: pick([`Error grave: la posición se te complica de golpe.`, `Esta jugada le entrega la partida al rival.`], s), namesMaterial: false };
+      return { text: pick([
+        `Error grave: la posición se te complica de golpe.`,
+        `Esta jugada le entrega la partida al rival.`,
+        `Esto cambia la partida, y no a tu favor.`,
+        `Error de bulto: a partir de aquí el rival lleva la iniciativa.`,
+      ], s), namesMaterial: false };
     }
     if (f.classification === "mistake") {
-      return { text: pick([`Error: le das la iniciativa al rival.`, `Con esta jugada pierdes el hilo de la posición.`], s), namesMaterial: false };
+      return { text: pick([
+        `Error: le das la iniciativa al rival.`,
+        `Con esta jugada pierdes el hilo de la posición.`,
+        `Aquí se te escapa el control de la partida.`,
+        `Jugada equivocada: el rival pasa a mandar.`,
+      ], s), namesMaterial: false };
     }
   }
   return null;

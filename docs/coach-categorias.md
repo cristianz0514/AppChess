@@ -1,185 +1,537 @@
-# Catálogo de categorías del coach — AnaliChess IA
+# Catálogo de comentarios del coach
 
-Documento de trabajo. **Cristian corrige la columna "Frase"; el resto es
-información técnica de apoyo.**
+**Generado automáticamente** desde `src/lib/coachComment.ts` con
+`node scripts/genCategoryDoc.cjs`. No lo edites a mano: se regenera y pierdes
+los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
+cambio yo) y vuelve a generar este archivo.
 
-- ✅ implementada · 🆕 recién implementada · ⚠️ comodín (hay que matarla) · ⬜ pendiente
-- **Costo**: `geo` = geometría pura, gratis · `motor` = usa Stockfish (ya disponible) · `caro` = búsqueda extra
+- **Categorías:** 65
+- **Variantes de texto:** 172
+- **Sin nombre humano todavía:** 1
 
-## Cómo se arma un comentario
+Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
+que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
+manténlos tal cual.
 
-Hasta **dos ranuras**, nunca tres (para que quede corto como chess.com):
+## Cómo se combinan
 
-- **A — Qué pasó** (siempre): la consecuencia concreta.
-- **B — Cómo cambió la partida** (a veces): contexto de evaluación.
-- **C — Qué era mejor** (a veces): la alternativa.
+Un comentario se arma con hasta **dos** ranuras: siempre A (qué pasó), más B
+(cómo cambió la partida) **o** C (qué era mejor), nunca las tres. Por eso los
+textos deben ser cortos: dos de ellos van a aparecer juntos.
 
-Siempre A, más B **o** C. Si A ya nombra material perdido, B se omite. C nunca
-en jugadas buenas ni en mates. Cada categoría admite 2-3 redacciones,
-elegidas por el número de jugada.
+El nivel *Descriptivo* es distinto: se usa cuando la jugada no fue un error, y
+va solo.
 
-### Reglas de estilo
-
-Sin cifras de peones en la prosa · sin notación algebraica · segunda persona ·
-español LatAm · vocabulario exacto (horquilla, clavada, pincho, ataque a la
-descubierta, pieza colgada) · nombrar pieza y casilla · sin relleno ·
-concordancia de género · nunca invertir quién hace qué.
 
 ---
 
-## RANURA A1 — Jugadas buenas
+## (auxiliar)
 
-| # | Categoría | Detección | Costo | Estado | Frase |
-|---|---|---|---|---|---|
-| 1 | Jaque mate | SAN con `#` | geo | ✅ | ¡Jaque mate! El caballo remata en f7. |
-| 2 | Única jugada buena | 1ª línea supera a la 2ª por ≥1.5 | motor | ✅ | ¡Solo había una jugada buena y la encontraste! |
-| 3 | Táctica ejecutada | Patrón verificado | geo | ✅ | Muy buena: montas una horquilla sobre la dama de d8. |
-| 4 | Sacrificio correcto | Entrega material, motor lo confirma | motor | ✅ | Sacrificio correcto: entregas el alfil y hay compensación. |
-| 5 | Gana material | Captura sin recaptura | geo | ✅ | Capturas el caballo en f3 y ganas material. |
-| 6 | Jugada precisa | Es la mejor, nada más que destacar | motor | ✅ | Jugada precisa: el motor la confirma como la mejor. |
-| 7 | Defensa exacta | Estabas peor y encontraste la única defensa | motor | ⬜ | |
-| 8 | Contraataque | Respondes a una amenaza creando otra mayor | geo | ⬜ | |
-| 9 | Profilaxis | Impides el plan del rival antes de que empiece | caro | ⬜ | |
-| 10 | Simplificación ganadora | Con ventaja, cambias piezas hacia un final ganado | geo | ⬜ | |
-| 11 | Rey a la caja | Metes al rey rival en una red de mate | motor | ⬜ | |
-| 12 | Peón pasado creado | Tu jugada genera un peón pasado | geo | ⬜ | |
+### (sin nombrar)
 
-## RANURA A2 — Errores
+_Bandera:_ `(varios)`
 
-| # | Categoría | Detección | Costo | Estado | Frase |
-|---|---|---|---|---|---|
-| 13 | Mate desperdiciado | Tenías mate forzado | motor | ✅ | Tenías jaque mate forzado y se te escapó. |
-| 14 | Pieza propia colgada | Tu pieza sin defensor | geo | ✅ | El alfil de c4 queda sin defensa. |
-| 15 | Pérdida de material | Línea de castigo te cuesta una pieza | motor | ✅ | Con esta jugada pierdes el alfil. |
-| 16 | Pérdida tras cambios | Igual, en secuencia de capturas | motor | ✅ | Tras los cambios pierdes la dama. |
-| 17 | Captura gratis del rival | Su respuesta te quita una pieza | motor | ✅ | El rival te captura el alfil. |
-| 18 | Pieza atrapada | Sin casilla segura | geo | 🆕 | El caballo de a5 queda atrapado: no tiene casilla segura. |
-| 19 | Rey en última fila | Encerrado tras sus peones | geo | 🆕 | Tu rey queda encerrado en la última fila. |
-| 20 | Táctica desperdiciada | Había patrón y no lo viste | geo | ✅ | Tenías un pincho sobre la torre de b2 y la dejas pasar. |
-| 21 | Permites horquilla | Su respuesta crea horquilla | geo | ⬜ | |
-| 22 | Permites clavada | Su respuesta clava una pieza tuya | geo | ⬜ | |
-| 23 | Permites descubierta | Su respuesta es ataque a la descubierta | geo | ⬜ | |
-| 24 | Mueves pieza clavada | La pieza estaba clavada | geo | ⬜ | |
-| 25 | Rompes tu enroque | Mueves un peón del escudo del rey | geo | ⬜ | |
-| 26 | Rey al centro | Rey sale sin necesidad en medio juego | geo | ⬜ | |
-| 27 | Dama atrapada | La dama pierde casillas de escape | geo | ⬜ | |
-| 28 | Ignoras la amenaza | Había amenaza y no la atiendes | motor | ⬜ | |
-| 29 | Cambio desfavorable | Cambias tu pieza buena por una mala suya | geo | ⬜ | |
-| 30 | Debilitas casillas | El avance de peón deja huecos permanentes | geo | ⬜ | |
-| 31 | Peón retrasado | Creas un peón que no puede avanzar | geo | ⬜ | |
-| 32 | Peones doblados | El cambio te deja peones doblados | geo | ⬜ | |
-| 33 | Peón aislado | Creas un peón sin apoyo de vecinos | geo | ⬜ | |
-| 34 | Pierdes la pareja de alfiles | Cambias un alfil sin motivo | geo | ⬜ | |
-| 35 | Pieza a la banda | Caballo al borde sin destino | geo | ⬜ | |
-| 36 | Repites jugadas | Mueves atrás y adelante, pierdes tiempo | geo | ⬜ | |
-| 37 | Torre pasiva | Tu torre queda encerrada por su propio rey | geo | ⬜ | |
-| 38 | Permites peón pasado | Su jugada crea un pasado y no lo frenas | geo | ⬜ | |
-| 39 | Sueltas la columna abierta | Cedes la única columna abierta | geo | ⬜ | |
-| 40 | Error genérico | Nada concreto detectado | — | ⚠️ | Con esta jugada pierdes el hilo de la posición. |
-
-## RANURA A3 — Jugadas normales
-
-| # | Categoría | Detección | Costo | Estado | Frase |
-|---|---|---|---|---|---|
-| 41 | Jugada de libro | Está en el libro ECO (3.807 líneas) | geo | ✅ | Jugada de libro: disputas el centro con el peón en e5. |
-| 42 | Enroque | O-O / O-O-O | geo | ✅ | Enrocas: el rey queda protegido y la torre entra en juego. |
-| 43 | Coronación | Promoción | geo | ✅ | Coronas en d8 y quedas con ventaja decisiva. |
-| 44 | Cambio favorable | Saldo positivo | geo | 🆕 | Capturas el peón en e5 y ganas material. |
-| 45 | Cambio parejo | Saldo cero | geo | 🆕 | Cambio parejo en f3. |
-| 46 | Da jaque | SAN con `+` | geo | ✅ | Das jaque con la dama y quedas con ventaja. |
-| 47 | Desarrollo | Caballo/alfil sale de casilla inicial | geo | ✅ | Desarrollas el alfil a e7. |
-| 48 | Ocupa el centro | Llega a d4/e4/d5/e5 | geo | ✅ | Ocupas el centro con el peón en e4. |
-| 49 | Torre a columna abierta | Columna sin peones | geo | ⬜ | |
-| 50 | Torre a la séptima | Torre llega a 7ª/2ª fila | geo | ⬜ | |
-| 51 | Conecta las torres | Ya no hay piezas entre ellas | geo | ⬜ | |
-| 52 | Puesto avanzado | Caballo donde ningún peón lo expulsa | geo | ⬜ | |
-| 53 | Fianchetto | Alfil a g2/b2/g7/b7 | geo | ⬜ | |
-| 54 | Cadena de peones | Avance que forma cadena | geo | ⬜ | |
-| 55 | Ruptura de peones | Peón que abre líneas | geo | ⬜ | |
-| 56 | Recaptura | Retomas en la casilla del cambio | geo | ⬜ | |
-| 57 | Retirada a salvo | Sacas la pieza de un ataque | geo | ⬜ | |
-| 58 | Defiendes pieza | Tu jugada defiende algo atacado | geo | ⬜ | |
-| 59 | Bloqueas el paso | Frenas un peón pasado rival | geo | ⬜ | |
-| 60 | Activas el rey (final) | Rey avanza en el final | geo | ⬜ | |
-| 61 | Da aire al rey | Creas casilla de escape | geo | ⬜ | |
-| 62 | Ganas espacio | Avance de peón que gana terreno | geo | ⬜ | |
-| 63 | Doblas torres | Segunda torre a la misma columna | geo | ⬜ | |
-| 64 | Centraliza la dama | Dama a casilla central segura | geo | ⬜ | |
-| 65 | Jugada de espera | No cambia nada, mantiene tensión | motor | ⬜ | |
-| 66 | Jugada tranquila | Nada de lo anterior | — | ⚠️ | Jugada sólida, quedas en una posición equilibrada. |
-
-## RANURA B — Cómo cambió la partida
-
-| # | Transición | Estado | Frase |
-|---|---|---|---|
-| 67 | igualada → peor | ✅ | Estaba parejo y ahora el rival toma la ventaja. |
-| 68 | ventaja → igualada | ✅ | Tenías ventaja y la dejas escapar: queda igualada. |
-| 69 | ventaja → peor | ✅ | Ibas con ventaja y ahora estás peor. |
-| 70 | perdida → perdida | ✅ | Ya venías mal, esto no la decide pero tampoco ayuda. |
-| 71 | ganando → ganando | ✅ | Sigues ganando, pero desperdicias parte de la ventaja. |
-| 72 | peor → igualada | ⬜ | (recuperaste: falta) |
-| 73 | peor → ventaja | ⬜ | (le diste la vuelta: falta) |
-| 74 | igualada → ventaja | ⬜ | (tomaste la iniciativa: falta) |
-| 75 | perdida → peor | ⬜ | (te acercas: falta) |
-| 76 | ganando → decisivo | ⬜ | (sentencias: falta) |
-
-## RANURA C — Qué era mejor
-
-| # | Condición de la jugada correcta | Estado | Frase |
-|---|---|---|---|
-| 77 | Forzaba mate | ✅ | Con la torre a e7 forzabas el mate. |
-| 78 | Defendía la pieza colgada | ✅ | Con la torre a e1 lo defendías. |
-| 79 | Capturaba algo | ✅ | Con el alfil a f5 te llevabas el caballo. |
-| 80 | Montaba una táctica | ✅ | Con el alfil a c5 montabas un pincho. |
-| 81 | Daba jaque | ✅ | El alfil a b5 daba jaque y cambiaba el ritmo. |
-| 82 | Enrocaba | ✅ | Enrocar primero dejaba al rey a salvo. |
-| 83 | Peón al centro | ✅ | Atacar el centro con el peón a d4 era mejor. |
-| 84 | Salvaba la pieza atacada | ⬜ | |
-| 85 | Bloqueaba la amenaza | ⬜ | |
-| 86 | Cambiaba a un final ganado | ⬜ | |
-| 87 | Ganaba tiempo con jaque | ⬜ | |
-| 88 | Activaba la torre | ⬜ | |
-| 89 | Creaba un peón pasado | ⬜ | |
-| 90 | Genérica | ⚠️ | Lo indicado era el caballo a a5. |
-
-## Categorías de fase de partida (modificadores)
-
-Ajustan el tono según el momento — no son ranuras propias.
-
-| # | Fase | Detección | Estado |
-|---|---|---|---|
-| 91 | Apertura (1-10) | número de jugada | ⬜ |
-| 92 | Medio juego (11-25) | número de jugada | ⬜ |
-| 93 | Final (26+) | número de jugada + material | ⬜ |
-| 94 | Final de peones | solo peones y reyes | ⬜ |
-| 95 | Final de torres | solo torres y peones | ⬜ |
-| 96 | Apuro de tiempo | reloj bajo 30s (viene en el PGN) | ⬜ |
-
-## Comentarios sobre el rival (tercera persona)
-
-Chess.com los comenta ("Sacan el caballo para aumentar el control del centro").
-Requiere hilar el tratamiento por todas las plantillas y cambiar el visor, que
-hoy solo muestra las jugadas del jugador.
-
-| # | Categoría | Estado |
-|---|---|---|
-| 97 | El rival comete un error | ⬜ |
-| 98 | El rival encuentra la mejor | ⬜ |
-| 99 | El rival te amenaza algo | ⬜ |
-| 100 | El rival sigue teoría | ⬜ |
+1. podías capturar ${art(m.piece)} de ${m.square}, que estaba sin defensa
+2. había una pieza sin defensa
 
 ---
 
-## Descartadas (no fiables sin búsqueda profunda)
+## Descriptivo (cualquier jugada)
 
-Zugzwang · atracción · despeje · interferencia · rayos X · sobrecarga táctica ·
-sacrificio posicional a largo plazo. Es fácil afirmarlas mal, y preferimos no
-decir nada antes que decir algo falso.
+### Enroque
 
-## Estado
+_Bandera:_ `isCastle`
 
-- **41 implementadas**, 3 comodines por matar (#40, #66, #90)
-- **56 pendientes**, la mayoría de detección barata (geometría)
-- Prioridad sugerida: 21-24 (permites táctica), 25-27 (seguridad del rey),
-  29-33 (estructura de peones), 49-52 (piezas activas), 72-76 (ranura B
-  positiva — hoy solo tenemos transiciones negativas)
+1. Jugada de libro: enrocas y pones el rey a salvo.
+2. Enrocas y pones el rey a salvo.
+3. Enrocas: el rey queda protegido y la torre entra en juego.
+
+### Desarrolla una pieza
+
+_Bandera:_ `developsPiece`
+
+1. Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.
+2. Teoría: ${art(f.playedPiece)} va a ${f.playedTo} para entrar en juego.
+3. Desarrollo de libro. ${cap(art(f.playedPiece))} a ${f.playedTo} es la jugada principal aquí.
+4. Sigues la teoría: ${art(f.playedPiece)} a ${f.playedTo}.
+5. ${cap(art(f.playedPiece))} entra en juego desde ${f.playedTo}.
+6. Pones ${art(f.playedPiece)} en ${f.playedTo}, fuera de su casilla inicial.
+7. Sumas ${art(f.playedPiece)} al juego: sale a ${f.playedTo}.
+
+### Ocupa el centro
+
+_Bandera:_ `toCenter`
+
+1. Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.
+2. Teoría. ${cap(art(f.playedPiece))} a ${f.playedTo} reclama su parte del centro.
+3. De libro: plantas ${art(f.playedPiece)} en ${f.playedTo}, en plena disputa del centro.
+4. Jugada de libro: ${art(f.playedPiece)} a ${f.playedTo} sigue la teoría.
+5. Teoría de la apertura, ${art(f.playedPiece)} a ${f.playedTo}.
+6. Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.
+
+### Coronación
+
+_Bandera:_ `isPromotion`
+
+1. Coronas en ${f.playedTo} y quedas ${standing}.
+
+### Veredicto del cambio (gana / parejo / pierde)
+
+_Bandera:_ `tradeVerdict`
+
+1. Capturas ${cp} en ${f.playedTo} y ganas material.
+2. Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.
+3. ${cap(cp)} de ${f.playedTo} cae gratis: el rival no lo recupera.
+4. Ganas material en ${f.playedTo}: la captura sale a tu favor.
+5. Cambias ${cp} en ${f.playedTo}: un cambio parejo.
+6. Cambio parejo en ${f.playedTo}.
+7. Te llevas ${cp} y el rival recupera: quedan iguales.
+8. Cambio de piezas en ${f.playedTo}, sin ventaja para ninguno.
+9. Te llevas ${cp} y quedas ${standing}.
+
+### Jaque
+
+_Bandera:_ `gaveCheck`
+
+1. Das jaque con ${art(f.playedPiece)} y quedas ${standing}.
+2. Los cambios que vienen te dejan material de más.
+3. Cuando se resuelvan las capturas, sales ganando material.
+
+### Amenaza propia creada (null-move)
+
+_Bandera:_ `ownThreat`
+
+1. Amenazas mate en ${ot.square}: el rival está obligado a defenderse.
+2. Ahora amenazas ${art(ot.piece)} de ${ot.square}.
+3. La jugada arma una amenaza: ${art(ot.piece)} de ${ot.square} está en el aire.
+4. Con esto pones ${art(ot.piece)} de ${ot.square} en el punto de mira.
+
+### Regla del cuadrado (final de peones)
+
+_Bandera:_ `squareRule`
+
+1. El rey rival ya no entra en el cuadrado: el peón de ${sr.pawnSquare} corona solo.
+2. Cuenta el cuadrado: el peón de ${sr.pawnSquare} llega antes que el rey rival.
+3. El rey rival está dentro del cuadrado y detiene el peón de ${sr.pawnSquare}: hace falta acercar tu rey.
+4. Así el peón de ${sr.pawnSquare} no corona solo; el rey rival llega. Tienes que apoyarlo con el tuyo.
+
+### Peón pasado avanzando
+
+_Bandera:_ `pawnRunsToPromote`
+
+1. El peón pasado avanza a ${f.playedTo}: cada casilla lo acerca a coronar.
+2. Empujas el peón pasado hasta ${f.playedTo}. El rival tendrá que gastar una pieza en frenarlo.
+
+### Oposición de reyes
+
+_Bandera:_ `opposition`
+
+1. Tomas la oposición: el rey rival tiene que ceder terreno.
+
+### Rey activo en el final
+
+_Bandera:_ `kingActivates`
+
+1. En el final el rey es una pieza más, y lo llevas al centro.
+2. Activas el rey hacia ${f.playedTo}: en el final es donde más pesa.
+
+### Torre detrás del peón pasado
+
+_Bandera:_ `rookBehindPassed`
+
+1. Torre detrás del peón pasado, que es su sitio: lo empuja según avanza.
+
+### Torres conectadas
+
+_Bandera:_ `connectsRooks`
+
+1. Conectas las torres: ya se defienden entre ellas.
+
+### Ataca una pieza mayor (gana tiempo)
+
+_Bandera:_ `attacksBigger`
+
+1. ${cap(art(f.playedPiece))} a ${f.playedTo} ataca ${art(f.attacksBigger)}: el rival tiene que responder.
+2. Ganas un tiempo: desde ${f.playedTo} amenazas ${art(f.attacksBigger)}.
+
+### Ruptura de peones
+
+_Bandera:_ `pawnBreak`
+
+1. Ruptura de peones: el peón de ${f.playedTo} golpea la cadena rival.
+2. Atacas la estructura del rival con el peón a ${f.playedTo}.
+
+### Puesto avanzado
+
+_Bandera:_ `outpost`
+
+1. ${cap(art(f.playedPiece))} se instala en ${f.playedTo}: apoyado por tu peón y sin peones rivales que lo echen.
+2. Puesto avanzado en ${f.playedTo}. Ningún peón rival puede desalojar ${art(f.playedPiece)} de ahí.
+
+### Caballo centralizado
+
+_Bandera:_ `knightToCenter`
+
+1. Centralizas el caballo en ${f.playedTo}, desde donde controla más casillas.
+2. El caballo en ${f.playedTo} está en su mejor sitio: el centro.
+
+### Da aire al rey
+
+_Bandera:_ `givesKingLuft`
+
+1. Le das aire a tu rey: ahora tiene casilla de escape.
+2. Mueves el rey a ${f.playedTo} y evitas sustos en la última fila.
+
+### Repliegue de pieza
+
+_Bandera:_ `retreats`
+
+1. Repliegas ${art(f.playedPiece)} a ${f.playedTo} para reagrupar.
+2. ${cap(art(f.playedPiece))} vuelve a ${f.playedTo} y espera mejor momento.
+
+### Torre a la séptima
+
+_Bandera:_ `rookToSeventh`
+
+1. Metes la torre en la séptima: desde ${f.playedTo} muerde los peones y encierra al rey.
+2. Torre a la séptima. Es la fila donde más daño hace.
+
+### Torres dobladas
+
+_Bandera:_ `doublesRooks`
+
+1. Doblas las torres en la columna ${f.playedTo[0]}: juntas pesan mucho más.
+
+### Torre a columna abierta
+
+_Bandera:_ `rookToOpenFile`
+
+1. Colocas la torre en la columna ${f.playedTo[0]}, que está abierta.
+2. La torre toma la columna abierta ${f.playedTo[0]}.
+
+### Torre a columna semiabierta
+
+_Bandera:_ `rookToSemiOpen`
+
+1. La torre toma la columna ${f.playedTo[0]}, semiabierta: presiona el peón rival.
+2. Torre a la columna ${f.playedTo[0]}, donde no tienes peones que te estorben.
+
+### Fianchetto
+
+_Bandera:_ `fianchetto`
+
+1. Fianchetto: el alfil a ${f.playedTo} apunta a la diagonal larga.
+
+### Dama fuera demasiado pronto
+
+_Bandera:_ `queenOutEarly`
+
+1. Sacas la dama pronto: cuidado, el rival puede ganar tiempos atacándola.
+
+### Mueve la misma pieza dos veces
+
+_Bandera:_ `movesPieceTwice`
+
+1. Vuelves a mover ${art(f.playedPiece)} en vez de sacar una pieza nueva.
+2. ${cap(art(f.playedPiece))} se mueve otra vez; quedan piezas por desarrollar.
+
+### Estructura de peones
+
+_Bandera:_ `structure`
+
+1. Creas un peón pasado en ${f.structure.createdPassed}: nada lo frena camino a coronar.
+2. El peón de ${f.structure.createdPassed} queda pasado, y eso pesa en el final.
+3. Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.
+4. Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.
+
+### Presión sobre el rey rival
+
+_Bandera:_ `theirKingWorse`
+
+1. Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.
+2. ${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.
+
+### Refuerza la cadena de peones
+
+_Bandera:_ `supportsPawnChain`
+
+1. Refuerzas la cadena: el peón de ${f.playedTo} sostiene a su compañero.
+2. El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.
+3. Cadena de peones: ${f.playedTo} respalda al peón de delante.
+
+### Término de evaluación que cambió
+
+_Bandera:_ `dominantTerm`
+
+1. Ganas movilidad: tus piezas cubren más casillas desde aquí.
+2. ${cap(art(f.playedPiece))} a ${f.playedTo} le da aire a tus piezas.
+3. Ganas espacio en el campo rival.
+4. Avanzas tu frente y le quitas terreno al rival.
+5. Sumas una pieza al juego: vas por delante en desarrollo.
+
+### Pieza olvidada / pasiva
+
+_Bandera:_ `passivePiece`
+
+1. ${cap(art(pp.piece))} de ${pp.square} sigue sin entrar en juego.
+2. Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
+3. ${cap(art(pp.piece))} de ${pp.square} está encerrado por tus propias piezas.
+4. ${cap(art(pp.piece))} de ${pp.square} casi no tiene casillas: conviene darle aire.
+5. ${cap(art(pp.piece))} de ${pp.square} está en un mal sitio: desde la banda controla muy poco.
+6. ${cap(art(pp.piece))} de ${pp.square} pinta poco ahí; su lugar está más al centro.
+7. Jugada sólida, quedas ${standing}.
+8. Jugada tranquila. La posición sigue ${standing}.
+9. ${cap(art(f.playedPiece))} a ${f.playedTo} sin cambiar nada: ${standing}.
+
+---
+
+## Ranura A — qué pasó
+
+### Jaque mate ejecutado
+
+_Bandera:_ `isMate`
+
+1. ¡Jaque mate! ${cap(art(f.playedPiece))} remata en ${f.playedTo}.
+2. ¡Jaque mate con ${art(f.playedPiece)} en ${f.playedTo}! Se acabó la partida.
+
+### Única jugada buena, y la encontró
+
+_Bandera:_ `onlyGoodMove`
+
+1. ¡Solo había una jugada buena y la encontraste!
+2. Era la única jugada que servía, y la viste.
+
+### Táctica que la jugada montó
+
+_Bandera:_ `playedMotifs`
+
+1. Muy buena: ${hangingPhrase(m)}.
+2. Muy buena: montas ${motifArt(m.label)}${target}.
+
+### Sacrificio correcto
+
+_Bandera:_ `isSacrificeConfirmed`
+
+1. Sacrificio correcto: entregas ${art(f.playedPiece)} y el motor confirma que hay compensación.
+
+### Captura (veredicto por SEE)
+
+_Bandera:_ `capturedPiece`
+
+1. Te llevas ${art(f.capturedPiece)}.
+2. Jugada precisa: el motor la confirma como la mejor de la posición.
+
+### Mate forzado que se escapó
+
+_Bandera:_ `missedForcedMate`
+
+1. Tenías jaque mate forzado y se te escapó.
+2. Había mate forzado a tu favor: esta jugada lo deja ir.
+
+### Deja una pieza propia colgada
+
+_Bandera:_ `selfHang`
+
+1. ${cap(p)} de ${sq} queda sin defensa.
+2. Dejas ${p} de ${sq} sin ningún defensor.
+3. ${cap(p)} de ${sq} se queda colgado.
+
+### Material perdido en la línea de castigo
+
+_Bandera:_ `materialLostPiece`
+
+1. Tras los cambios pierdes ${p}.
+2. La secuencia de cambios te cuesta ${p}.
+3. Con esta jugada pierdes ${p}.
+4. Esto entrega ${p} sin compensación.
+
+### El rival captura algo tuyo
+
+_Bandera:_ `oppCapturesPiece`
+
+1. El rival te captura ${art(f.oppCapturesPiece)}.
+2. Le regalas ${art(f.oppCapturesPiece)} al rival.
+
+### Permite una táctica del rival
+
+_Bandera:_ `allowsMotif`
+
+1. El rival responde con ${motifArt(am.label)}${target}.
+
+### Permite captura al paso
+
+_Bandera:_ `allowsEnPassant`
+
+1. Ese avance de dos casillas se puede capturar al paso, y pierdes el peón.
+2. Cuidado con la captura al paso: el peón de ${f.playedTo} cae igual.
+
+### Material tras los cambios (quiescence)
+
+_Bandera:_ `dustMaterial`
+
+1. Cuando terminen los cambios te quedas con material de menos.
+2. La secuencia de capturas no te favorece: acabas perdiendo material.
+
+### Amenaza del rival ignorada (null-move)
+
+_Bandera:_ `ignoredThreat`
+
+1. Te estaban amenazando mate en ${it.square} y la jugada no lo evita.
+2. Dejas pasar la amenaza: el rival se lleva ${art(it.piece)} de ${it.square}.
+3. La amenaza sobre ${it.square} seguía ahí, y ahora ${art(it.piece)} cae.
+
+### Más atacantes que defensores
+
+_Bandera:_ `underDefended`
+
+1. ${cap(art(ud.piece))} de ${ud.square} recibe más ataques que defensas.
+2. No alcanzan los defensores ${deArt(ud.piece)} en ${ud.square}.
+
+### Defensor sobrecargado
+
+_Bandera:_ `overloaded`
+
+1. ${cap(art(f.overloaded.piece))} está sobrecargado: defiende dos cosas a la vez y no puede con ambas.
+2. Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.
+
+### Estructura de peones
+
+_Bandera:_ `structure`
+
+1. Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: se defienden mal y no avanzan.
+2. Doblas tus peones en la columna ${f.structure.gaveSelfDoubled}, un defecto que ya no se arregla.
+3. El peón de ${f.structure.gaveSelfIsolated} queda aislado: ningún peón tuyo puede defenderlo.
+
+### Debilita el escudo del rey
+
+_Bandera:_ `weakensKingShield`
+
+1. Adelantas un peón del escudo de tu rey y abres líneas hacia él.
+2. Ese avance debilita la cobertura de tu rey.
+
+### Rey al centro con piezas en juego
+
+_Bandera:_ `kingToCenter`
+
+1. Llevas el rey hacia el centro con piezas aún en juego: queda expuesto.
+2. El rey camina al centro demasiado pronto y se vuelve un blanco.
+
+### Caballo a la banda
+
+_Bandera:_ `knightToRim`
+
+1. El caballo en ${f.playedTo} queda en la banda, con pocas casillas útiles.
+2. Caballo a la banda: desde ${f.playedTo} controla muy poco.
+
+### Dama fuera demasiado pronto
+
+_Bandera:_ `queenOutEarly`
+
+1. Sacas la dama antes de terminar el desarrollo: el rival gana tiempos atacándola.
+2. La dama sale muy pronto y se convierte en blanco de las piezas menores.
+
+### Mueve la misma pieza dos veces
+
+_Bandera:_ `movesPieceTwice`
+
+1. Mueves ${art(f.playedPiece)} por segunda vez con piezas sin desarrollar.
+2. Otra vez ${art(f.playedPiece)}: pierdes un tiempo que hacía falta para desarrollar.
+
+### Repliegue de pieza
+
+_Bandera:_ `retreats`
+
+1. Retrocedes ${art(f.playedPiece)} y pierdes actividad.
+2. Volver atrás con ${art(f.playedPiece)} le regala un tiempo al rival.
+
+### Pieza propia atrapada
+
+_Bandera:_ `trappedPiece`
+
+1. ${cap(tp)} de ${f.trappedPiece.square} queda atrapado: no tiene casilla segura.
+2. Dejas ${tp} de ${f.trappedPiece.square} sin escapatoria.
+
+### Riesgo de mate en la última fila
+
+_Bandera:_ `backRankRisk`
+
+1. Tu rey queda encerrado en la última fila, sin casilla de escape.
+2. Cuidado con la última fila: tu rey no tiene por dónde salir.
+
+### Táctica disponible que se dejó pasar
+
+_Bandera:_ `bestMotifs`
+
+1. Tenías ${motifArt(bm.label)}${target} y la dejas pasar.
+
+### Término de evaluación que cambió
+
+_Bandera:_ `dominantTerm`
+
+1. Tus piezas se quedan sin casillas: pierdes movilidad.
+2. Después de esta jugada tus piezas tienen mucho menos por dónde moverse.
+3. Cedes espacio: el rival manda ahora en tu mitad del tablero.
+4. Le entregas terreno al rival.
+5. Tu rey queda más expuesto tras esta jugada.
+6. La jugada deja al rey con menos cobertura.
+7. Te retrasas en el desarrollo y el rival toma la delantera.
+8. Pierdes tiempo de desarrollo.
+
+### Genérico por clasificación
+
+_Bandera:_ `classification`
+
+1. Imprecisión: cedes algo de terreno.
+2. No es grave, pero hay algo mejor aquí.
+3. Se puede jugar mejor, aunque no es un error de bulto.
+4. Pequeña imprecisión; la posición aguanta.
+5. Error grave: la posición se te complica de golpe.
+6. Esta jugada le entrega la partida al rival.
+7. Esto cambia la partida, y no a tu favor.
+8. Error de bulto: a partir de aquí el rival lleva la iniciativa.
+9. Error: le das la iniciativa al rival.
+10. Con esta jugada pierdes el hilo de la posición.
+11. Aquí se te escapa el control de la partida.
+12. Jugada equivocada: el rival pasa a mandar.
+
+---
+
+## Ranura C — qué era mejor
+
+### Mate forzado que se escapó
+
+_Bandera:_ `missedForcedMate`
+
+1. Con ${bp} a ${sq} forzabas el mate.
+
+### La mejor jugada defendía la pieza colgada
+
+_Bandera:_ `bestDefendsHung`
+
+1. Con ${bp} a ${sq} lo defendías.
+
+### La mejor jugada capturaba algo
+
+_Bandera:_ `bestCapturedPiece`
+
+1. Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.
+
+### La mejor jugada daba jaque
+
+_Bandera:_ `bestGivesCheck`
+
+1. ${cap(bp)} a ${sq} daba jaque y cambiaba el ritmo.
+
+### La mejor jugada era enrocar
+
+_Bandera:_ `bestIsCastle`
+
+1. Enrocar primero dejaba al rey a salvo.
+
+### La mejor jugada era un peón al centro
+
+_Bandera:_ `bestIsCenterPawn`
+
+1. Atacar el centro con el peón a ${sq} era mejor.
+2. ${cap(bp)} a ${sq} era mejor.
+3. Lo indicado era ${bp} a ${sq}.
