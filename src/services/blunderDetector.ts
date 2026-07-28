@@ -69,17 +69,42 @@ function materialOverLine(fromFen: string, sans: string[], playerColor: "w" | "b
 // Was the capture worth it? Pure material arithmetic: if the opponent can
 // recapture on that square, the trade nets (taken - mine); if not, it's a
 // clean win of material.
+// Static Exchange Evaluation — the standard way engines answer "is this
+// capture actually good?". It plays out the WHOLE capture chain on the square,
+// each side always taking with its least valuable attacker, then minimaxes
+// back (either side may stop when continuing would lose material).
+//
+// Looking only one ply ahead ("can they recapture?") was wrong in a very
+// common shape the player hit: rook takes rook, they retake, you retake with
+// the SECOND rook and end up a rook ahead. One-ply logic called that "cambio
+// parejo". Replaying with chess.js also means x-ray attackers behind the first
+// one are handled for free, since legal moves are recomputed each step.
+function seeAfterCapture(fenAfter: string, square: string, capturedValue: number, occupantValue: number): number {
+  const gains: number[] = [capturedValue];
+  const board = new Chess(fenAfter);
+  let occupant = occupantValue; // value of the piece now sitting on the square
+  let d = 0;
+  for (;;) {
+    const caps = board.moves({ verbose: true }).filter((m) => m.to === square && m.captured);
+    if (caps.length === 0) break;
+    caps.sort((a, b) => (PIECE_VAL[a.piece] ?? 0) - (PIECE_VAL[b.piece] ?? 0));
+    const mv = caps[0];
+    d++;
+    gains[d] = occupant - gains[d - 1];
+    occupant = PIECE_VAL[mv.piece] ?? 0;
+    try { board.move(mv.san); } catch { break; }
+    if (d > 12) break; // safety valve; real exchanges never run this long
+  }
+  for (let i = d; i > 0; i--) gains[i - 1] = -Math.max(-gains[i - 1], gains[i]);
+  return gains[0];
+}
+
 function tradeVerdictFor(fenAfter: string, h: { to: string; piece: string; captured?: string }):
   "gana" | "pareja" | "pierde" | null {
   if (!h.captured) return null;
-  const took = PIECE_VAL[h.captured] ?? 0;
-  const mine = PIECE_VAL[h.piece] ?? 0;
   try {
-    const after = new Chess(fenAfter);
-    const canRecapture = after.moves({ verbose: true }).some((x) => x.to === h.to && x.captured);
-    if (!canRecapture) return took > 0 ? "gana" : null;
-    const net = took - mine;
-    return net > 0 ? "gana" : net === 0 ? "pareja" : "pierde";
+    const see = seeAfterCapture(fenAfter, h.to, PIECE_VAL[h.captured] ?? 0, PIECE_VAL[h.piece] ?? 0);
+    return see > 0 ? "gana" : see === 0 ? "pareja" : "pierde";
   } catch { return null; }
 }
 
@@ -127,6 +152,63 @@ function backRankBoxedIn(fenAfter: string, playerColor: "w" | "b"): boolean {
     }
     return shield >= 2;
   } catch { return false; }
+}
+
+// Positional signals for the mover, picked by diagnosing which real moves were
+// falling through to the wildcard templates in two analysed games: pawn moves
+// in front of the castled king, retreats, and knights to the rim. Note this is
+// piece-specific on purpose — a rook on the h-file is normal play, a knight
+// there is not.
+function positionalFlags(
+  h: { piece: string; from: string; to: string },
+  moverWhite: boolean,
+  fenAfter: string,
+  prevTo: string | null,
+): {
+  weakensKingShield: boolean; retreats: boolean; knightToRim: boolean; givesKingLuft: boolean;
+  rookToOpenFile: boolean; rookToSeventh: boolean; doublesRooks: boolean; fianchetto: boolean;
+  isRecapture: boolean; kingToCenter: boolean;
+} {
+  const fromRank = Number(h.from[1]), toRank = Number(h.to[1]);
+  const forward = moverWhite ? toRank > fromRank : toRank < fromRank;
+  const homePawnRank = moverWhite ? 2 : 7;
+  const me: "w" | "b" = moverWhite ? "w" : "b";
+  const file = h.to[0];
+
+  let rookToOpenFile = false, doublesRooks = false, heavyPieces = 0;
+  try {
+    const b = new Chess(fenAfter);
+    if (h.piece === "r") {
+      // Open file = no pawns of either colour on it.
+      rookToOpenFile = !b.board().some((row) =>
+        row.some((sq) => sq && sq.type === "p" && sq.square[0] === file));
+      // Another friendly rook/queen already on the same file.
+      doublesRooks = b.board().some((row) =>
+        row.some((sq) => sq && sq.color === me && (sq.type === "r" || sq.type === "q")
+          && sq.square[0] === file && sq.square !== h.to));
+    }
+    for (const row of b.board()) {
+      for (const sq of row) if (sq && (sq.type === "q" || sq.type === "r" || sq.type === "b" || sq.type === "n")) heavyPieces++;
+    }
+  } catch { /* ignore */ }
+
+  return {
+    weakensKingShield:
+      h.piece === "p" && fromRank === homePawnRank && ["a", "b", "c", "f", "g", "h"].includes(h.from[0]),
+    retreats: h.piece !== "p" && h.piece !== "k" && !forward && fromRank !== toRank,
+    knightToRim: h.piece === "n" && (file === "a" || file === "h"),
+    // A king step along its own back rank is the classic "make luft" move.
+    givesKingLuft: h.piece === "k" && fromRank === toRank,
+    rookToOpenFile: rookToOpenFile && !doublesRooks,
+    rookToSeventh: h.piece === "r" && toRank === (moverWhite ? 7 : 2),
+    doublesRooks,
+    fianchetto: h.piece === "b" && [`b${moverWhite ? 2 : 7}`, `g${moverWhite ? 2 : 7}`].includes(h.to),
+    isRecapture: prevTo != null && prevTo === h.to,
+    // Centralising the king is CORRECT in an endgame, so only flag it while
+    // there's still real material on the board.
+    kingToCenter: h.piece === "k" && heavyPieces >= 6 && ["c", "d", "e", "f"].includes(file)
+      && (moverWhite ? toRank >= 3 : toRank <= 6),
+  };
 }
 
 // Two-pass analysis:
@@ -332,25 +414,13 @@ export async function analyzeGame(
   // No API key needed and no network call — so this can never be skipped or
   // rate-limited the way the old Groq path could.
 
-  // Only comment the TRACKED PLAYER's own moves. Every comment is written in
-  // "you played this" framing, and GameViewer deliberately shows it only for
-  // the player's own plies (an opponent move can't be "your" mistake) — so
-  // commenting both colors silently threw away half the budget: half the Groq
-  // calls AND half the deep engine searches produced text nothing ever renders.
-  // Filtering here doubles the comments the player actually sees at no extra
-  // cost. Falls back to commenting everything if played_as is unavailable, so
-  // an older/incomplete row degrades instead of losing all commentary.
-  let playerIsWhite: boolean | null = null;
-  try {
-    const { data: g } = await supabase.from("games").select("played_as").eq("id", gameId).single();
-    if (g?.played_as === "white") playerIsWhite = true;
-    else if (g?.played_as === "black") playerIsWhite = false;
-  } catch { /* keep null → comment both colors */ }
-  const isPlayerPly = (i: number) => playerIsWhite === null || (i % 2 === 0) === playerIsWhite;
-
+  // BOTH colours get commented. Every comment is written as advice to whoever
+  // made the move, so the same templates work for the opponent unchanged — the
+  // viewer just labels those "Tu oponente". Seeing the opponent's play judged
+  // by the same standard is what lets the player draw their own conclusions,
+  // and it's how chess.com's review reads too.
   const notable = moves
     .map((m, i) => ({ i, cls: m.classification, loss: m.centipawn_loss ?? 0 }))
-    .filter((m) => isPlayerPly(m.i))
     .filter((m) => (m.cls && EXPLAIN_CLASSES.has(m.cls)) || punishingBest.has(m.i))
     // Skip trivial inaccuracies (e.g. +3.5→+3.0): a comment there is just noise.
     .filter((m) => m.cls !== "inaccuracy" || m.loss >= 80);
@@ -561,7 +631,7 @@ export async function analyzeGame(
   const sanHistory = history.map((m) => m.san);
   const quietUpdates: { ply: number; text: string }[] = [];
   for (let i = 0; i < history.length; i++) {
-    if (!isPlayerPly(i) || richIdx.has(i)) continue;
+    if (richIdx.has(i)) continue;
     const h = history[i];
     const fenBefore = i === 0 ? new Chess().fen() : fens[i - 1];
     const moverWhite = i % 2 === 0;
@@ -599,6 +669,7 @@ export async function analyzeGame(
       tradeVerdict: tradeVerdictFor(fens[i], h),
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
+      ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null),
     });
     if (text) quietUpdates.push({ ply: i, text });
   }

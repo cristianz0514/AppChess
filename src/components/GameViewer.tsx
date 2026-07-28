@@ -890,11 +890,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             const curE = toMine(currentMove?.evaluation ?? null);
             const prevE = toMine(idx > 0 ? moves[idx - 1].evaluation : 0);
             // The AI explanation is always written in "your student" framing
-            // (see blunderDetector.ts's coachComment prompt) — showing it for
-            // the OPPONENT's move would wrongly claim "you" made it. Only use
-            // it for the tracked player's own moves; the opponent's moves
-            // always get the rule-based comment above, which is color-aware.
-            const ai = isMine ? (currentMove?.explanation ?? null) : null;
+            // Comments are written as advice to WHOEVER made the move, so the
+            // opponent's plies get the same templates — labelled so "you" is
+            // never ambiguous. Seeing their play judged by the same standard is
+            // what lets the player draw conclusions about the game as a whole.
+            const rawAi = currentMove?.explanation ?? null;
+            const ai = rawAi ? (isMine ? rawAi : `Tu oponente: ${rawAi}`) : null;
             let computed = c?.text ?? "";
             if (currentMove && c && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
               const swing = curE - prevE;

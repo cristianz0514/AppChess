@@ -78,6 +78,20 @@ export interface MoveFacts {
   // skewer, discovered attack). Naming it beats the "pierdes el hilo" wildcard:
   // it tells the player exactly what they walked into.
   allowsMotif?: Motif | null;
+  // Positional signals, chosen from a diagnosis of which real moves were
+  // falling through to the wildcards — not guessed. In two games the wildcard
+  // moves clustered on: pawn moves in front of the castled king, piece
+  // retreats, and knights going to the rim.
+  weakensKingShield?: boolean; // moved a pawn shielding your own castled king
+  retreats?: boolean;          // the piece moved backwards
+  knightToRim?: boolean;       // knight to the a- or h-file
+  givesKingLuft?: boolean;     // king step that opens an escape square
+  rookToOpenFile?: boolean;    // rook lands on a file with no pawns
+  rookToSeventh?: boolean;     // rook reaches the 7th/2nd rank
+  doublesRooks?: boolean;      // second rook joins the first on a file
+  fianchetto?: boolean;        // bishop to b2/g2/b7/g7
+  isRecapture?: boolean;       // retakes on the square just captured on
+  kingToCenter?: boolean;      // king wanders centre-ward outside the endgame
 }
 
 const ART: Record<string, string> = {
@@ -170,6 +184,26 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     ], s), namesMaterial: true };
   }
   if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
+  // King sidestep that opens an escape square — a real, nameable idea that was
+  // landing on "Jugada sólida" before.
+  if (f.givesKingLuft) return { text: pick([
+    `Le das aire a tu rey: ahora tiene casilla de escape.`,
+    `Mueves el rey a ${f.playedTo} y evitas sustos en la última fila.`,
+  ], s), namesMaterial: false };
+  if (f.retreats) return { text: pick([
+    `Repliegas ${art(f.playedPiece)} a ${f.playedTo} para reagrupar.`,
+    `Retiras ${art(f.playedPiece)} a ${f.playedTo}.`,
+  ], s), namesMaterial: false };
+  if (f.rookToSeventh) return { text: pick([
+    `Metes la torre en la séptima: desde ${f.playedTo} muerde los peones y encierra al rey.`,
+    `Torre a la séptima. Es la fila donde más daño hace.`,
+  ], s), namesMaterial: false };
+  if (f.doublesRooks) return { text: `Doblas las torres en la columna ${f.playedTo[0]}: juntas pesan mucho más.`, namesMaterial: false };
+  if (f.rookToOpenFile) return { text: pick([
+    `Colocas la torre en la columna ${f.playedTo[0]}, que está abierta.`,
+    `La torre toma la columna abierta ${f.playedTo[0]}.`,
+  ], s), namesMaterial: false };
+  if (f.fianchetto) return { text: `Fianchetto: el alfil a ${f.playedTo} apunta a la diagonal larga.`, namesMaterial: false };
   if (f.developsPiece) return { text: pick([
     `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
     `Sacas ${art(f.playedPiece)} a ${f.playedTo} y ganas actividad.`,
@@ -281,6 +315,41 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     ], s), namesMaterial: false };
   }
 
+  // Weakening the castled king's pawn cover — the most common positional
+  // error in the sample (4 of 17 wildcards, one of them a blunder).
+  if (f.weakensKingShield) {
+    return { text: pick([
+      `Adelantas un peón del escudo de tu rey y abres líneas hacia él.`,
+      `Ese avance debilita la cobertura de tu rey.`,
+    ], s), namesMaterial: false };
+  }
+
+  // King walking towards the middle while pieces are still on — different from
+  // the endgame, where centralising the king is correct.
+  if (f.kingToCenter) {
+    return { text: pick([
+      `Llevas el rey hacia el centro con piezas aún en juego: queda expuesto.`,
+      `El rey camina al centro demasiado pronto y se vuelve un blanco.`,
+    ], s), namesMaterial: false };
+  }
+
+  // A knight on the rim is dim — but only knights: a rook on the h-file is
+  // normal play, which is why this is piece-specific.
+  if (f.knightToRim) {
+    return { text: pick([
+      `El caballo en ${f.playedTo} queda en la banda, con pocas casillas útiles.`,
+      `Caballo a la banda: desde ${f.playedTo} controla muy poco.`,
+    ], s), namesMaterial: false };
+  }
+
+  // Retreating gives back tempo and activity.
+  if (f.retreats) {
+    return { text: pick([
+      `Retrocedes ${art(f.playedPiece)} y pierdes actividad.`,
+      `Volver atrás con ${art(f.playedPiece)} le regala un tiempo al rival.`,
+    ], s), namesMaterial: false };
+  }
+
   // Trapped piece: it still stands, but every square it can reach loses it.
   if (f.trappedPiece) {
     const tp = art(f.trappedPiece.piece);
@@ -334,12 +403,24 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
 // Skipped when slot A already named a concrete material loss: "pierdes la dama"
 // followed by "ahora el rival manda" states the obvious.
 function slotB(f: MoveFacts, aNamesMaterial: boolean): string | null {
-  if (f.good || aNamesMaterial) return null;
+  if (aNamesMaterial) return null;
   if (Math.abs(f.evalBefore) >= MATE_MAG || Math.abs(f.evalAfter) >= MATE_MAG) return null;
   const b = band(f.evalBefore), a = band(f.evalAfter);
   const wasGood = b === "mejor" || b === "ganando";
+  const wasBad = b === "peor" || b === "perdida";
+  const nowGood = a === "mejor" || a === "ganando";
   const nowBad = a === "peor" || a === "perdida";
   const s = f.variantSeed;
+
+  // Positive transitions. These were missing entirely, so a comeback — the
+  // most encouraging thing that can happen in a game — went unmentioned.
+  if (wasBad && nowGood) return pick(["Le das la vuelta a la partida: de estar peor pasas a mandar.", "Gran cambio de rumbo: venías peor y ahora tienes ventaja."], s);
+  if (wasBad && a === "igualada") return pick(["Recuperas: la partida vuelve a estar pareja.", "Enderezas la posición y queda igualada."], s);
+  if (b === "igualada" && nowGood) return pick(["Tomas la iniciativa desde una posición pareja.", "De estar igualado pasas a llevar la ventaja."], s);
+  if (b === "perdida" && a === "peor") return pick(["Sigues peor, pero la posición ya no está perdida.", "Reduces el daño: la partida deja de estar perdida."], s);
+
+  if (f.good) return null; // the rest describe losing ground
+
   if (b === "igualada" && nowBad) return pick(["Estaba parejo y ahora el rival toma la ventaja.", "De una posición igualada pasas a estar peor."], s);
   if (wasGood && a === "igualada") return pick(["Tenías ventaja y la dejas escapar: queda igualada.", "Se te va la ventaja y la partida se iguala."], s);
   if (wasGood && nowBad) return pick(["Ibas con ventaja y ahora estás peor.", "Pasas de mandar en la partida a estar en desventaja."], s);
