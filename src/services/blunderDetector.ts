@@ -519,7 +519,21 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
 //           the deep cost on all ~70 positions. Concentrates CPU where it matters.
 const SHALLOW_DEPTH = 12;
 const DEEP_DEPTH = 16;
-const MAX_DEEP_MOVES = 8;   // cap how many error positions we deepen
+// How many error positions get the deep re-evaluation that fixes a shallow
+// misjudgement.
+//
+// Stays at 8. Raising it to 12 was tried and measured against a reproducible
+// baseline: it cost 45s -> 56s (+24%) and changed exactly ONE classification,
+// Nbd2 from "good" to "inaccuracy". Checking that move independently showed the
+// detection isn't trustworthy — its loss is 46cp at depth 12, 58cp at depth 16 and
+// 42cp at depth 20, against a 50cp threshold. A DEEPER look puts it back at
+// "good", so the extra deepening bought a coin-flip on a borderline move, not a
+// finding.
+//
+// Third time in this project that "more compute = better comments" failed
+// measurement (see also DEEP_DEPTH 18 and the full 108MB net). The gains came
+// from board-reading CATEGORIES and from COVERAGE instead.
+const MAX_DEEP_MOVES = 8;
 
 function classify(centipawnLoss: number): MoveClassification {
   if (centipawnLoss < 10) return "best";
