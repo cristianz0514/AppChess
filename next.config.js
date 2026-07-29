@@ -17,6 +17,28 @@ const withPWA = require('next-pwa')({
 module.exports = withPWA({
   reactStrictMode: true,
   serverExternalPackages: ['stockfish'],
+
+  // Cross-origin isolation, which is what unlocks SharedArrayBuffer and
+  // therefore the MULTI-THREADED Stockfish builds. Without these two headers
+  // the browser can only ever run the single-threaded engine.
+  //
+  // COEP is `credentialless` rather than `require-corp` on purpose.
+  // `require-corp` would isolate a few more browsers, but it breaks any
+  // cross-origin subresource that doesn't send a CORP header — so the first
+  // external image or font added later would silently vanish. Every asset here
+  // is local today (checked), but `credentialless` means that stays a
+  // performance question instead of becoming a broken page. Where it isn't
+  // supported the app simply isn't isolated and picks a single-threaded build:
+  // slower, never broken.
+  async headers() {
+    return [{
+      source: '/:path*',
+      headers: [
+        { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+        { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+      ],
+    }]
+  },
   // The WASM must be traced into the bundle for every route that still runs the
   // engine SERVER-side. Full-game analysis moved to the browser (it loads the
   // engine from public/engine, copied there by scripts/copyEngine.cjs), but the

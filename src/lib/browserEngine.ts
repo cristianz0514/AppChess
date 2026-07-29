@@ -20,14 +20,19 @@ import {
   type CoachEngine, type EngineLine, type EvalResult,
   parseScore, parseMultiPvLine,
 } from "./engineApi";
-
-const ENGINE_URL = "/engine/stockfish-18-lite-single.js";
+import {
+  type BuildId, chooseBuild, fallbackAfter, markBuildFailed, threadsFor,
+} from "./engineBuild";
 
 interface Pending { onLine: (line: string) => void }
 
 let workerPromise: Promise<Worker> | null = null;
 let chain: Promise<unknown> = Promise.resolve();
 let current: Pending | null = null;
+let activeBuild: { id: BuildId; label: string; megabytes: number; threads: number } | null = null;
+
+/** Which build ended up running, for the UI to report honestly. */
+export const activeEngineBuild = () => activeBuild;
 
 /** Serialises every search: there is one engine, and UCI is a single conversation. */
 function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -38,35 +43,75 @@ function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
+/** Loads one specific build, or throws. */
+async function bootBuild(
+  file: string, megabytes: number, threads: number, hashMb: number,
+): Promise<Worker> {
+  const worker = new Worker(`/engine/${file}`);
+  worker.onmessage = (e: MessageEvent) => {
+    const line = typeof e.data === "string" ? e.data : "";
+    if (line) current?.onLine(line);
+  };
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      // The deadline scales with the download: 108MB over a slow-but-usable
+      // connection legitimately takes minutes, and killing it at 60s would
+      // demote a device that was going to succeed.
+      const budgetMs = 45000 + megabytes * 2000;
+      const timer = setTimeout(
+        () => reject(new Error(`El motor (${megabytes} MB) tardó demasiado en cargar`)),
+        budgetMs,
+      );
+      worker.onerror = (err) => { clearTimeout(timer); reject(new Error(`El motor falló al cargar: ${err.message}`)); };
+      current = {
+        onLine: (line) => {
+          if (line === "readyok") { clearTimeout(timer); current = null; resolve(); }
+        },
+      };
+      worker.postMessage("uci");
+      worker.postMessage(`setoption name Threads value ${threads}`);
+      worker.postMessage(`setoption name Hash value ${hashMb}`);
+      worker.postMessage("isready");
+    });
+  } catch (e) {
+    worker.terminate();
+    throw e;
+  }
+  return worker;
+}
+
 async function getWorker(): Promise<Worker> {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const worker = new Worker(ENGINE_URL);
-      worker.onmessage = (e: MessageEvent) => {
-        const line = typeof e.data === "string" ? e.data : "";
-        if (line) current?.onLine(line);
-      };
+      const { build, capabilities } = chooseBuild();
 
-      await new Promise<void>((resolve, reject) => {
-        // The .wasm is 7MB. On a cold cache over a slow connection this is the
-        // one genuinely slow step in the whole flow, so it gets a long fuse and
-        // a real error rather than a silent hang.
-        const timer = setTimeout(() => reject(new Error("El motor tardó demasiado en cargar")), 60000);
-        current = {
-          onLine: (line) => {
-            if (line === "readyok") { clearTimeout(timer); current = null; resolve(); }
-          },
-        };
-        worker.postMessage("uci");
-        worker.postMessage("setoption name Threads value 1");
-        // 64MB of hash, against 16 on the server. A bigger table means fewer
-        // repeated searches; we can afford it here because we're not sharing
-        // 512MB with the whole web app.
-        worker.postMessage("setoption name Hash value 64");
-        worker.postMessage("isready");
-      });
+      // Walk down from the chosen build. A capability check can be wrong or
+      // simply unavailable; a failed load cannot. So each failure is recorded
+      // and the next build down is tried, which is what makes shipping the
+      // 108MB net safe on devices that can't hold it.
+      let candidate: { id: BuildId; file: string; megabytes: number; threaded: boolean; label: string } | null = build;
+      let lastError: unknown = null;
 
-      return worker;
+      while (candidate) {
+        const threads = threadsFor(candidate, capabilities.cores);
+        // Hash scales with the build: the big net already occupies a lot, so a
+        // huge table on top of it is what tips a device into an OOM.
+        const hashMb = candidate.megabytes > 50 ? 128 : 64;
+        try {
+          const worker = await bootBuild(candidate.file, candidate.megabytes, threads, hashMb);
+          activeBuild = {
+            id: candidate.id, label: candidate.label,
+            megabytes: candidate.megabytes, threads,
+          };
+          return worker;
+        } catch (e) {
+          lastError = e;
+          markBuildFailed(candidate.id);
+          candidate = fallbackAfter(candidate.id);
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error("No se pudo cargar ningún motor");
     })();
     // A failed load must not be cached forever — let the next attempt retry.
     workerPromise.catch(() => { workerPromise = null; });

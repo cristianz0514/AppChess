@@ -16,7 +16,7 @@
 "use client";
 
 import { supabase } from "./supabase";
-import { browserEngine, warmUpEngine } from "./browserEngine";
+import { browserEngine, warmUpEngine, activeEngineBuild } from "./browserEngine";
 import { analyzeGame } from "@/services/blunderDetector";
 
 export interface AnalysisProgress {
@@ -51,9 +51,16 @@ export async function analyzeGameInBrowser(
 
   onProgress?.({ done: 0, total: 0, label: "Cargando el motor de ajedrez…" });
   // Surfaced separately because it's the one genuinely slow step on a cold
-  // cache (a 7MB WASM download) and it deserves its own honest label rather
-  // than a progress bar that sits at zero.
+  // cache — and with the full 108MB net in play it can be a long one, so the
+  // label names the size once it's known rather than leaving a bar at zero.
   await warmUpEngine();
+  const build = activeEngineBuild();
+  if (build) {
+    onProgress?.({
+      done: 0, total: 0,
+      label: `Motor ${build.label} (${build.megabytes} MB${build.threads > 1 ? `, ${build.threads} hilos` : ""}) listo`,
+    });
+  }
 
   const { data: game, error } = await supabase
     .from("games")

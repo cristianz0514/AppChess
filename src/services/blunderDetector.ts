@@ -14,17 +14,17 @@ import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
 
-// How many moves get a coach comment. Only the moves that matter (errors +
-// brilliant/great) — the ones an expert actually reads. The real cost per
-// comment is the ENGINE (two deep searches), not the text: comments are now
-// generated deterministically from templates, so there's no API quota or
-// latency attached to them at all.
-const MAX_EXPLAIN = 20;
+// How many moves get the ENGINE-GROUNDED comment tier (a deep re-evaluation plus
+// the top lines), as opposed to the board-reading tier every move already gets.
+// Raised from 20 now that the analysis runs on the user's own CPU instead of a
+// shared 0.1-core server — the cap was a budget imposed by hardware we no longer
+// depend on.
+const MAX_EXPLAIN = 30;
 // Depth for the coach lines. Both the plain eval and getTopLines KEEP the
 // deepest line they saw before the deadline, so a timeout costs depth rather
 // than producing nothing — the earlier worry about "empty lines" only applies if
 // the very first iteration doesn't land, which measurement showed doesn't happen.
-const EXPLAIN_DEPTH = 16;
+const EXPLAIN_DEPTH = 18;
 const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
 
 const PIECE_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
@@ -502,8 +502,8 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
 //  Pass 2 — a DEEP re-evaluation of only those few error positions (and the move
 //           before), so the important moments get strong analysis without paying
 //           the deep cost on all ~70 positions. Concentrates CPU where it matters.
-const SHALLOW_DEPTH = 12;
-const DEEP_DEPTH = 16;      // deep enough to be reliable, short enough not to freeze the free-tier CPU
+const SHALLOW_DEPTH = 14;
+const DEEP_DEPTH = 18;      // the browser's CPU affords this; the free tier did not
 const MAX_DEEP_MOVES = 8;   // cap how many error positions we deepen
 
 function classify(centipawnLoss: number): MoveClassification {
