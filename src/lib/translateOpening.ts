@@ -125,3 +125,32 @@ export function translateOpening(name: string | null | undefined): string {
   for (const [re, es] of WORDS) out = out.replace(re, es);
   return out;
 }
+
+/**
+ * Just the opening FAMILY, for interpolating into a sentence — or null.
+ *
+ * translateOpening() renders the full ECO name word-by-word, which is fine as a
+ * label in its own column and not Spanish inside a sentence: "Caro Kann Defense
+ * Advance Short Variation with 4 Nf3...e6" comes out "Defensa Caro-Kann Avance
+ * Corta Variante con 4 Nf3...e6".
+ *
+ * Trimming that string doesn't help either, because translation REORDERS the
+ * family word to the front in Spanish ("Defensa Caro-Kann"), so "everything up to
+ * the family word" is just "Defensa". Attempts at it produced "Defensa Escandinava
+ * Mieses" and "Ataque India de".
+ *
+ * So this doesn't parse anything. It returns the hand-written Spanish name from
+ * PROPER_NAMES when one matches, and null otherwise. Those strings are correct by
+ * construction because a human wrote them. Naming the opening is a nice touch, not
+ * a requirement — saying nothing beats saying "Ataque India de", and the caller
+ * already handles null by dropping the clause.
+ */
+export function openingFamily(name: string | null | undefined): string | null {
+  if (!name) return null;
+  for (const [re, es] of PROPER_NAMES) {
+    // The regexes are global, so lastIndex must not carry between calls.
+    re.lastIndex = 0;
+    if (re.test(name)) return es;
+  }
+  return null;
+}

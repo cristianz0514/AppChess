@@ -12,7 +12,7 @@ import { ruleOfTheSquare } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
 import { sideAccuracy } from "@/lib/accuracy";
-import { translateOpening } from "@/lib/translateOpening";
+import { openingFamily } from "@/lib/translateOpening";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -710,9 +710,11 @@ export async function analyzeGame(
   // opponent's.
   const { data: gameRow } = await supabase
     .from("games").select("played_as, opening").eq("id", gameId).single();
-  // Translated once here rather than per move: the same string is interpolated
-  // into at most one comment per game.
-  const openingName = gameRow?.opening ? translateOpening(gameRow.opening) : null;
+  // The FAMILY name, not the full ECO string: the full one translates
+  // word-by-word and doesn't read as Spanish inside a sentence. Null when we have
+  // no hand-written Spanish name, and the template drops the clause — saying
+  // nothing beats saying "Ataque India de".
+  const openingName = openingFamily(gameRow?.opening);
   const lossesByPly = moves.map((m) => m.centipawn_loss);
   const white = sideAccuracy(whiteEval, lossesByPly, "white");
   const black = sideAccuracy(whiteEval, lossesByPly, "black");
