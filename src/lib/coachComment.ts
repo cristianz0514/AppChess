@@ -68,6 +68,12 @@ export interface MoveFacts {
   toCenter?: boolean;        // lands on d4/e4/d5/e5
   gaveCheck?: boolean;
   isBook?: boolean;          // still inside a known opening line
+  // The LAST book move, plus the opening's Spanish name. chess.com marks this
+  // moment ("this is the last book move") and it's genuinely the most useful
+  // thing to say in an opening: it's where the player stops being carried by
+  // theory and starts making their own decisions.
+  isLastBookMove?: boolean;
+  openingName?: string | null;
   // Verdict on a capture: pure material arithmetic (what you take vs what the
   // recapture costs you). Turns "Capturas la torre en d4" — which describes
   // without teaching — into "un cambio parejo" / "y ganas material".
@@ -215,8 +221,32 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     where === "ganando" ? "con ventaja decisiva" : where === "mejor" ? "con ventaja" :
     where === "igualada" ? "en una posición equilibrada" : where === "peor" ? "aún en desventaja" :
     "en una posición muy difícil";
+  // `standing` reads after a verb ("quedas …"). Some templates lead with "La
+  // posición", and interpolating `standing` there produced "La posición sigue en
+  // una posición equilibrada" — the same doubled-noun seam we already fixed once
+  // for the trade templates and I reintroduced with a new variant. `state` is the
+  // adjectival form for those.
+  const state =
+    where === "ganando" ? "decidida a tu favor" : where === "mejor" ? "a tu favor" :
+    where === "igualada" ? "equilibrada" : where === "peor" ? "en tu contra" :
+    "muy difícil";
+  // "Sigues con ventaja" contradicts slot B whenever slot B is reporting that the
+  // position just CHANGED — you can't continue with an advantage you just gained.
+  // Found by sweeping all four fallback variants across all five bands, which is
+  // the only way this kind of seam between two independent slots shows up.
+  const shifted = band(f.evalBefore) !== where;
+  const stays = shifted ? "quedas" : "sigues";
 
   if (f.isBook) {
+    // Said once per game, on the move where theory runs out — not on all
+    // fourteen book moves, which would be noise.
+    if (f.isLastBookMove) {
+      const named = f.openingName ? ` Vienes de la ${f.openingName}.` : "";
+      return { text: pick([
+        `Última jugada de teoría.${named} A partir de aquí decides tú.`,
+        `Aquí se acaba el libro.${named} Lo que siga ya es tu propio plan.`,
+      ], s), namesMaterial: false };
+    }
     if (f.isCastle) return { text: `Jugada de libro: enrocas y pones el rey a salvo.`, namesMaterial: false };
     if (f.developsPiece) return { text: pick([
       `Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.`,
@@ -240,9 +270,15 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   if (f.capturedPiece) {
     const cp = art(f.capturedPiece);
     // A recapture is a different event from a capture: nothing new is won, the
-    // balance is restored. Saying "capturas la torre y ganas material" about a
-    // recapture overstates it — the material was already gone.
-    if (f.isRecapture && f.tradeVerdict !== "gana") return { text: pick([
+    // balance is restored. Saying "el caballo cae gratis" about a recapture is
+    // simply false — that piece was paid for on the previous move.
+    //
+    // No longer gated on the trade verdict. SEE looks at the square AFTER the
+    // recapture and often reports "gana", because by then nothing can take back;
+    // that made a routine retake read as winning a free piece (seen on cxd4
+    // completing an even knight trade). Being a recapture outranks what SEE says
+    // about the square.
+    if (f.isRecapture) return { text: pick([
       `Recuperas la pieza en ${f.playedTo}: el cambio queda saldado.`,
       `Retomas en ${f.playedTo} y el material vuelve a estar igual.`,
     ], s), namesMaterial: true };
@@ -416,32 +452,37 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   // saying about the position.
   if (f.passivePiece) {
     const pp = f.passivePiece;
+    // This observation is about a DIFFERENT piece than the one that moved, so it
+    // has to announce itself as an aside. Without the lead-in it read as a
+    // non-sequitur: you move a knight and the coach talks about your bishop.
+    // Naming the move first is what makes the remark land instead of confuse.
+    const aside = `${cap(art(f.playedPiece))} a ${f.playedTo}.`;
     if (pp.stillHome) return { text: pick([
-      `${cap(art(pp.piece))} de ${pp.square} sigue sin entrar en juego.`,
-      `Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
+      `${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} sigue sin entrar en juego.`,
+      `${aside} Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
     ], s), namesMaterial: false };
     if (pp.reason === "entombed") {
       return { text: pick([
-        `${cap(art(pp.piece))} de ${pp.square} está encerrado por tus propias piezas.`,
-        `${cap(art(pp.piece))} de ${pp.square} casi no tiene casillas: conviene darle aire.`,
+        `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} está encerrado por tus propias piezas.`,
+        `${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} casi no tiene casillas.`,
       ], s), namesMaterial: false };
     }
     return { text: pick([
-      `${cap(art(pp.piece))} de ${pp.square} está en un mal sitio: desde la banda controla muy poco.`,
-      `${cap(art(pp.piece))} de ${pp.square} pinta poco ahí; su lugar está más al centro.`,
+      `${aside} Aparte, ${art(pp.piece)} de ${pp.square} está en mal sitio: desde la banda controla muy poco.`,
+      `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} pinta poco ahí; su lugar está más al centro.`,
     ], s), namesMaterial: false };
   }
   // Phase modifier: in an endgame the same standing means something different to
   // the player, and naming the phase costs nothing since we already know it.
   if (f.isEndgame) return { text: pick([
-    `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final sigues ${standing}.`,
+    `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.`,
     `Jugada de final tranquila: quedas ${standing}.`,
   ], s), namesMaterial: false };
   return { text: pick([
-    `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
+    `${cap(art(f.playedPiece))} a ${f.playedTo}: ${stays} ${standing}.`,
     `Jugada sólida, quedas ${standing}.`,
-    `Jugada tranquila. La posición sigue ${standing}.`,
-    `${cap(art(f.playedPiece))} a ${f.playedTo} sin cambiar nada: ${standing}.`,
+    `Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.`,
+    `${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.`,
   ], s), namesMaterial: false };
 }
 
@@ -784,8 +825,15 @@ function slotB(f: MoveFacts, aNamesMaterial: boolean): string | null {
   if (b === "igualada" && nowBad) return pick(["Estaba parejo y ahora el rival toma la ventaja.", "De una posición igualada pasas a estar peor."], s);
   if (wasGood && a === "igualada") return pick(["Tenías ventaja y la dejas escapar: queda igualada.", "Se te va la ventaja y la partida se iguala."], s);
   if (wasGood && nowBad) return pick(["Ibas con ventaja y ahora estás peor.", "Pasas de mandar en la partida a estar en desventaja."], s);
+  // These two stay inside the same band, so unlike the transitions above they
+  // need the evaluation to have ACTUALLY worsened before claiming ground was
+  // lost. Without the check, a move that nudged the eval UP within "ganando"
+  // still read "desperdicias parte de la ventaja" — a flat contradiction of the
+  // number, and one that only surfaces when you sweep the bands rather than
+  // reading a single game.
+  const worsened = f.evalAfter < f.evalBefore - 0.05;
   if (b === "perdida" && a === "perdida") return pick(["Ya venías mal, así que esto no la decide, pero tampoco ayuda.", "La posición ya era difícil de antes."], s);
-  if (b === "ganando" && a === "ganando") return pick(["Sigues ganando, pero desperdicias parte de la ventaja.", "Aún ganas, aunque cediste terreno."], s);
+  if (b === "ganando" && a === "ganando" && worsened) return pick(["Sigues ganando, pero desperdicias parte de la ventaja.", "Aún ganas, aunque cediste terreno."], s);
   return null;
 }
 

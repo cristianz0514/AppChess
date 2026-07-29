@@ -12,6 +12,7 @@ import { ruleOfTheSquare } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
 import { sideAccuracy } from "@/lib/accuracy";
+import { translateOpening } from "@/lib/translateOpening";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -539,6 +540,9 @@ export async function analyzeGame(
   }
 
   const history = chess.history({ verbose: true });
+  // Hoisted here because BOTH comment tiers need it for the opening book, not
+  // just the later one where it used to be declared.
+  const sanHistory = history.map((m) => m.san);
   chess.reset();
 
   // Build FEN list for every position after each move
@@ -701,7 +705,10 @@ export async function analyzeGame(
   // gets the side that actually played worse, so the number is never silently the
   // opponent's.
   const { data: gameRow } = await supabase
-    .from("games").select("played_as").eq("id", gameId).single();
+    .from("games").select("played_as, opening").eq("id", gameId).single();
+  // Translated once here rather than per move: the same string is interpolated
+  // into at most one comment per game.
+  const openingName = gameRow?.opening ? translateOpening(gameRow.opening) : null;
   const lossesByPly = moves.map((m) => m.centipawn_loss);
   const white = sideAccuracy(whiteEval, lossesByPly, "white");
   const black = sideAccuracy(whiteEval, lossesByPly, "black");
@@ -941,6 +948,8 @@ export async function analyzeGame(
       developsPiece: (h.piece === "n" || h.piece === "b") && /[18]$/.test(h.from),
       toCenter: ["d4", "e4", "d5", "e5"].includes(h.to),
       gaveCheck: /\+/.test(h.san),
+      isLastBookMove: isBookMove(sanHistory, i) && !isBookMove(sanHistory, i + 1),
+      openingName,
       tradeVerdict: tradeVerdictFor(fens[i], h),
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
@@ -976,7 +985,6 @@ export async function analyzeGame(
   // fallback ("Equilibrio (+0.2).") on the other ~25, which read as if nothing
   // had changed.
   const richIdx = new Set(chosen);
-  const sanHistory = history.map((m) => m.san);
   const quietUpdates: { ply: number; text: string }[] = [];
   for (let i = 0; i < history.length; i++) {
     if (richIdx.has(i)) continue;
@@ -1014,6 +1022,9 @@ export async function analyzeGame(
       // never used for commentary — so four consecutive theory moves each got
       // "sacas la pieza y ganas actividad".
       isBook: isBookMove(sanHistory, i),
+      // The move where theory ends: book now, not book next.
+      isLastBookMove: isBookMove(sanHistory, i) && !isBookMove(sanHistory, i + 1),
+      openingName,
       tradeVerdict: tradeVerdictFor(fens[i], h),
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),

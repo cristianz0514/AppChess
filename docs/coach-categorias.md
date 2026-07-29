@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 70
-- **Variantes de texto:** 181
-- **Sin nombre humano todavía:** 6
+- **Categorías:** 71
+- **Variantes de texto:** 184
+- **Sin nombre humano todavía:** 7
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -37,6 +37,14 @@ _Bandera:_ `(varios)`
 ---
 
 ## Descriptivo (cualquier jugada)
+
+### openingName
+
+_Bandera:_ `openingName`
+
+1.  Vienes de la ${f.openingName}.
+2. Última jugada de teoría.${named} A partir de aquí decides tú.
+3. Aquí se acaba el libro.${named} Lo que siga ya es tu propio plan.
 
 ### Enroque
 
@@ -280,22 +288,22 @@ _Bandera:_ `dominantTerm`
 
 _Bandera:_ `passivePiece`
 
-1. ${cap(art(pp.piece))} de ${pp.square} sigue sin entrar en juego.
-2. Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
-3. ${cap(art(pp.piece))} de ${pp.square} está encerrado por tus propias piezas.
-4. ${cap(art(pp.piece))} de ${pp.square} casi no tiene casillas: conviene darle aire.
-5. ${cap(art(pp.piece))} de ${pp.square} está en un mal sitio: desde la banda controla muy poco.
-6. ${cap(art(pp.piece))} de ${pp.square} pinta poco ahí; su lugar está más al centro.
+1. ${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} sigue sin entrar en juego.
+2. ${aside} Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
+3. ${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} está encerrado por tus propias piezas.
+4. ${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} casi no tiene casillas.
+5. ${aside} Aparte, ${art(pp.piece)} de ${pp.square} está en mal sitio: desde la banda controla muy poco.
+6. ${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} pinta poco ahí; su lugar está más al centro.
 
 ### isEndgame
 
 _Bandera:_ `isEndgame`
 
-1. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final sigues ${standing}.
+1. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
 2. Jugada de final tranquila: quedas ${standing}.
 3. Jugada sólida, quedas ${standing}.
-4. Jugada tranquila. La posición sigue ${standing}.
-5. ${cap(art(f.playedPiece))} a ${f.playedTo} sin cambiar nada: ${standing}.
+4. Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.
+5. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
 
 ---
 
