@@ -157,6 +157,14 @@ export interface MoveFacts {
   // OPPORTUNITY for the player — and the search that finds it is already being
   // done: the punishment line for their error starts with the player's best move.
   byOpponent?: boolean;
+  // A piece of yours that was under attack and short of defenders, and that this
+  // move covered. Every material detector looked for pieces being LOST; none
+  // looked for pieces being SAVED, so quiet defensive moves fell through.
+  defendsAttacked?: { piece: string; square: string } | null;
+  // Two line pieces stacked on the same file, rank or diagonal. Included mainly
+  // because the queen had almost no categories at all — the only one was "brought
+  // her out too early".
+  battery?: { front: string; back: string } | null;
   // What the player can do about the opponent's mistake, read off that line.
   opportunity?: { piece: string; to: string; captures: string | null; isMate: boolean } | null;
   // Set on the PLAYER's move, about the opportunity the PREVIOUS ply created:
@@ -168,7 +176,7 @@ export interface MoveFacts {
   // Read from the engine's MAIN LINE rather than the position in front of us.
   // Naming the best move says what to play; naming its follow-up says why, and
   // "why" is the whole difference between a move list and coaching.
-  bestFollowUp?: string | null;    // ready-made clause, e.g. "y después te llevas la torre de d5"
+  bestFollowUp?: string | null;    // ready-made clause, e.g. `y después te llevas la torre de d5`
   bestLineForced?: boolean;        // the whole line is captures and checks
   bestLineWins?: { piece: string; square: string } | null;
   punishFollowUp?: string | null;  // what the opponent does after their first reply
@@ -193,12 +201,12 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 // from the word: "una horquilla" but "un pincho". A blanket `una ${label}`
 // produced "una pincho".
 const MOTIF_ART: Record<string, string> = {
-  horquilla: "una horquilla",
+  horquilla: `una horquilla`,
   clavada: "una clavada",
   pincho: "un pincho",
-  "ataque a la descubierta": "un ataque a la descubierta",
-  "doble amenaza": "una doble amenaza",
-  "doble amenaza con jaque": "una doble amenaza con jaque",
+  "ataque a la descubierta": `un ataque a la descubierta`,
+  "doble amenaza": `una doble amenaza`,
+  "doble amenaza con jaque": `una doble amenaza con jaque`,
 };
 const motifArt = (label: string) => MOTIF_ART[label] ?? `una ${label}`;
 
@@ -235,7 +243,7 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   const standing =
     where === "ganando" ? "con ventaja decisiva" : where === "mejor" ? "con ventaja" :
     where === "igualada" ? "en una posición equilibrada" : where === "peor" ? "aún en desventaja" :
-    "en una posición muy difícil";
+    `en una posición muy difícil`;
   // `standing` reads after a verb ("quedas …"). Some templates lead with "La
   // posición", and interpolating `standing` there produced "La posición sigue en
   // una posición equilibrada" — the same doubled-noun seam we already fixed once
@@ -341,6 +349,26 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     ], s), namesMaterial: false };
   }
 
+  // Defending a piece that was genuinely hanging is the POINT of the move, so it
+  // sits up here with the threats rather than below the shape-describing branches.
+  // Placed lower first, it fired once in 199 moves — "repliegas el alfil" and
+  // "torre a la columna abierta" kept winning, which describe how the move looks
+  // instead of what it achieved. Same priority mistake ownThreat had.
+  //
+  // Measured afterwards, and worth recording: over a real 42-move game the
+  // DETECTOR is true exactly twice, and both times the move is also a capture, so
+  // the capture branch above still wins and this doesn't render. That is correct —
+  // "Ganas el peón" is the headline and "also covered the knight" is a footnote.
+  // Do not promote this above captures because it appears never to fire; it is
+  // waiting for a genuinely defensive non-capturing move, which is its whole point.
+  if (f.defendsAttacked) {
+    const d = f.defendsAttacked;
+    return { text: pick([
+      `Defiendes ${art(d.piece)} de ${d.square}, que estaba atacado.`,
+      `Cubres ${art(d.piece)} de ${d.square} justo a tiempo.`,
+    ], s), namesMaterial: true };
+  }
+
   // ── Endgame ────────────────────────────────────────────────────────────────
   // The square rule outranks every other endgame remark because it's the only
   // one with a provable answer: the pawn either gets through or it doesn't.
@@ -441,6 +469,13 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
     `Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.`,
     `${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.`,
   ], s), namesMaterial: false };
+  if (f.battery) {
+    const b = f.battery;
+    return { text: pick([
+      `Formas una batería: ${art(b.front)} con ${art(b.back)} detrás, apuntando a la misma línea.`,
+      `${cap(art(b.front))} se apoya en ${art(b.back)}: dos piezas presionando la misma línea.`,
+    ], s), namesMaterial: false };
+  }
   if (f.supportsPawnChain) return { text: pick([
     `Refuerzas la cadena: el peón de ${f.playedTo} sostiene a su compañero.`,
     `El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.`,
@@ -830,16 +865,16 @@ function slotB(f: MoveFacts, aNamesMaterial: boolean): string | null {
 
   // Positive transitions. These were missing entirely, so a comeback — the
   // most encouraging thing that can happen in a game — went unmentioned.
-  if (wasBad && nowGood) return pick(["Le das la vuelta a la partida: de estar peor pasas a mandar.", "Gran cambio de rumbo: venías peor y ahora tienes ventaja."], s);
-  if (wasBad && a === "igualada") return pick(["Recuperas: la partida vuelve a estar pareja.", "Enderezas la posición y queda igualada."], s);
-  if (b === "igualada" && nowGood) return pick(["Tomas la iniciativa desde una posición pareja.", "De estar igualado pasas a llevar la ventaja."], s);
-  if (b === "perdida" && a === "peor") return pick(["Sigues peor, pero la posición ya no está perdida.", "Reduces el daño: la partida deja de estar perdida."], s);
+  if (wasBad && nowGood) return pick([`Le das la vuelta a la partida: de estar peor pasas a mandar.`, `Gran cambio de rumbo: venías peor y ahora tienes ventaja.`], s);
+  if (wasBad && a === "igualada") return pick([`Recuperas: la partida vuelve a estar pareja.`, `Enderezas la posición y queda igualada.`], s);
+  if (b === "igualada" && nowGood) return pick([`Tomas la iniciativa desde una posición pareja.`, `De estar igualado pasas a llevar la ventaja.`], s);
+  if (b === "perdida" && a === "peor") return pick([`Sigues peor, pero la posición ya no está perdida.`, `Reduces el daño: la partida deja de estar perdida.`], s);
 
   if (f.good) return null; // the rest describe losing ground
 
-  if (b === "igualada" && nowBad) return pick(["Estaba parejo y ahora el rival toma la ventaja.", "De una posición igualada pasas a estar peor."], s);
-  if (wasGood && a === "igualada") return pick(["Tenías ventaja y la dejas escapar: queda igualada.", "Se te va la ventaja y la partida se iguala."], s);
-  if (wasGood && nowBad) return pick(["Ibas con ventaja y ahora estás peor.", "Pasas de mandar en la partida a estar en desventaja."], s);
+  if (b === "igualada" && nowBad) return pick([`Estaba parejo y ahora el rival toma la ventaja.`, `De una posición igualada pasas a estar peor.`], s);
+  if (wasGood && a === "igualada") return pick([`Tenías ventaja y la dejas escapar: queda igualada.`, `Se te va la ventaja y la partida se iguala.`], s);
+  if (wasGood && nowBad) return pick([`Ibas con ventaja y ahora estás peor.`, `Pasas de mandar en la partida a estar en desventaja.`], s);
   // These two stay inside the same band, so unlike the transitions above they
   // need the evaluation to have ACTUALLY worsened before claiming ground was
   // lost. Without the check, a move that nudged the eval UP within "ganando"
@@ -847,8 +882,8 @@ function slotB(f: MoveFacts, aNamesMaterial: boolean): string | null {
   // number, and one that only surfaces when you sweep the bands rather than
   // reading a single game.
   const worsened = f.evalAfter < f.evalBefore - 0.05;
-  if (b === "perdida" && a === "perdida") return pick(["Ya venías mal, así que esto no la decide, pero tampoco ayuda.", "La posición ya era difícil de antes."], s);
-  if (b === "ganando" && a === "ganando" && worsened) return pick(["Sigues ganando, pero desperdicias parte de la ventaja.", "Aún ganas, aunque cediste terreno."], s);
+  if (b === "perdida" && a === "perdida") return pick([`Ya venías mal, así que esto no la decide, pero tampoco ayuda.`, `La posición ya era difícil de antes.`], s);
+  if (b === "ganando" && a === "ganando" && worsened) return pick([`Sigues ganando, pero desperdicias parte de la ventaja.`, `Aún ganas, aunque cediste terreno.`], s);
   return null;
 }
 
@@ -976,46 +1011,143 @@ function opportunityOutcome(f: MoveFacts): string | null {
 function opponentSlip(f: MoveFacts): string {
   const s = f.variantSeed;
   if (f.classification === "blunder") {
-    return pick(["El rival comete un error grave.", "Error grave del rival."], s);
+    return pick([`El rival comete un error grave.`, `Error grave del rival.`], s);
   }
   if (f.classification === "mistake") {
-    return pick(["El rival se equivoca.", "Fallo del rival."], s);
+    return pick([`El rival se equivoca.`, `Fallo del rival.`], s);
   }
-  return pick(["El rival no juega lo más preciso.", "Imprecisión del rival."], s);
+  return pick([`El rival no juega lo más preciso.`, `Imprecisión del rival.`], s);
 }
 
 export function composeCoachComment(f: MoveFacts): string | null {
+  // The opponent's plies are handled FIRST and never fall through to the
+  // player-voiced templates below. Keeping this branch at the top is what makes
+  // "the text is always addressed to the player" a property of the structure
+  // rather than something each template has to remember — an earlier version put
+  // the mate case above this check, and an opponent's checkmate came out as
+  // "Tu oponente: ¡Jaque mate! El caballo remata en f7", which reads as the
+  // player's own mate wearing a label.
+  if (f.byOpponent) {
+    const opportunity = opportunityClause(f);
+    // Their mistake, plus what to do about it.
+    if (opportunity) return `${opponentSlip(f)} ${opportunity}`;
+    return opponentQuietComment(f);
+  }
+
   const a = slotA(f);
   if (!a) return null;
-  if (f.isMate && f.evalAfter > 0) return voice(f, a.text);
-
-  // An opponent mistake with something to do about it: state the slip in the
-  // third person and spend the sentence on the player's move.
-  const opportunity = f.byOpponent ? opportunityClause(f) : null;
-  if (opportunity) return `${opponentSlip(f)} ${opportunity}`;
+  if (f.isMate && f.evalAfter > 0) return a.text;
 
   const b = slotB(f, a.namesMaterial);
-  const c = f.byOpponent ? null : slotC(f, a.usedBestMotif ?? false);
+  const c = slotC(f, a.usedBestMotif ?? false);
   // The outcome of the previous move's opportunity outranks the generic "how the
   // game changed" line: "se te escapó la torre" is the more useful second half.
   const outcome = opportunityOutcome(f);
   const second = outcome ?? c ?? b;
-  return voice(f, second ? `${a.text} ${second}` : a.text);
+  return second ? `${a.text} ${second}` : a.text;
 }
 
 /**
- * Puts the finished comment in the right voice.
+ * The opponent's quiet move, in the third person and from the player's side.
  *
- * Centralised here because it used to live in GameViewer, which prefixed "Tu
- * oponente: " onto every comment for a move the player didn't make. That breaks
- * the moment the text is already written from the player's side — it would read
- * "Tu oponente: El rival deja el alfil colgado, puedes capturarlo". Only the
- * composer knows whether a given comment still needs the label.
+ * The alternative was rendering all 31 second-person verbs in quietComment in two
+ * voices, which doubles every template and the catalogue with it, or transforming
+ * them with a regex — and Spanish 2nd→3rd person is only regular for the verb
+ * ending. It breaks on reflexives ("te llevas" → "se lleva") and on possessives
+ * ("tu estructura" means the OPPONENT's here, "del rival" means the PLAYER's), so a
+ * substitution would confidently produce wrong Spanish. That's the failure mode
+ * this whole design exists to avoid.
+ *
+ * So this is a small purpose-built set instead. A quiet move by the OTHER player is
+ * low-information by definition; what the player needs is what it did to them. Two
+ * things are worth more here than any wording of "develops a piece":
+ *
+ *   • their THREAT. ownThreat on their ply is a threat against the PLAYER, and it
+ *     was previously rendered as "Ahora amenazas la torre de d5" under a "Tu
+ *     oponente:" label — technically parseable, useless as a warning.
+ *   • material actually changing hands.
+ *
+ * Everything else falls through to naming the move, which is always true.
  */
-function voice(f: MoveFacts, text: string): string {
-  if (!f.byOpponent) return text;
-  // Reached only for opponent moves with no opportunity attached — a quiet move,
-  // or an error the engine tier didn't reach. The text is still advice to the
-  // mover, so the label is what keeps "you" unambiguous.
-  return `Tu oponente: ${text}`;
+function opponentQuietComment(f: MoveFacts): string {
+  const s = f.variantSeed;
+  const piece = art(f.playedPiece);
+  const to = f.playedTo;
+
+  // A threat against the player outranks everything else on a quiet move.
+  if (f.ownThreat) {
+    const t = f.ownThreat;
+    if (t.kind === "mate") return `¡Cuidado! El rival amenaza mate en ${t.square}.`;
+    // "tu", not "el": the threatened piece belongs to the player, and "va contra
+    // el alfil de d3" leaves it ambiguous whose bishop is in danger.
+    const mine = art(t.piece).replace(/^(el|la) /, (m) => (m === "el " ? "tu " : "tu "));
+    return pick([
+      `Cuidado: el rival amenaza ${mine} de ${t.square}.`,
+      `Ojo, ahora va contra ${mine} de ${t.square}.`,
+    ], s);
+  }
+
+  if (f.isMate) return `El rival da jaque mate con ${piece} en ${to}.`;
+  if (f.gaveCheck) return `El rival da jaque con ${piece} en ${to}.`;
+
+  if (f.capturedPiece) {
+    const cp = art(f.capturedPiece);
+    if (f.isRecapture) return `El rival recupera en ${to}: el cambio queda saldado.`;
+    if (f.tradeVerdict === "gana") return `El rival se lleva ${cp} de ${to} y gana material.`;
+    if (f.tradeVerdict === "pareja") return `El rival cambia ${cp} en ${to}: un cambio parejo.`;
+    return `El rival captura ${cp} en ${to}.`;
+  }
+
+  if (f.isPromotion) return `El rival corona en ${to}.`;
+  if (f.isCastle) return `El rival enroca y pone su rey a salvo.`;
+  if (f.isBook) {
+    return f.isLastBookMove
+      ? "Aquí se acaba la teoría también para el rival."
+      : `El rival sigue la teoría: ${piece} a ${to}.`;
+  }
+  // ── The same structural detectors, worded from the player's side ────────────
+  // Written out rather than transformed: possessives change owner between the two
+  // voices ("tu estructura" is the OPPONENT's here, "el rival" is the PLAYER), and
+  // that's precisely what a substitution gets wrong while looking right.
+  //
+  // These exist because the first version of this function fell straight through
+  // to "El alfil del rival va a f5" for anything without a capture — 7 of 21
+  // opponent comments became pure filler, which is worse than the ambiguity it
+  // replaced. The detectors were already firing; only the wording was missing.
+
+  // Their threats and gains against the player: warnings.
+  if (f.attacksBigger) return `El rival ataca ${art(f.attacksBigger)} con ${piece} en ${to}.`;
+  if (f.theirKingWorse) return `El rival suma presión sobre tu rey con ${piece} en ${to}.`;
+  if (f.rookToSeventh) return `El rival mete la torre en tu séptima fila, donde más muerde.`;
+  if (f.structure?.createdPassed) return `El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.`;
+  if (f.structure?.brokeTheirStructure) return `Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.`;
+
+  // Their position improving: worth knowing, not alarming.
+  if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.`;
+  if (f.battery) return `El rival forma una batería con ${art(f.battery.front)} y ${art(f.battery.back)} en la misma línea.`;
+  if (f.outpost) return `El rival instala ${piece} en ${to}: ningún peón tuyo puede echarlo.`;
+  if (f.doublesRooks) return `El rival dobla las torres en la columna ${to[0]}.`;
+  if (f.rookToOpenFile) return `El rival toma la columna abierta ${to[0]} con la torre.`;
+  if (f.rookToSemiOpen) return `El rival pone la torre en la columna ${to[0]}, semiabierta.`;
+  if (f.knightToCenter) return `El rival centraliza el caballo en ${to}.`;
+  if (f.fianchetto) return `Fianchetto del rival: el alfil a ${to}, sobre la diagonal larga.`;
+  if (f.pawnBreak) return `Ruptura del rival: el peón de ${to} golpea tu estructura.`;
+  if (f.supportsPawnChain) return `El rival apuntala su cadena con el peón de ${to}.`;
+  if (f.pawnRunsToPromote) return `El peón pasado del rival avanza a ${to}. Hay que frenarlo.`;
+  if (f.kingActivates) return `El rival activa su rey hacia ${to}: en el final es una pieza más.`;
+  if (f.connectsRooks) return `El rival conecta sus torres.`;
+
+  // Their position getting worse without being an outright error: openings for you.
+  if (f.weakensKingShield) return `El rival adelanta un peón de su escudo y abre líneas hacia su rey.`;
+  if (f.knightToRim) return `El caballo del rival se va a la banda en ${to}: desde ahí controla poco.`;
+  if (f.movesPieceTwice) return `El rival mueve otra vez ${piece} en vez de desarrollar.`;
+  if (f.queenOutEarly) return `El rival saca la dama pronto: puedes ganar tiempos atacándola.`;
+  if (f.retreats) return `El rival repliega ${piece} a ${to}.`;
+  if (f.developsPiece) return `El rival pone ${piece} en juego desde ${to}.`;
+  if (f.toCenter) return `El rival ocupa el centro con ${piece} en ${to}.`;
+
+  return pick([
+    `El rival juega ${piece} a ${to}.`,
+    `${cap(piece)} del rival va a ${to}.`,
+  ], s);
 }

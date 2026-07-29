@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
 import { composeCoachComment, type Motif } from "@/lib/coachComment";
 import { isBookPosition } from "@/lib/openingBook";
-import { overloadedDefender, underDefended } from "@/lib/attackMap";
+import { overloadedDefender, underDefended, defendsAttacked, batteryCreated } from "@/lib/attackMap";
 import { structureChange, pawnStructure } from "@/lib/pawnStructure";
 import { dominantChange, pressureOnOpponent } from "@/lib/evalTerms";
 import { ignoredThreat, ownThreat } from "@/lib/threats";
@@ -478,7 +478,7 @@ function endgameFlags(
 // the eval-term decomposition. Grouped in one helper because both comment tiers
 // need exactly the same set, and last time they drifted apart the deep tier —
 // the one covering the WORST moves — silently lost its positional vocabulary.
-function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: boolean) {
+function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: boolean, movedTo: string) {
   const me = moverWhite ? "w" : "b";
   try {
     const ud = underDefended(fenAfter, me)
@@ -491,6 +491,14 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
       structure: structureChange(fenBefore, fenAfter, me),
       dominantTerm: dom ? { term: dom.term, delta: dom.delta } : null,
       theirKingWorse: pressureOnOpponent(fenBefore, fenAfter, me).theirKingWorse,
+      defendsAttacked: (() => {
+        const d = defendsAttacked(fenBefore, fenAfter, me);
+        return d ? { piece: PIECE_ES[d.piece] ?? "pieza", square: d.square } : null;
+      })(),
+      battery: (() => {
+        const b = batteryCreated(fenAfter, movedTo, me);
+        return b ? { front: PIECE_ES[b.front] ?? "pieza", back: PIECE_ES[b.back] ?? "pieza" } : null;
+      })(),
       ignoredThreat: (() => {
         const t = ignoredThreat(fenBefore, fenAfter, me);
         return t ? { kind: t.kind, piece: PIECE_ES[t.piece] ?? "pieza", square: t.square } : null;
@@ -508,6 +516,7 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
     return {
       underDefended: null, overloaded: null, structure: null, dominantTerm: null,
       theirKingWorse: false, ignoredThreat: null, ownThreat: null,
+      defendsAttacked: null, battery: null,
     };
   }
 }
@@ -1052,7 +1061,7 @@ export async function analyzeGame(
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...viewpointFacts(i),
-      ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
+      ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite, h.to),
       ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     });
@@ -1127,7 +1136,7 @@ export async function analyzeGame(
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
       ...viewpointFacts(i),
-      ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
+      ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite, h.to),
       ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     });

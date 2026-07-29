@@ -179,3 +179,88 @@ export function kingRingPressure(fen: string, color: Color): number {
   }
   return pressure;
 }
+
+/**
+ * A piece of the mover's that WAS under attack and short of defenders, and now
+ * isn't — because this move defended it.
+ *
+ * "Defiendes el caballo de f6, que estaba atacado" is one of the most ordinary
+ * things a coach says, and the analysis had no way to say it: every material
+ * detector looked for pieces being LOST, none for pieces being saved. Quiet
+ * defensive moves are exactly what was falling through to "jugada sólida".
+ *
+ * Requires the piece to have been genuinely at risk before (attacked, and either
+ * undefended or outnumbered) so that routine moves don't claim to have rescued
+ * something that was never in danger.
+ */
+export function defendsAttacked(
+  fenBefore: string, fenAfter: string, color: Color,
+): { piece: string; square: string } | null {
+  try {
+    const before = buildAttackMap(fenBefore);
+    const after = buildAttackMap(fenAfter);
+    const enemy: Color = color === "w" ? "b" : "w";
+
+    for (const p of piecesOf(fenAfter, color)) {
+      if (p.type === "k" || p.type === "p") continue;   // pawns aren't worth the sentence
+      const attBefore = attackersOf(before, p.square, enemy).length;
+      if (attBefore === 0) continue;
+      const defBefore = attackersOf(before, p.square, color).length;
+      const wasAtRisk = defBefore === 0 || attBefore > defBefore;
+      if (!wasAtRisk) continue;
+
+      const attAfter = attackersOf(after, p.square, enemy).length;
+      const defAfter = attackersOf(after, p.square, color).length;
+      // Still on the board, still attacked, but now covered.
+      if (attAfter > 0 && defAfter >= attAfter) return { piece: p.type, square: p.square };
+    }
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * A battery created by this move: two of the mover's line pieces stacked on the
+ * same file, rank or diagonal, so the front one is backed by the one behind.
+ *
+ * Named because it's a real idea a club player can act on, and because queen
+ * moves were almost entirely uncovered — the only queen category was "brought her
+ * out too early". Rook-on-rook is already handled by doublesRooks, so this covers
+ * the queen pairings.
+ */
+export function batteryCreated(
+  fenAfter: string, movedTo: string, color: Color,
+): { front: string; back: string } | null {
+  try {
+    const pieces = piecesOf(fenAfter, color);
+    const moved = pieces.find((p) => p.square === movedTo);
+    if (!moved || !["q", "r", "b"].includes(moved.type)) return null;
+
+    const f = movedTo.charCodeAt(0) - 97, r = Number(movedTo[1]);
+    const straight = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const diagonal = [[1, 1], [1, -1], [-1, -1], [-1, 1]];
+    // A rook only batteries along ranks and files, a bishop only along diagonals,
+    // a queen along both — checking the wrong rays would invent alignments.
+    const rays = moved.type === "r" ? straight : moved.type === "b" ? diagonal : [...straight, ...diagonal];
+
+    const at = new Map(pieces.map((p) => [p.square, p]));
+    const enemyOccupied = new Set(piecesOf(fenAfter).filter((p) => p.color !== color).map((p) => p.square));
+
+    for (const [df, dr] of rays) {
+      for (let i = 1; i < 8; i++) {
+        const cf = f + df * i, cr = r + dr * i;
+        if (cf < 0 || cf > 7 || cr < 1 || cr > 8) break;
+        const sq = `${FILES[cf]}${cr}`;
+        if (enemyOccupied.has(sq)) break;             // an enemy piece blocks the line
+        const own = at.get(sq);
+        if (!own) continue;
+        const isStraight = df === 0 || dr === 0;
+        // The partner must be able to move along THIS kind of line too.
+        const partnerFits = own.type === "q"
+          || (isStraight && own.type === "r")
+          || (!isStraight && own.type === "b");
+        return partnerFits ? { front: moved.type, back: own.type } : null;
+      }
+    }
+    return null;
+  } catch { return null; }
+}

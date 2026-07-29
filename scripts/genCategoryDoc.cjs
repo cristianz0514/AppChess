@@ -86,10 +86,17 @@ const lines = src.split(/\r?\n/);
 // Which function we're inside tells us the tier, which is what the reader needs
 // to know: an error-tier line only ever appears on a bad move.
 const TIERS = {
-  quietComment: "Descriptivo (cualquier jugada)",
-  slotA: "Ranura A — qué pasó",
-  slotB: "Ranura B — cómo cambió la partida",
-  slotC: "Ranura C — qué era mejor",
+  quietComment: "Tus jugadas — descriptivo",
+  slotA: "Tus jugadas — ranura A: qué pasó",
+  slotB: "Tus jugadas — ranura B: cómo cambió la partida",
+  slotC: "Tus jugadas — ranura C: qué era mejor",
+  // The opponent's plies go through their own functions, in the third person and
+  // from the player's side. Without these entries they all landed under
+  // "(auxiliar)", which described the file's structure incorrectly.
+  opponentQuietComment: "Jugadas del rival — descriptivo",
+  opponentSlip: "Jugadas del rival — su fallo",
+  opportunityClause: "Jugadas del rival — tu oportunidad",
+  opportunityOutcome: "Tus jugadas — ¿aprovechaste la oportunidad?",
 };
 
 const rows = [];
@@ -99,15 +106,25 @@ let category = "";
 for (const raw of lines) {
   const line = raw.trim();
 
-  const fn = line.match(/^function (quietComment|slotA|slotB|slotC)\b/);
+  const fn = line.match(
+    /^function (quietComment|slotA|slotB|slotC|opponentQuietComment|opponentSlip|opportunityClause|opportunityOutcome)\b/,
+  );
   if (fn) { tier = TIERS[fn[1]]; category = ""; continue; }
 
   // `if (f.foo)` / `if (f.foo?.bar)` / `const x = f.foo` all mark a new category.
   const cond = line.match(/^(?:if \(|.*\b(?:const|let) \w+ = )f\.(\w+)/);
   if (cond) category = cond[1];
 
-  // Template literals are the sentences themselves. Skip anything that isn't
-  // Spanish prose (helper expressions, key names).
+  // Comment lines hold EXAMPLES of templates, not templates. That's how "Capturas
+  // la torre en d4" and "pierdes el hilo" — both quoted inside explanatory
+  // comments — ended up listed as if they were live variants.
+  if (/^\s*(\/\/|\*)/.test(raw)) continue;
+
+  // Backticks only. Also extracting double-quoted strings looked like the way to
+  // catch sentences without interpolation, but the regex matched ACROSS adjacent
+  // literals (`pick(["A", "B"], s)` yielded the code between them). The fix
+  // belongs in the source instead: every coach sentence is a template literal,
+  // interpolated or not.
   for (const m of raw.matchAll(/`([^`]*\$\{[^`]*|[^`]{12,})`/g)) {
     const text = m[1];
     if (!/[a-záéíóúñ] [a-záéíóúñ]/i.test(text)) continue;   // needs at least two words

@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 74
-- **Variantes de texto:** 197
-- **Sin nombre humano todavía:** 10
+- **Categorías:** 112
+- **Variantes de texto:** 269
+- **Sin nombre humano todavía:** 18
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -31,12 +31,271 @@ va solo.
 
 _Bandera:_ `(varios)`
 
-1. podías capturar ${art(m.piece)} de ${m.square}, que estaba sin defensa
-2. había una pieza sin defensa
+1. y después te llevas la torre de d5
+2. una horquilla
+3. un ataque a la descubierta
+4. una doble amenaza
+5. una doble amenaza con jaque
+6. podías capturar ${art(m.piece)} de ${m.square}, que estaba sin defensa
+7. había una pieza sin defensa
 
 ---
 
-## Descriptivo (cualquier jugada)
+## Jugadas del rival — descriptivo
+
+### Amenaza propia creada (null-move)
+
+_Bandera:_ `ownThreat`
+
+1. ¡Cuidado! El rival amenaza mate en ${t.square}.
+2. Cuidado: el rival amenaza ${mine} de ${t.square}.
+3. Ojo, ahora va contra ${mine} de ${t.square}.
+
+### Jaque mate ejecutado
+
+_Bandera:_ `isMate`
+
+1. El rival da jaque mate con ${piece} en ${to}.
+
+### Jaque
+
+_Bandera:_ `gaveCheck`
+
+1. El rival da jaque con ${piece} en ${to}.
+
+### isRecapture
+
+_Bandera:_ `isRecapture`
+
+1. El rival recupera en ${to}: el cambio queda saldado.
+
+### Veredicto del cambio (gana / parejo / pierde)
+
+_Bandera:_ `tradeVerdict`
+
+1. El rival se lleva ${cp} de ${to} y gana material.
+2. El rival cambia ${cp} en ${to}: un cambio parejo.
+3. El rival captura ${cp} en ${to}.
+
+### Coronación
+
+_Bandera:_ `isPromotion`
+
+1. El rival corona en ${to}.
+
+### Enroque
+
+_Bandera:_ `isCastle`
+
+1. El rival enroca y pone su rey a salvo.
+
+### Jugada de libro (apertura)
+
+_Bandera:_ `isBook`
+
+1. El rival sigue la teoría: ${piece} a ${to}.
+
+### Ataca una pieza mayor (gana tiempo)
+
+_Bandera:_ `attacksBigger`
+
+1. El rival ataca ${art(f.attacksBigger)} con ${piece} en ${to}.
+
+### Presión sobre el rey rival
+
+_Bandera:_ `theirKingWorse`
+
+1. El rival suma presión sobre tu rey con ${piece} en ${to}.
+
+### Torre a la séptima
+
+_Bandera:_ `rookToSeventh`
+
+1. El rival mete la torre en tu séptima fila, donde más muerde.
+
+### Estructura de peones
+
+_Bandera:_ `structure`
+
+1. El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.
+2. Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.
+
+### defendsAttacked
+
+_Bandera:_ `defendsAttacked`
+
+1. El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.
+
+### battery
+
+_Bandera:_ `battery`
+
+1. El rival forma una batería con ${art(f.battery.front)} y ${art(f.battery.back)} en la misma línea.
+
+### Puesto avanzado
+
+_Bandera:_ `outpost`
+
+1. El rival instala ${piece} en ${to}: ningún peón tuyo puede echarlo.
+
+### Torres dobladas
+
+_Bandera:_ `doublesRooks`
+
+1. El rival dobla las torres en la columna ${to[0]}.
+
+### Torre a columna abierta
+
+_Bandera:_ `rookToOpenFile`
+
+1. El rival toma la columna abierta ${to[0]} con la torre.
+
+### Torre a columna semiabierta
+
+_Bandera:_ `rookToSemiOpen`
+
+1. El rival pone la torre en la columna ${to[0]}, semiabierta.
+
+### Caballo centralizado
+
+_Bandera:_ `knightToCenter`
+
+1. El rival centraliza el caballo en ${to}.
+
+### Fianchetto
+
+_Bandera:_ `fianchetto`
+
+1. Fianchetto del rival: el alfil a ${to}, sobre la diagonal larga.
+
+### Ruptura de peones
+
+_Bandera:_ `pawnBreak`
+
+1. Ruptura del rival: el peón de ${to} golpea tu estructura.
+
+### Refuerza la cadena de peones
+
+_Bandera:_ `supportsPawnChain`
+
+1. El rival apuntala su cadena con el peón de ${to}.
+
+### Peón pasado avanzando
+
+_Bandera:_ `pawnRunsToPromote`
+
+1. El peón pasado del rival avanza a ${to}. Hay que frenarlo.
+
+### Rey activo en el final
+
+_Bandera:_ `kingActivates`
+
+1. El rival activa su rey hacia ${to}: en el final es una pieza más.
+
+### Torres conectadas
+
+_Bandera:_ `connectsRooks`
+
+1. El rival conecta sus torres.
+
+### Debilita el escudo del rey
+
+_Bandera:_ `weakensKingShield`
+
+1. El rival adelanta un peón de su escudo y abre líneas hacia su rey.
+
+### Caballo a la banda
+
+_Bandera:_ `knightToRim`
+
+1. El caballo del rival se va a la banda en ${to}: desde ahí controla poco.
+
+### Mueve la misma pieza dos veces
+
+_Bandera:_ `movesPieceTwice`
+
+1. El rival mueve otra vez ${piece} en vez de desarrollar.
+
+### Dama fuera demasiado pronto
+
+_Bandera:_ `queenOutEarly`
+
+1. El rival saca la dama pronto: puedes ganar tiempos atacándola.
+
+### Repliegue de pieza
+
+_Bandera:_ `retreats`
+
+1. El rival repliega ${piece} a ${to}.
+
+### Desarrolla una pieza
+
+_Bandera:_ `developsPiece`
+
+1. El rival pone ${piece} en juego desde ${to}.
+
+### Ocupa el centro
+
+_Bandera:_ `toCenter`
+
+1. El rival ocupa el centro con ${piece} en ${to}.
+2. El rival juega ${piece} a ${to}.
+3. ${cap(piece)} del rival va a ${to}.
+
+---
+
+## Jugadas del rival — su fallo
+
+### Genérico por clasificación
+
+_Bandera:_ `classification`
+
+1. El rival comete un error grave.
+2. Error grave del rival.
+3. El rival se equivoca.
+4. Fallo del rival.
+5. El rival no juega lo más preciso.
+6. Imprecisión del rival.
+
+---
+
+## Jugadas del rival — tu oportunidad
+
+### variantSeed
+
+_Bandera:_ `variantSeed`
+
+1. Tienes mate con ${art(o.piece)} en ${o.to}.
+2. Puedes capturar en ${o.to} con ${art(o.piece)}.
+3. Puedes llevarte ${art(o.captures)} con ${art(o.piece)} a ${o.to}.
+4. Ahí tienes ${art(o.captures)} de ${o.to}.
+5. Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}.
+6. Tu oportunidad: ${art(o.piece)} a ${o.to}.
+7. Aprovéchalo con ${art(o.piece)} a ${o.to}.
+
+---
+
+## Tus jugadas — ¿aprovechaste la oportunidad?
+
+### tookOpportunity
+
+_Bandera:_ `tookOpportunity`
+
+1. Lo viste y lo aprovechaste.
+2. Bien: era exactamente la jugada.
+3. Aprovechada. Esa era.
+4. Se te escapó: podías ${what}.
+5. Ahí estaba la oportunidad: ${what}.
+
+---
+
+## Tus jugadas — descriptivo
+
+### variantSeed
+
+_Bandera:_ `variantSeed`
+
+1. en una posición muy difícil
 
 ### openingName
 
@@ -120,6 +379,13 @@ _Bandera:_ `ownThreat`
 2. Ahora amenazas ${art(ot.piece)} de ${ot.square}.
 3. La jugada arma una amenaza: ${art(ot.piece)} de ${ot.square} está en el aire.
 4. Con esto pones ${art(ot.piece)} de ${ot.square} en el punto de mira.
+
+### defendsAttacked
+
+_Bandera:_ `defendsAttacked`
+
+1. Defiendes ${art(d.piece)} de ${d.square}, que estaba atacado.
+2. Cubres ${art(d.piece)} de ${d.square} justo a tiempo.
 
 ### Regla del cuadrado (final de peones)
 
@@ -266,6 +532,13 @@ _Bandera:_ `theirKingWorse`
 1. Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.
 2. ${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.
 
+### battery
+
+_Bandera:_ `battery`
+
+1. Formas una batería: ${art(b.front)} con ${art(b.back)} detrás, apuntando a la misma línea.
+2. ${cap(art(b.front))} se apoya en ${art(b.back)}: dos piezas presionando la misma línea.
+
 ### Refuerza la cadena de peones
 
 _Bandera:_ `supportsPawnChain`
@@ -307,7 +580,7 @@ _Bandera:_ `isEndgame`
 
 ---
 
-## Ranura A — qué pasó
+## Tus jugadas — ranura A: qué pasó
 
 ### Jaque mate ejecutado
 
@@ -525,7 +798,44 @@ _Bandera:_ `classification`
 
 ---
 
-## Ranura C — qué era mejor
+## Tus jugadas — ranura B: cómo cambió la partida
+
+### variantSeed
+
+_Bandera:_ `variantSeed`
+
+1. Le das la vuelta a la partida: de estar peor pasas a mandar.
+2. Gran cambio de rumbo: venías peor y ahora tienes ventaja.
+3. Recuperas: la partida vuelve a estar pareja.
+4. Enderezas la posición y queda igualada.
+5. Tomas la iniciativa desde una posición pareja.
+6. De estar igualado pasas a llevar la ventaja.
+7. Sigues peor, pero la posición ya no está perdida.
+8. Reduces el daño: la partida deja de estar perdida.
+
+### good
+
+_Bandera:_ `good`
+
+1. Estaba parejo y ahora el rival toma la ventaja.
+2. De una posición igualada pasas a estar peor.
+3. Tenías ventaja y la dejas escapar: queda igualada.
+4. Se te va la ventaja y la partida se iguala.
+5. Ibas con ventaja y ahora estás peor.
+6. Pasas de mandar en la partida a estar en desventaja.
+
+### evalAfter
+
+_Bandera:_ `evalAfter`
+
+1. Ya venías mal, así que esto no la decide, pero tampoco ayuda.
+2. La posición ya era difícil de antes.
+3. Sigues ganando, pero desperdicias parte de la ventaja.
+4. Aún ganas, aunque cediste terreno.
+
+---
+
+## Tus jugadas — ranura C: qué era mejor
 
 ### Mate forzado que se escapó
 
@@ -577,31 +887,3 @@ _Bandera:_ `bestIsCenterPawn`
 1. Atacar el centro con el peón a ${sq} era mejor.
 2. ${cap(bp)} a ${sq} era mejor.
 3. Lo indicado era ${bp} a ${sq}.
-
-### variantSeed
-
-_Bandera:_ `variantSeed`
-
-1. Tienes mate con ${art(o.piece)} en ${o.to}.
-2. Puedes capturar en ${o.to} con ${art(o.piece)}.
-3. Puedes llevarte ${art(o.captures)} con ${art(o.piece)} a ${o.to}.
-4. Ahí tienes ${art(o.captures)} de ${o.to}.
-5. Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}.
-6. Tu oportunidad: ${art(o.piece)} a ${o.to}.
-7. Aprovéchalo con ${art(o.piece)} a ${o.to}.
-
-### tookOpportunity
-
-_Bandera:_ `tookOpportunity`
-
-1. Lo viste y lo aprovechaste.
-2. Bien: era exactamente la jugada.
-3. Aprovechada. Esa era.
-4. Se te escapó: podías ${what}.
-5. Ahí estaba la oportunidad: ${what}.
-
-### byOpponent
-
-_Bandera:_ `byOpponent`
-
-1. Tu oponente: ${text}
