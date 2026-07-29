@@ -10,6 +10,7 @@ import { dominantChange, pressureOnOpponent } from "@/lib/evalTerms";
 import { ignoredThreat, ownThreat } from "@/lib/threats";
 import { ruleOfTheSquare } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
+import { readLine, followUpClause } from "@/lib/mainLine";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -773,6 +774,17 @@ export async function analyzeGame(
     try { lines = await engine.getTopLines(fenBefore, EXPLAIN_DEPTH, 2); } catch { /* ignore */ }
     const mainSans = lines[0] ? pvToSan(fenBefore, lines[0].pv) : [];
     const bestSan = mainSans[0] ?? null;
+    let bestFollowUp: string | null = null, bestLineForced = false;
+    let bestLineWins: { piece: string; square: string } | null = null;
+
+    // The best line as a PLAN. We used to take mainSans[0] and discard the rest,
+    // which is why the coach could name the move but never its point.
+    if (mainSans.length > 1) {
+      const plan = readLine(fenBefore, mainSans, playerColor);
+      bestFollowUp = followUpClause(plan);
+      bestLineForced = plan.forced;
+      bestLineWins = plan.wins;
+    }
 
     // "Only good move": the best line is decisively better than the 2nd best.
     // Scores are side-to-move (the mover), so a big positive gap = everything
@@ -825,6 +837,7 @@ export async function analyzeGame(
     let materialLostPiece: string | null = null;
     let materialNet = 0, materialSettled = false, materialTrades = false;
     let allowsMotif: Motif | null = null;
+    let punishFollowUp: string | null = null, punishFocusSquare: string | null = null;
     if (!good) {
       try {
         const opp = await engine.getTopLines(fens[i], DEEP_DEPTH, 1);
@@ -841,6 +854,16 @@ export async function analyzeGame(
           // "pierdes el hilo de la posición" into "permites una horquilla".
           const om = detectMotifs(fens[i], oppSans[0]).find((m) => m.key !== "hangs_own" && m.key !== "hanging");
           if (om) allowsMotif = { key: om.key, label: om.label, piece: om.pieceName, square: om.square };
+          // Read the whole punishment line, not just its opening move. The
+          // OPPONENT is the one being described here, so the line is read from
+          // their side — "y después te llevas X" then correctly means the rival
+          // taking from the player.
+          const oppColor: "w" | "b" = playerColor === "w" ? "b" : "w";
+          const punish = readLine(fens[i], oppSans, oppColor);
+          // "opponent" voice: this line is the RIVAL's, so the clause must say
+          // "se lleva", not "te llevas".
+          punishFollowUp = followUpClause(punish, "opponent");
+          punishFocusSquare = punish.focusSquare;
         }
       } catch { /* ignore */ }
     }
@@ -895,6 +918,8 @@ export async function analyzeGame(
       oppCapturesPiece,
       isSacrificeConfirmed: isSacrifice && good,
       allowsMotif,
+      bestFollowUp, bestLineForced, bestLineWins,
+      punishFollowUp, punishFocusSquare,
       // The deep tier needs these too. Without them the engine-analysed moves —
       // the WORST ones, the ones the player most wants explained — were the only
       // ones that could still fall through to "pierdes el hilo", because the

@@ -53,7 +53,9 @@ export function parseScore(line: string): EvalResult | null {
 }
 
 /** A MultiPV `info` line: which line index it is, and its score plus variation. */
-export function parseMultiPvLine(line: string, maxPlies = 6):
+// 10 plies, not 6: the point of a move is usually its second or third follow-up,
+// and a 6-ply window frequently cut the line off right before the idea landed.
+export function parseMultiPvLine(line: string, maxPlies = 10):
   { index: number; value: EngineLine } | null {
   const mpv = line.match(/multipv (\d+)/);
   const pvm = line.match(/ pv (.+)$/);

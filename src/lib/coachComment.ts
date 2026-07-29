@@ -143,6 +143,15 @@ export interface MoveFacts {
   // The piece the player has forgotten about — badly placed for its type and
   // with nowhere to go.
   passivePiece?: { piece: string; square: string; stillHome: boolean; reason: string } | null;
+
+  // Read from the engine's MAIN LINE rather than the position in front of us.
+  // Naming the best move says what to play; naming its follow-up says why, and
+  // "why" is the whole difference between a move list and coaching.
+  bestFollowUp?: string | null;    // ready-made clause, e.g. "y después te llevas la torre de d5"
+  bestLineForced?: boolean;        // the whole line is captures and checks
+  bestLineWins?: { piece: string; square: string } | null;
+  punishFollowUp?: string | null;  // what the opponent does after their first reply
+  punishFocusSquare?: string | null; // square the exchange sequence settles on
 }
 
 const ART: Record<string, string> = {
@@ -504,6 +513,16 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
         ], s), namesMaterial: true };
   }
 
+  // The punishment as a SEQUENCE. "El rival te captura el caballo" says what
+  // happens; adding where the exchange settles, or what comes after their first
+  // move, is the two-or-three-moves-ahead view — and it's read off a line the
+  // engine actually returned, not guessed.
+  if (f.oppCapturesPiece && (f.punishFollowUp || f.punishFocusSquare)) {
+    const opener = `El rival te captura ${art(f.oppCapturesPiece)}`;
+    if (f.punishFollowUp) return { text: `${opener} ${f.punishFollowUp}.`, namesMaterial: true };
+    return { text: `${opener}, y la lucha en ${f.punishFocusSquare} acaba a su favor.`, namesMaterial: true };
+  }
+
   if (f.oppCapturesPiece) {
     return { text: pick([
       `El rival te captura ${art(f.oppCapturesPiece)}.`,
@@ -773,6 +792,24 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
     `Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.`,
     `${cap(bp)} a ${sq} capturaba ${art(f.bestCapturedPiece)}.`,
   ], s);
+
+  // Naming the FOLLOW-UP is what turns a move into an idea. "La dama a c7" is a
+  // move; "la dama a c7, y después te llevas el caballo de d5" is the reason it
+  // was the move. This sits above the generic endings on purpose — those were
+  // where perfectly explainable positions used to land.
+  if (f.bestFollowUp) {
+    // Comma, never a colon: the clause always begins with "y…", and "a a6: y
+    // después" is simply wrong in Spanish. The first draft used a colon on the
+    // material-winning branch and it read like a seam.
+    return pick([
+      `Lo indicado era ${bp} a ${sq}, ${f.bestFollowUp}.`,
+      `${cap(bp)} a ${sq} era mejor, ${f.bestFollowUp}.`,
+      `Mejor ${bp} a ${sq}, ${f.bestFollowUp}.`,
+    ], s);
+  }
+  if (f.bestLineForced && f.bestLineWins) {
+    return `${cap(bp)} a ${sq} abría una secuencia forzada que gana ${art(f.bestLineWins.piece)}.`;
+  }
   // Skipped when slot A already named this same motif, so the two halves don't
   // repeat each other ("Había un pincho. Con el alfil montabas un pincho.").
   const bm = usedBestMotif ? undefined : f.bestMotifs.find((x) => x.key !== "hangs_own" && !isHanging(x));
