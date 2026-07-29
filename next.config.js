@@ -31,13 +31,31 @@ module.exports = withPWA({
   // supported the app simply isn't isolated and picks a single-threaded build:
   // slower, never broken.
   async headers() {
-    return [{
-      source: '/:path*',
-      headers: [
-        { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
-        { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
-      ],
-    }]
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+        ],
+      },
+      {
+        // The engine gets an immutable year-long cache. Next serves public/ with
+        // `max-age=0`, which means the browser must revalidate before using it:
+        // a round trip on every single visit before any analysis can start, and
+        // because the ETag is derived from size and mtime it CHANGES on every
+        // deploy — so each deploy made every user re-download 7MB of WASM that
+        // hadn't actually changed.
+        //
+        // Safe to cache forever because the filename carries the engine version
+        // (stockfish-18-…). Shipping a different Stockfish changes the URL, which
+        // is exactly the invalidation mechanism `immutable` assumes.
+        source: '/engine/:file*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+    ]
   },
   // The WASM must be traced into the bundle for every route that still runs the
   // engine SERVER-side. Full-game analysis moved to the browser (it loads the
