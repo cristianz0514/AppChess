@@ -32,3 +32,6 @@ Thumbs.db
 
 # raw Stitch export dumps (source assets get processed into public/campeones/)
 /Imagenes/
+
+# Stockfish WASM copied from node_modules by scripts/copyEngine.cjs (7MB, not source)
+public/engine/

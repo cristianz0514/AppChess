@@ -1,77 +1,81 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Cpu } from "lucide-react";
+import { analyzePendingInBrowser } from "@/lib/clientAnalysis";
 
 interface Props {
   username: string;
 }
 
-interface BatchStatus {
-  running: boolean;
-  total: number;
-  done: number;
-}
-
-// The heavy analysis runs on the SERVER (see analysisQueue). This component only
-// kicks it off and polls for progress, so the user can leave the page and the
-// work keeps going — and if they come back, it resumes showing progress.
+// The analysis runs in THIS browser, on this device's CPU. It used to run on the
+// server through a queue, which existed so concurrent users wouldn't collide on
+// one shared engine — a problem that disappears when each browser has its own.
+//
+// One honest regression comes with that: the work no longer survives leaving the
+// page. The old copy promised "puedes salir de esta pantalla", and keeping it
+// would be a lie, so it now says the opposite. Progress itself is still safe —
+// each game's moves are written as they're analysed, so nothing already finished
+// is lost and restarting picks up from what's left.
 export function AnalyzeAllButton({ username }: Props) {
   const router = useRouter();
-  const [status, setStatus] = useState<BatchStatus | null>(null);
+  const [running, setRunning] = useState(false);
   const [error, setError] = useState(false);
-  const lastDone = useRef(0);
+  const [done, setDone] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [label, setLabel] = useState("");
+  const stopRequested = useRef(false);
 
-  const poll = useCallback(async () => {
-    try {
-      const res = await fetch("/api/analyze/batch", { cache: "no-store" });
-      if (!res.ok) return;
-      const s = (await res.json()) as BatchStatus;
-      setStatus(s);
-      // Refresh dashboard data as games complete.
-      if (s.done !== lastDone.current) { lastDone.current = s.done; router.refresh(); }
-    } catch { /* keep polling */ }
-  }, [router]);
-
-  // On mount, check whether a batch is already running (resume display).
-  useEffect(() => { poll(); }, [poll]);
-
-  // Poll while running.
-  useEffect(() => {
-    if (!status?.running) return;
-    const id = setInterval(poll, 3000);
-    return () => clearInterval(id);
-  }, [status?.running, poll]);
-
-  async function start() {
+  const start = useCallback(async () => {
     setError(false);
+    stopRequested.current = false;
+    setRunning(true);
+    setDone(0);
+    setTotal(0);
+    setLabel("Buscando partidas sin analizar…");
+
     try {
-      const res = await fetch("/api/analyze/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username }),
-      });
+      // This route only READS the database — no engine — so it stays on the
+      // server, where it already has the session cookie.
+      const res = await fetch(
+        `/api/analyze/pending?username=${encodeURIComponent(username)}`,
+        { cache: "no-store" },
+      );
       if (!res.ok) throw new Error();
-      const s = (await res.json()) as BatchStatus;
-      setStatus(s);
-    } catch { setError(true); }
-  }
+      const { pending } = (await res.json()) as { pending: string[] };
 
-  async function stop() {
-    try {
-      await fetch("/api/analyze/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "stop" }),
+      if (pending.length === 0) {
+        setRunning(false);
+        setLabel("");
+        router.refresh();
+        return;
+      }
+
+      setTotal(pending.length);
+      await analyzePendingInBrowser(pending, {
+        shouldStop: () => stopRequested.current,
+        onProgress: (gameIndex, totalGames, p) => {
+          setDone(gameIndex);
+          setTotal(totalGames);
+          setLabel(p.total > 0 ? `${p.label} (${p.done}/${p.total})` : p.label);
+        },
       });
-    } catch { /* ignore */ }
-    poll();
-  }
 
-  const running = status?.running ?? false;
-  const total = status?.total ?? 0;
-  const done = status?.done ?? 0;
+      setRunning(false);
+      setLabel("");
+      router.refresh();
+    } catch {
+      setRunning(false);
+      setError(true);
+    }
+  }, [username, router]);
+
+  const stop = () => {
+    stopRequested.current = true;
+    setLabel("Terminando la partida en curso…");
+  };
+
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const remaining = Math.max(0, total - done);
 
@@ -87,13 +91,17 @@ export function AnalyzeAllButton({ username }: Props) {
 
       {running ? (
         <div className="space-y-2">
-          <p className="text-sm font-semibold">Analizando en segundo plano… {done}/{total}</p>
+          <p className="text-sm font-semibold">
+            {total > 0 ? `Analizando partida ${done + 1} de ${total}` : "Preparando…"}
+          </p>
           <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
             <div className="h-full w-full rounded-full transition"
               style={{ transform: `scaleX(${pct / 100})`, transformOrigin: "left", background: "var(--bv-electric)" }} />
           </div>
+          {label && <p className="text-[10px] text-muted-foreground">{label}</p>}
           <p className="text-[10px] text-muted-foreground">
-            Puedes salir de esta pantalla: el análisis continúa solo ({remaining} restantes). El análisis profundo tarda ~1-2 min por partida.
+            El análisis usa el procesador de este dispositivo, así que mantén esta pestaña abierta
+            {remaining > 0 ? ` (${remaining} por analizar)` : ""}. Lo ya analizado queda guardado.
           </p>
           <button onClick={stop}
             className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40"
@@ -112,7 +120,8 @@ export function AnalyzeAllButton({ username }: Props) {
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            Evalúa tus partidas con Stockfish para obtener precisión, detección de errores y consejos personalizados. Corre en segundo plano — puedes seguir usando la app.
+            Evalúa tus partidas con Stockfish en este dispositivo: precisión, detección de
+            errores y comentarios en cada jugada. La primera vez descarga el motor (7 MB).
           </p>
           <button onClick={start}
             className="w-full py-2.5 rounded-xl text-sm font-bold transition active:scale-[0.98]"

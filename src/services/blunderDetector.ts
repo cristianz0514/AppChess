@@ -1,5 +1,5 @@
 import { Chess, type Square } from "chess.js";
-import { analyzeAllFens, evaluatePosition, getTopLines } from "./stockfish";
+import type { CoachEngine } from "@/lib/engineApi";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
 import { composeCoachComment, type Motif } from "@/lib/coachComment";
@@ -521,6 +521,11 @@ const toWhite = (score: number, i: number) => (i % 2 === 1 ? score : -score);
 export async function analyzeGame(
   gameId: string,
   pgn: string,
+  // The engine is injected rather than imported so this pipeline — every
+  // detector, every template, the whole thing — runs unchanged wherever the
+  // engine happens to live. It moved from the server to the browser without a
+  // single line of analysis logic changing, which is the point.
+  engine: CoachEngine,
   onProgress?: (done: number, total: number, label?: string) => void,
 ): Promise<void> {
   const chess = new Chess();
@@ -542,7 +547,7 @@ export async function analyzeGame(
   }
 
   // ── Pass 1: shallow sweep over every position ──────────────────────────────
-  const evals = await analyzeAllFens(fens, SHALLOW_DEPTH, (d, t) => onProgress?.(d, t, "Evaluando cada posición…"));
+  const evals = await engine.analyzeAllFens(fens, SHALLOW_DEPTH, (d, t) => onProgress?.(d, t, "Evaluando cada posición…"));
 
   // Stockfish reports `score cp` from the SIDE-TO-MOVE perspective (UCI standard).
   // Convert to WHITE's perspective so the stored eval is consistent everywhere.
@@ -604,7 +609,7 @@ export async function analyzeGame(
 
   for (const i of deepIdx) {
     try {
-      const r = await evaluatePosition(fens[i], DEEP_DEPTH);
+      const r = await engine.evaluatePosition(fens[i], DEEP_DEPTH);
       whiteEval[i] = toWhite(r.score, i);
     } catch { /* keep the shallow value */ }
   }
@@ -765,7 +770,7 @@ export async function analyzeGame(
     // and the gap to the second best for "only good move" detection). The third
     // line was being searched to full depth and thrown away — a third of the
     // most expensive stage in the whole analysis, spent on nothing.
-    try { lines = await getTopLines(fenBefore, EXPLAIN_DEPTH, 2); } catch { /* ignore */ }
+    try { lines = await engine.getTopLines(fenBefore, EXPLAIN_DEPTH, 2); } catch { /* ignore */ }
     const mainSans = lines[0] ? pvToSan(fenBefore, lines[0].pv) : [];
     const bestSan = mainSans[0] ?? null;
 
@@ -822,7 +827,7 @@ export async function analyzeGame(
     let allowsMotif: Motif | null = null;
     if (!good) {
       try {
-        const opp = await getTopLines(fens[i], DEEP_DEPTH, 1);
+        const opp = await engine.getTopLines(fens[i], DEEP_DEPTH, 1);
         const oppSans = opp[0] ? pvToSan(fens[i], opp[0].pv) : [];
         if (oppSans.length) {
           const cc = new Chess(fens[i]);

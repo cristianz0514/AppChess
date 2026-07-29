@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import { analyzeGameInBrowser } from "@/lib/clientAnalysis";
 
 interface Props {
   gameId: string;
@@ -12,91 +13,50 @@ interface Props {
 export function GameAutoAnalyzer({ gameId, reanalyze }: Props) {
   const router = useRouter();
   const started = useRef(false);
-  const [status, setStatus] = useState<"running" | "busy" | "error">("running");
+  const [status, setStatus] = useState<"running" | "error">("running");
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [label, setLabel] = useState(reanalyze ? "Generando el análisis del coach…" : "Analizando con Stockfish…");
 
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  // On finish: a regeneration marks ?coach=1 so the page won't loop back into
-  // regeneration if the comments couldn't be persisted; a fresh analysis just refreshes.
-  const finish = () => {
-    if (reanalyze) router.replace(`/blunders/${gameId}?coach=1`);
-    else router.refresh();
-  };
-
-  const run = useRef<(() => void) | undefined>(undefined);
-
-  run.current = async () => {
+  // useCallback rather than the ref-assigned-during-render this used to do:
+  // writing to a ref while rendering is a real React violation (it's what
+  // react-hooks/refs flags) and it predates this change — worth fixing while the
+  // file is open rather than carrying it forward.
+  const run = useCallback(async () => {
     try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameId, force: reanalyze === true }),
+      // The analysis runs HERE, on this device. No request to the server, no
+      // waiting for a shared engine: the progress numbers below come straight
+      // out of the pipeline as it works.
+      await analyzeGameInBrowser(gameId, {
+        force: reanalyze === true,
+        onProgress: (p) => {
+          setDone(p.done);
+          setTotal(p.total);
+          if (p.label) setLabel(p.label);
+        },
       });
-
-      // Engine busy — show message and retry in 15 seconds
-      if (res.status === 503) {
-        setStatus("busy");
-        setTimeout(() => {
-          setStatus("running");
-          run.current?.();
-        }, 15000);
-        return;
-      }
-
-      if (!res.ok) throw new Error("analysis failed");
-
-      // If browser supports streaming, read progress
-      if (res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-        while (true) {
-          const { value, done: streamDone } = await reader.read();
-          if (streamDone) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split("\n");
-          buf = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            const msg = JSON.parse(line);
-            if (msg.error) throw new Error(msg.error);
-            if (typeof msg.done === "number") setDone(msg.done);
-            if (typeof msg.total === "number") setTotal(msg.total);
-            if (typeof msg.label === "string" && msg.label) setLabel(msg.label);
-            if (msg.finished) { finish(); return; }
-          }
-        }
-      }
-
-      finish();
+      // On finish: a regeneration marks ?coach=1 so the page won't loop back
+      // into regeneration if the comments couldn't be persisted; a fresh
+      // analysis just refreshes.
+      if (reanalyze) router.replace(`/blunders/${gameId}?coach=1`);
+      else router.refresh();
     } catch {
       setStatus("error");
     }
-  };
+  }, [gameId, reanalyze, router]);
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    run.current?.();
-  }, [gameId, router]);
+    run();
+  }, [run]);
 
   return (
     <div className="deco-step border p-8 text-center flex flex-col items-center gap-5"
       style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-      {status === "busy" ? (
-        <>
-          <Clock size={32} style={{ color: "var(--bv-purple)" }} />
-          <div>
-            <p className="text-sm font-semibold">Motor ocupado</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Otra partida se está analizando. Reintentando automáticamente en 15 segundos…
-            </p>
-          </div>
-        </>
-      ) : status === "running" ? (
+      {status === "running" ? (
         <>
           <div className="w-12 h-12 rounded-full border-2 animate-spin"
             style={{ borderColor: "var(--border)", borderTopColor: "var(--bv-purple)" }} />
@@ -137,7 +97,7 @@ export function GameAutoAnalyzer({ gameId, reanalyze }: Props) {
             <p className="text-xs text-muted-foreground mt-1">Inténtalo de nuevo en un momento.</p>
           </div>
           <button
-            onClick={() => { started.current = false; setStatus("running"); setDone(0); setTotal(0); run.current?.(); }}
+            onClick={() => { setStatus("running"); setDone(0); setTotal(0); run(); }}
             className="px-4 py-2 rounded-xl text-xs font-bold"
             style={{ background: "var(--bv-electric)", color: "#fff" }}>
             Reintentar

@@ -69,28 +69,14 @@ async function getEngine(): Promise<StockfishEngine> {
 // Serialize all engine access: there is a single engine instance shared across
 // concurrent requests, so evaluations must not interleave.
 let chain: Promise<unknown> = Promise.resolve();
-let engineBusy = false;
-
-export function isEngineBusy(): boolean { return engineBusy; }
-
-// A game-level analysis gate, separate from `engineBusy`. `engineBusy` is only
-// true during the shallow sweep (analyzeAllFens) — it goes false during the
-// deep re-evals, MultiPV lines, PV lookups and the LLM coach loop that make up
-// the rest of analyzeGame. Gating an interactive /api/analyze on engineBusy
-// alone let a SECOND full analysis start during those phases, so two games
-// could analyze at once and (on the 512MB/0.1CPU free tier) blow up memory and
-// time into a 502. This flag stays true for the WHOLE duration of one game's
-// analysis. tryBeginAnalysis() checks-and-sets synchronously (no await between
-// the two), so it's atomic under Node's single-threaded model — two requests
-// can't both win the check.
-let analysisActive = false;
-export function isAnalysisActive(): boolean { return analysisActive; }
-export function tryBeginAnalysis(): boolean {
-  if (analysisActive) return false;
-  analysisActive = true;
-  return true;
-}
-export function endAnalysis(): void { analysisActive = false; }
+// NOTE: the game-level analysis lock that used to live here is gone. It existed
+// only because one server process owned one engine, so two full-game analyses
+// could collide and blow past the 512MB free tier. Full-game analysis now runs
+// in each user's browser (src/lib/clientAnalysis.ts), so there is nothing left
+// to serialise beyond the single searches below, which runExclusive handles.
+//
+// What remains uses the engine for ONE position at a time: the bot opponent,
+// move hints, exercise generation and puzzles.
 
 function runExclusive<T>(task: () => Promise<T>): Promise<T> {
   const result = chain.then(task, task);
@@ -359,7 +345,6 @@ export async function analyzeAllFens(
   const engine = await getEngine();
   const results: (EvalResult | null)[] = [];
 
-  engineBusy = true;
   try {
     for (let i = 0; i < fens.length; i++) {
       try {
@@ -374,7 +359,6 @@ export async function analyzeAllFens(
       await new Promise((r) => setTimeout(r, 15));
     }
   } finally {
-    engineBusy = false;
   }
 
   return results;

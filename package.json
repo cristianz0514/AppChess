@@ -6,7 +6,9 @@
     "dev": "next dev --webpack -H 0.0.0.0",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "predev": "node scripts/copyEngine.cjs",
+    "prebuild": "node scripts/copyEngine.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
