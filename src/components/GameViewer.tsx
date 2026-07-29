@@ -890,13 +890,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             const c = moveComment(currentMove, isMine);
             const curE = toMine(currentMove?.evaluation ?? null);
             const prevE = toMine(idx > 0 ? moves[idx - 1].evaluation : 0);
-            // The AI explanation is always written in "your student" framing
-            // Comments are written as advice to WHOEVER made the move, so the
-            // opponent's plies get the same templates — labelled so "you" is
-            // never ambiguous. Seeing their play judged by the same standard is
-            // what lets the player draw conclusions about the game as a whole.
-            const rawAi = currentMove?.explanation ?? null;
-            const ai = rawAi ? (isMine ? rawAi : `Tu oponente: ${rawAi}`) : null;
+            // The stored comment already carries its own voice. Labelling the
+            // opponent's plies happens in lib/coachComment's voice(), because only
+            // the composer knows whether a comment is still written as advice to
+            // the mover ("Tu oponente: …") or has already been reframed as the
+            // player's opportunity ("El rival falla: puedes llevarte la torre…").
+            // Prefixing here would produce "Tu oponente: El rival falla…".
+            const ai = currentMove?.explanation ?? null;
             // Fallback for a game with no stored comment — in practice only games
             // analysed before every move got one. Deliberately carries NO pawn
             // numbers: "Perdiste 1.8 (+0.3 a -1.5)" is engine jargon, the eval bar

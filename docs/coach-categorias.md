@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 71
-- **Variantes de texto:** 184
-- **Sin nombre humano todavía:** 7
+- **Categorías:** 74
+- **Variantes de texto:** 197
+- **Sin nombre humano todavía:** 10
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -577,3 +577,31 @@ _Bandera:_ `bestIsCenterPawn`
 1. Atacar el centro con el peón a ${sq} era mejor.
 2. ${cap(bp)} a ${sq} era mejor.
 3. Lo indicado era ${bp} a ${sq}.
+
+### variantSeed
+
+_Bandera:_ `variantSeed`
+
+1. Tienes mate con ${art(o.piece)} en ${o.to}.
+2. Puedes capturar en ${o.to} con ${art(o.piece)}.
+3. Puedes llevarte ${art(o.captures)} con ${art(o.piece)} a ${o.to}.
+4. Ahí tienes ${art(o.captures)} de ${o.to}.
+5. Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}.
+6. Tu oportunidad: ${art(o.piece)} a ${o.to}.
+7. Aprovéchalo con ${art(o.piece)} a ${o.to}.
+
+### tookOpportunity
+
+_Bandera:_ `tookOpportunity`
+
+1. Lo viste y lo aprovechaste.
+2. Bien: era exactamente la jugada.
+3. Aprovechada. Esa era.
+4. Se te escapó: podías ${what}.
+5. Ahí estaba la oportunidad: ${what}.
+
+### byOpponent
+
+_Bandera:_ `byOpponent`
+
+1. Tu oponente: ${text}

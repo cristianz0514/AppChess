@@ -150,6 +150,21 @@ export interface MoveFacts {
   // with nowhere to go.
   passivePiece?: { piece: string; square: string; stillHome: boolean; reason: string } | null;
 
+  // ── The player's point of view ─────────────────────────────────────────────
+  // Every comment used to be advice to WHOEVER moved, which is why the same
+  // templates worked for the opponent unchanged and the viewer just labelled them
+  // "Tu oponente". But an opponent's mistake isn't information about them, it's an
+  // OPPORTUNITY for the player — and the search that finds it is already being
+  // done: the punishment line for their error starts with the player's best move.
+  byOpponent?: boolean;
+  // What the player can do about the opponent's mistake, read off that line.
+  opportunity?: { piece: string; to: string; captures: string | null; isMate: boolean } | null;
+  // Set on the PLAYER's move, about the opportunity the PREVIOUS ply created:
+  // true if this move took it, false if it was there and went unplayed. Null when
+  // there was no opportunity to speak of — so "missed" is never implied by silence.
+  tookOpportunity?: boolean | null;
+  missedOpportunity?: { piece: string; to: string; captures: string | null } | null;
+
   // Read from the engine's MAIN LINE rather than the position in front of us.
   // Naming the best move says what to play; naming its follow-up says why, and
   // "why" is the whole difference between a move list and coaching.
@@ -883,15 +898,124 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
 
 // Composes the final comment: A always, then B or C — whichever adds more —
 // never all three, so the text stays short.
+/**
+ * What the player can do about the opponent's mistake.
+ *
+ * This replaces slot C on an opponent's move. Slot C would say "lo indicado era
+ * X" — advice to the RIVAL, which the player can do nothing with. The same
+ * engine line, read from the other side, says what to play instead.
+ */
+function opportunityClause(f: MoveFacts): string | null {
+  const o = f.opportunity;
+  if (!o) return null;
+  const s = f.variantSeed;
+  if (o.isMate) return `Tienes mate con ${art(o.piece)} en ${o.to}.`;
+  if (o.captures) {
+    // When the capturing and captured pieces share a name ("el peón … el peón"),
+    // naming both reads like a stutter. The square is what the player needs.
+    const same = o.captures === o.piece;
+    return pick([
+      same
+        ? `Puedes capturar en ${o.to} con ${art(o.piece)}.`
+        : `Puedes llevarte ${art(o.captures)} con ${art(o.piece)} a ${o.to}.`,
+      same
+        ? `Ahí tienes ${art(o.captures)} de ${o.to}.`
+        : `Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}.`,
+    ], s);
+  }
+  return pick([
+    `Tu oportunidad: ${art(o.piece)} a ${o.to}.`,
+    `Aprovéchalo con ${art(o.piece)} a ${o.to}.`,
+  ], s);
+}
+
+/**
+ * Whether the player took the opportunity the previous move handed them.
+ *
+ * The praise half matters as much as the criticism: an app that only ever points
+ * out mistakes reads like an audit. And a missed opportunity is a category the
+ * coach simply couldn't express before — it isn't a bad move, it's a good move
+ * that was available and wasn't played.
+ */
+function opportunityOutcome(f: MoveFacts): string | null {
+  const s = f.variantSeed;
+  if (f.tookOpportunity === true) {
+    return pick([
+      `Lo viste y lo aprovechaste.`,
+      `Bien: era exactamente la jugada.`,
+      `Aprovechada. Esa era.`,
+    ], s);
+  }
+  const m = f.missedOpportunity;
+  if (f.tookOpportunity === false && m) {
+    const what = m.captures
+      ? `llevarte ${art(m.captures)} con ${art(m.piece)} a ${m.to}`
+      : `jugar ${art(m.piece)} a ${m.to}`;
+    return pick([
+      `Se te escapó: podías ${what}.`,
+      `Ahí estaba la oportunidad: ${what}.`,
+    ], s);
+  }
+  return null;
+}
+
+/**
+ * Short, THIRD-PERSON statement of an opponent mistake.
+ *
+ * Slot A is written as advice to whoever moved — "dejas el alfil sin defensor",
+ * "pierdes un tiempo". On the opponent's ply that inverts the roles: it reads as
+ * if the PLAYER left the bishop hanging. Labelling it ("Tu oponente: …") made it
+ * a quoted voice and was at least honest; reframing to the player's side and
+ * keeping the inner second person ("El rival falla: Dejas el alfil…") is worse
+ * than either.
+ *
+ * So an opponent error doesn't reuse slot A at all. It doesn't need to: the
+ * opportunity clause that follows already names the piece and square, which is
+ * the same fact from the side the player can act on.
+ */
+function opponentSlip(f: MoveFacts): string {
+  const s = f.variantSeed;
+  if (f.classification === "blunder") {
+    return pick(["El rival comete un error grave.", "Error grave del rival."], s);
+  }
+  if (f.classification === "mistake") {
+    return pick(["El rival se equivoca.", "Fallo del rival."], s);
+  }
+  return pick(["El rival no juega lo más preciso.", "Imprecisión del rival."], s);
+}
+
 export function composeCoachComment(f: MoveFacts): string | null {
   const a = slotA(f);
   if (!a) return null;
-  if (f.isMate && f.evalAfter > 0) return a.text;
+  if (f.isMate && f.evalAfter > 0) return voice(f, a.text);
+
+  // An opponent mistake with something to do about it: state the slip in the
+  // third person and spend the sentence on the player's move.
+  const opportunity = f.byOpponent ? opportunityClause(f) : null;
+  if (opportunity) return `${opponentSlip(f)} ${opportunity}`;
 
   const b = slotB(f, a.namesMaterial);
-  const c = slotC(f, a.usedBestMotif ?? false);
-  // C (a concrete alternative) teaches more than B (context), so it wins when
-  // both are available.
-  const second = c ?? b;
-  return second ? `${a.text} ${second}` : a.text;
+  const c = f.byOpponent ? null : slotC(f, a.usedBestMotif ?? false);
+  // The outcome of the previous move's opportunity outranks the generic "how the
+  // game changed" line: "se te escapó la torre" is the more useful second half.
+  const outcome = opportunityOutcome(f);
+  const second = outcome ?? c ?? b;
+  return voice(f, second ? `${a.text} ${second}` : a.text);
+}
+
+/**
+ * Puts the finished comment in the right voice.
+ *
+ * Centralised here because it used to live in GameViewer, which prefixed "Tu
+ * oponente: " onto every comment for a move the player didn't make. That breaks
+ * the moment the text is already written from the player's side — it would read
+ * "Tu oponente: El rival deja el alfil colgado, puedes capturarlo". Only the
+ * composer knows whether a given comment still needs the label.
+ */
+function voice(f: MoveFacts, text: string): string {
+  if (!f.byOpponent) return text;
+  // Reached only for opponent moves with no opportunity attached — a quiet move,
+  // or an error the engine tier didn't reach. The text is still advice to the
+  // mover, so the label is what keeps "you" unambiguous.
+  return `Tu oponente: ${text}`;
 }

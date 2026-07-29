@@ -587,6 +587,39 @@ export async function analyzeGame(
   // same game return different classifications — see CoachEngine.newGame.
   try { await engine.newGame?.(); } catch { /* an engine without it still works */ }
 
+  // Which colour the player is. Needed before the comments, not just for the
+  // accuracy figure below: a comment on the opponent's move has to be written from
+  // the player's side, and until now the pipeline genuinely didn't know which side
+  // that was — it advised whoever moved.
+  const { data: gameRowEarly } = await supabase
+    .from("games").select("played_as, opening").eq("id", gameId).single();
+  const playerIsWhite = gameRowEarly?.played_as !== "black";
+  const isOpponentPly = (ply: number) => (ply % 2 === 0) !== playerIsWhite;
+
+  // What the player could do about the opponent's mistake at each ply, filled in
+  // by the engine tier. Indexed by the OPPONENT's ply; read back on the player's
+  // reply to say whether they took it.
+  interface Opportunity { san: string; piece: string; to: string; captures: string | null; isMate: boolean }
+  const opportunityAt = new Map<number, Opportunity>();
+
+  // The player's viewpoint facts for one ply. Shared by both comment tiers so the
+  // taken/missed rule can't drift between them.
+  const viewpointFacts = (ply: number) => {
+    const prev = opportunityAt.get(ply - 1);
+    const isPlayerReply = prev != null && !isOpponentPly(ply);
+    const took = isPlayerReply ? history[ply].san === prev.san : null;
+    return {
+      byOpponent: isOpponentPly(ply),
+      opportunity: opportunityAt.get(ply) ?? null,
+      tookOpportunity: took,
+      // Only described when it was actually missed, so an absent opportunity can
+      // never read as one the player failed to take.
+      missedOpportunity: took === false && prev
+        ? { piece: prev.piece, to: prev.to, captures: prev.captures }
+        : null,
+    };
+  };
+
   // ── Pass 1: shallow sweep over every position ──────────────────────────────
   const evals = await engine.analyzeAllFens(fens, SHALLOW_DEPTH, (d, t) => onProgress?.(d, t, "Evaluando cada posición…"));
 
@@ -748,8 +781,7 @@ export async function analyzeGame(
   // Which side is "the player" comes from the game row; a game we can't attribute
   // gets the side that actually played worse, so the number is never silently the
   // opponent's.
-  const { data: gameRow } = await supabase
-    .from("games").select("played_as, opening").eq("id", gameId).single();
+  const gameRow = gameRowEarly;
   // The FAMILY name, not the full ECO string: the full one translates
   // word-by-word and doesn't read as Spanish inside a sentence. Null when we have
   // no hand-written Spanish name, and the template drops the clause — saying
@@ -925,6 +957,25 @@ export async function analyzeGame(
           // taking from the player.
           const oppColor: "w" | "b" = playerColor === "w" ? "b" : "w";
           const punish = readLine(fens[i], oppSans, oppColor);
+
+          // If the mover was the OPPONENT, this line starts with the PLAYER's best
+          // move — the punishment for their mistake IS the player's opportunity.
+          // Same search, read from the other side; nothing extra is computed.
+          if (isOpponentPly(i) && oppSans[0]) {
+            try {
+              const cc = new Chess(fens[i]);
+              const mv = cc.move(oppSans[0]);
+              if (mv) {
+                opportunityAt.set(i, {
+                  san: mv.san,
+                  piece: PIECE_ES[mv.piece] ?? "pieza",
+                  to: mv.to,
+                  captures: mv.captured ? (PIECE_ES[mv.captured] ?? null) : null,
+                  isMate: mv.san.includes("#"),
+                });
+              }
+            } catch { /* an unreplayable line simply yields no opportunity */ }
+          }
           // "opponent" voice: this line is the RIVAL's, so the clause must say
           // "se lleva", not "te llevas".
           punishFollowUp = followUpClause(punish, "opponent");
@@ -1000,6 +1051,7 @@ export async function analyzeGame(
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
+      ...viewpointFacts(i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
       ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
@@ -1074,6 +1126,7 @@ export async function analyzeGame(
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
+      ...viewpointFacts(i),
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite),
       ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
