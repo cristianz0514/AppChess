@@ -6,9 +6,9 @@
 // rating.
 //
 // The top end used to start at ACPL 5 → 2700, which our engine pass can't
-// actually back up: most positions are only evaluated at a shallow depth
-// (8 ply — see SHALLOW_DEPTH in blunderDetector.ts), with just a handful of
-// the worst positions re-checked at depth 12. That resolution can't
+// actually back up: most positions get the shallow sweep (see SHALLOW_DEPTH in
+// blunderDetector.ts — now 14 ply, since analysis moved to the user's own CPU),
+// with the worst positions re-checked deeper. Even that resolution can't
 // reliably tell a 2700-strength move from a 2200-strength one in a quiet
 // position, so a very low ACPL (common on short games or ones that stay in
 // known opening theory the whole time) was reading out an implausibly high

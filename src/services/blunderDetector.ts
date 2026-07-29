@@ -11,6 +11,7 @@ import { ignoredThreat, ownThreat } from "@/lib/threats";
 import { ruleOfTheSquare } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
+import { sideAccuracy } from "@/lib/accuracy";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
@@ -682,23 +683,27 @@ export async function analyzeGame(
     }
   }
 
-  const analyzed = moves.filter((m) => m.centipawn_loss !== null);
-  const blunders    = analyzed.filter((m) => m.classification === "blunder").length;
-  const mistakes    = analyzed.filter((m) => m.classification === "mistake").length;
-  const inaccuracies = analyzed.filter((m) => m.classification === "inaccuracy").length;
-  const total = analyzed.length;
+  // Accuracy via the win-probability model (lib/accuracy.ts), computed PER SIDE.
+  //
+  // The previous formula was a weighted count of error bands over ALL moves, which
+  // meant the opponent's blunders lowered the player's accuracy — a plain bug. It
+  // also treated 100 centipawns thrown away from equality the same as 100 thrown
+  // away from +9, when only the first one changes the game.
+  //
+  // Which side is "the player" comes from the game row; a game we can't attribute
+  // gets the side that actually played worse, so the number is never silently the
+  // opponent's.
+  const { data: gameRow } = await supabase
+    .from("games").select("played_as").eq("id", gameId).single();
+  const lossesByPly = moves.map((m) => m.centipawn_loss);
+  const white = sideAccuracy(whiteEval, lossesByPly, "white");
+  const black = sideAccuracy(whiteEval, lossesByPly, "black");
+  const playedAs = gameRow?.played_as === "black" ? "black"
+    : gameRow?.played_as === "white" ? "white"
+    : ((white.accuracy ?? 100) <= (black.accuracy ?? 100) ? "white" : "black");
+  const mine = playedAs === "white" ? white : black;
 
-  const accuracy =
-    total > 0
-      ? Math.max(
-          0,
-          Math.round(
-            (1 - (blunders * 3 + mistakes * 2 + inaccuracies) / (total * 3)) * 100 * 10
-          ) / 10
-        )
-      : null;
-
-  await supabase.from("games").update({ accuracy }).eq("id", gameId);
+  await supabase.from("games").update({ accuracy: mine.accuracy }).eq("id", gameId);
 
   // ── Pass 3: coach comments for the moves that matter ───────────────────────
   // Engine facts (best move, punishment line, verified motifs) composed into a

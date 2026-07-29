@@ -239,6 +239,13 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   if (f.isCastle) return { text: pick([`Enrocas y pones el rey a salvo.`, `Enrocas: el rey queda protegido y la torre entra en juego.`], s), namesMaterial: false };
   if (f.capturedPiece) {
     const cp = art(f.capturedPiece);
+    // A recapture is a different event from a capture: nothing new is won, the
+    // balance is restored. Saying "capturas la torre y ganas material" about a
+    // recapture overstates it — the material was already gone.
+    if (f.isRecapture && f.tradeVerdict !== "gana") return { text: pick([
+      `Recuperas la pieza en ${f.playedTo}: el cambio queda saldado.`,
+      `Retomas en ${f.playedTo} y el material vuelve a estar igual.`,
+    ], s), namesMaterial: true };
     if (f.tradeVerdict === "gana") return { text: pick([
       `Capturas ${cp} en ${f.playedTo} y ganas material.`,
       // No clitic pronoun here: "…recuperarlo" disagreed with feminine pieces
@@ -424,6 +431,12 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
       `${cap(art(pp.piece))} de ${pp.square} pinta poco ahí; su lugar está más al centro.`,
     ], s), namesMaterial: false };
   }
+  // Phase modifier: in an endgame the same standing means something different to
+  // the player, and naming the phase costs nothing since we already know it.
+  if (f.isEndgame) return { text: pick([
+    `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final sigues ${standing}.`,
+    `Jugada de final tranquila: quedas ${standing}.`,
+  ], s), namesMaterial: false };
   return { text: pick([
     `${cap(art(f.playedPiece))} a ${f.playedTo}: sigues ${standing}.`,
     `Jugada sólida, quedas ${standing}.`,
