@@ -12,6 +12,8 @@ import { ruleOfTheSquare } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
 import { sideAccuracy } from "@/lib/accuracy";
+import { createEngineCache } from "@/lib/engineCache";
+import { lineToScore } from "@/lib/engineApi";
 import { openingFamily } from "@/lib/translateOpening";
 import type { Move } from "@/types";
 
@@ -566,6 +568,11 @@ export async function analyzeGame(
   const bookPly = fens.map((f) => isBookPosition(f));
   const lastBookPly = bookPly.lastIndexOf(true);
 
+  // Start from a clean engine. Without this the worker carries the previous
+  // analysis's transposition table into this one, which made re-analysing the
+  // same game return different classifications — see CoachEngine.newGame.
+  try { await engine.newGame?.(); } catch { /* an engine without it still works */ }
+
   // ── Pass 1: shallow sweep over every position ──────────────────────────────
   const evals = await engine.analyzeAllFens(fens, SHALLOW_DEPTH, (d, t) => onProgress?.(d, t, "Evaluando cada posición…"));
 
@@ -627,10 +634,19 @@ export async function analyzeGame(
   const deepIdx = new Set<number>();
   for (const i of errorIdx) { deepIdx.add(i); if (i > 0) deepIdx.add(i - 1); }
 
+  // One search per position for the rest of this run. This pass asks for MultiPV
+  // 2 rather than a plain evaluation: the score it needs is lines[0], and the
+  // second line is exactly what the comment pass below was about to search for
+  // again at the same depth. Same work, requested once.
+  const cache = createEngineCache(engine);
+
   for (const i of deepIdx) {
     try {
-      const r = await engine.evaluatePosition(fens[i], DEEP_DEPTH);
-      whiteEval[i] = toWhite(r.score, i);
+      const a = await cache.getAnalysis(fens[i], DEEP_DEPTH, 2);
+      // lineToScore, not a hand-rolled conversion: centipawns divide by 100 and
+      // mate scores do NOT, and getting that wrong turns every mate into a 100
+      // that no longer trips the mate check.
+      if (a.lines[0]) whiteEval[i] = toWhite(lineToScore(a.lines[0]), i);
     } catch { /* keep the shallow value */ }
   }
 
@@ -806,7 +822,7 @@ export async function analyzeGame(
     // and the gap to the second best for "only good move" detection). The third
     // line was being searched to full depth and thrown away — a third of the
     // most expensive stage in the whole analysis, spent on nothing.
-    try { lines = await engine.getTopLines(fenBefore, EXPLAIN_DEPTH, 2); } catch { /* ignore */ }
+    try { lines = (await cache.getAnalysis(fenBefore, EXPLAIN_DEPTH, 2)).lines; } catch { /* ignore */ }
     const mainSans = lines[0] ? pvToSan(fenBefore, lines[0].pv) : [];
     const bestSan = mainSans[0] ?? null;
     let bestFollowUp: string | null = null, bestLineForced = false;
@@ -875,7 +891,7 @@ export async function analyzeGame(
     let punishFollowUp: string | null = null, punishFocusSquare: string | null = null;
     if (!good) {
       try {
-        const opp = await engine.getTopLines(fens[i], DEEP_DEPTH, 1);
+        const opp = (await cache.getAnalysis(fens[i], DEEP_DEPTH, 1)).lines;
         const oppSans = opp[0] ? pvToSan(fens[i], opp[0].pv) : [];
         if (oppSans.length) {
           const cc = new Chess(fens[i]);

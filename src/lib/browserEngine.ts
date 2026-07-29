@@ -206,4 +206,26 @@ export async function analyzeAllFens(
   return results;
 }
 
-export const browserEngine: CoachEngine = { evaluatePosition, getTopLines, analyzeAllFens };
+/**
+ * Reset the engine between games so a re-analysis is reproducible. `ucinewgame`
+ * tells Stockfish the next position is unrelated to the last; `Clear Hash` makes
+ * sure nothing survives it.
+ */
+export async function newGame(): Promise<void> {
+  return runExclusive(async () => {
+    const worker = await getWorker();
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => { current = null; resolve(); }, 10000);
+      current = {
+        onLine: (line) => {
+          if (line === "readyok") { clearTimeout(timer); current = null; resolve(); }
+        },
+      };
+      worker.postMessage("ucinewgame");
+      worker.postMessage("setoption name Clear Hash");
+      worker.postMessage("isready");
+    });
+  });
+}
+
+export const browserEngine: CoachEngine = { newGame, evaluatePosition, getTopLines, analyzeAllFens };
