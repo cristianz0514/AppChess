@@ -5,8 +5,8 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 112
-- **Variantes de texto:** 269
+- **Categorías:** 118
+- **Variantes de texto:** 288
 - **Sin nombre humano todavía:** 18
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -94,6 +94,8 @@ _Bandera:_ `isCastle`
 _Bandera:_ `isBook`
 
 1. El rival sigue la teoría: ${piece} a ${to}.
+2. Los cambios que vienen dejan al rival con material de más.
+3. Cuando se resuelvan las capturas, el rival sale ganando material.
 
 ### Ataca una pieza mayor (gana tiempo)
 
@@ -119,6 +121,22 @@ _Bandera:_ `structure`
 
 1. El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.
 2. Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.
+3. El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.
+
+### Oposición de reyes
+
+_Bandera:_ `opposition`
+
+1. El rival toma la oposición: tu rey tiene que ceder terreno.
+
+### Regla del cuadrado (final de peones)
+
+_Bandera:_ `squareRule`
+
+1. Tu rey no entra en el cuadrado: el peón rival de ${sr.pawnSquare} corona solo.
+2. Cuenta el cuadrado: el peón rival de ${sr.pawnSquare} llega antes que tu rey.
+3. El peón rival de ${sr.pawnSquare} no corona solo: tu rey llega a tiempo para frenarlo.
+4. Tu rey entra en el cuadrado del peón de ${sr.pawnSquare} y lo detiene.
 
 ### defendsAttacked
 
@@ -192,11 +210,31 @@ _Bandera:_ `kingActivates`
 
 1. El rival activa su rey hacia ${to}: en el final es una pieza más.
 
+### Torre detrás del peón pasado
+
+_Bandera:_ `rookBehindPassed`
+
+1. El rival pone la torre detrás de su peón pasado: lo empuja según avanza.
+
 ### Torres conectadas
 
 _Bandera:_ `connectsRooks`
 
 1. El rival conecta sus torres.
+
+### Da aire al rey
+
+_Bandera:_ `givesKingLuft`
+
+1. El rival le da aire a su rey: gana casilla de escape.
+
+### Término de evaluación que cambió
+
+_Bandera:_ `dominantTerm`
+
+1. El rival gana movilidad con ${piece} en ${to}.
+2. El rival gana espacio en tu campo.
+3. El rival suma una pieza al juego: va por delante en desarrollo.
 
 ### Debilita el escudo del rey
 
@@ -239,8 +277,19 @@ _Bandera:_ `developsPiece`
 _Bandera:_ `toCenter`
 
 1. El rival ocupa el centro con ${piece} en ${to}.
-2. El rival juega ${piece} a ${to}.
-3. ${cap(piece)} del rival va a ${to}.
+
+### Pieza olvidada / pasiva
+
+_Bandera:_ `passivePiece`
+
+1. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} sigue sin entrar en juego.
+2. ${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
+3. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está mal ubicada y controla poco.
+4. ${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} pinta poco ahí.
+5. El rival juega ${piece} a ${to}.
+6. ${cap(piece)} del rival va a ${to}.
+7. Jugada tranquila del rival: ${piece} a ${to}.
+8. El rival mueve ${piece} a ${to}, sin cambios en la posición.
 
 ---
 

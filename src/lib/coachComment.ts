@@ -1105,6 +1105,15 @@ function opponentQuietComment(f: MoveFacts): string {
       ? "Aquí se acaba la teoría también para el rival."
       : `El rival sigue la teoría: ${piece} a ${to}.`;
   }
+
+  // Same reading as the mover's quiescence check, from the other side: the
+  // trades already on the board resolve in the RIVAL's favour, not a
+  // consequence of this specific quiet move.
+  if ((f.dustMaterial ?? 0) >= 3) return pick([
+    `Los cambios que vienen dejan al rival con material de más.`,
+    `Cuando se resuelvan las capturas, el rival sale ganando material.`,
+  ], s);
+
   // ── The same structural detectors, worded from the player's side ────────────
   // Written out rather than transformed: possessives change owner between the two
   // voices ("tu estructura" is the OPPONENT's here, "el rival" is the PLAYER), and
@@ -1121,6 +1130,24 @@ function opponentQuietComment(f: MoveFacts): string {
   if (f.rookToSeventh) return `El rival mete la torre en tu séptima fila, donde más muerde.`;
   if (f.structure?.createdPassed) return `El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.`;
   if (f.structure?.brokeTheirStructure) return `Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.`;
+  if (f.structure?.isolatedTheirs) return `El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`;
+  // Direct opposition taken by the RIVAL's king means the PLAYER's king is the
+  // one that has to give ground — the opposite reading from the mover's own
+  // quiet-move branch, and worth a warning rather than a shrug.
+  if (f.opposition) return `El rival toma la oposición: tu rey tiene que ceder terreno.`;
+  if (f.squareRule) {
+    const sr = f.squareRule;
+    // sr describes the RIVAL's passed pawn here, so `promotes: true` means
+    // YOUR king fails to reach the square in time — a warning, not trivia.
+    if (sr.promotes) return pick([
+      `Tu rey no entra en el cuadrado: el peón rival de ${sr.pawnSquare} corona solo.`,
+      `Cuenta el cuadrado: el peón rival de ${sr.pawnSquare} llega antes que tu rey.`,
+    ], s);
+    return pick([
+      `El peón rival de ${sr.pawnSquare} no corona solo: tu rey llega a tiempo para frenarlo.`,
+      `Tu rey entra en el cuadrado del peón de ${sr.pawnSquare} y lo detiene.`,
+    ], s);
+  }
 
   // Their position improving: worth knowing, not alarming.
   if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.`;
@@ -1135,7 +1162,17 @@ function opponentQuietComment(f: MoveFacts): string {
   if (f.supportsPawnChain) return `El rival apuntala su cadena con el peón de ${to}.`;
   if (f.pawnRunsToPromote) return `El peón pasado del rival avanza a ${to}. Hay que frenarlo.`;
   if (f.kingActivates) return `El rival activa su rey hacia ${to}: en el final es una pieza más.`;
+  if (f.rookBehindPassed) return `El rival pone la torre detrás de su peón pasado: lo empuja según avanza.`;
   if (f.connectsRooks) return `El rival conecta sus torres.`;
+  if (f.givesKingLuft) return `El rival le da aire a su rey: gana casilla de escape.`;
+  {
+    const dq = f.dominantTerm;
+    if (dq && dq.delta > 0) {
+      if (dq.term === "mobility") return `El rival gana movilidad con ${piece} en ${to}.`;
+      if (dq.term === "space") return `El rival gana espacio en tu campo.`;
+      if (dq.term === "development") return `El rival suma una pieza al juego: va por delante en desarrollo.`;
+    }
+  }
 
   // Their position getting worse without being an outright error: openings for you.
   if (f.weakensKingShield) return `El rival adelanta un peón de su escudo y abre líneas hacia su rey.`;
@@ -1146,8 +1183,26 @@ function opponentQuietComment(f: MoveFacts): string {
   if (f.developsPiece) return `El rival pone ${piece} en juego desde ${to}.`;
   if (f.toCenter) return `El rival ocupa el centro con ${piece} en ${to}.`;
 
+  // Last resort before the wildcard: a RIVAL piece that never got developed is
+  // an opportunity you can play against, same idea as the mover's own
+  // passivePiece branch but worth naming here for the opposite reason.
+  if (f.passivePiece) {
+    const pp = f.passivePiece;
+    const aside = `${cap(piece)} a ${to}.`;
+    if (pp.stillHome) return pick([
+      `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} sigue sin entrar en juego.`,
+      `${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
+    ], s);
+    return pick([
+      `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está mal ubicada y controla poco.`,
+      `${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} pinta poco ahí.`,
+    ], s);
+  }
+
   return pick([
     `El rival juega ${piece} a ${to}.`,
     `${cap(piece)} del rival va a ${to}.`,
+    `Jugada tranquila del rival: ${piece} a ${to}.`,
+    `El rival mueve ${piece} a ${to}, sin cambios en la posición.`,
   ], s);
 }
