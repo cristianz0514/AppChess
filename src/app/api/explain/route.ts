@@ -1,28 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Chess } from "chess.js";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
-import { coachChat } from "@/lib/groqCoach";
+import { composeCoachComment, type Motif } from "@/lib/coachComment";
 
-// Coach comment for a critical moment — GROUNDED in Stockfish. We give the model
-// the move played, the engine's best move, and the evaluation swing, and ask it
-// only to explain the difference. It interprets real engine findings rather than
-// guessing the position, which keeps the comment valuable and low-hallucination.
-// Cached on moves.explanation (degrades gracefully if the column is absent).
+// Comment for one critical moment, used by the story walkthrough in GameViewer.
+//
+// This used to ask an LLM. It no longer does, and the reason is register: every
+// other comment in the app is composed from the templates in lib/coachComment,
+// and a model-written sentence dropped in among them reads like a different
+// person wrote it — different length, different vocabulary, different confidence.
+// Consistency across one review matters more than any single sentence.
+//
+// In practice this route now rarely composes anything: the analysis writes a
+// comment for EVERY ply, so the cache below hits. The composed path is the
+// fallback for games analysed before that was true.
+//
+// It works from less than the full analysis has — no deep re-evaluation, no
+// punishment line — so it fills only the facts it can verify and leaves the rest
+// null. composeCoachComment degrades that way by design: a missing fact drops a
+// clause, it never invents one.
+
+const PIECE_ES: Record<string, string> = {
+  p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey",
+};
+
+const toMotif = (m: { key: string; label: string; pieceName?: string; square?: string }): Motif =>
+  ({ key: m.key, label: m.label, piece: m.pieceName, square: m.square });
+
+// Same thresholds as the analysis pipeline's classify(), kept in centipawns so
+// the two can't disagree about what counts as a mistake.
+function classify(swingPawns: number): string {
+  const cp = Math.abs(swingPawns) * 100;
+  if (cp < 25) return "excellent";
+  if (cp < 50) return "good";
+  if (cp < 100) return "inaccuracy";
+  if (cp < 200) return "mistake";
+  return "blunder";
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body?.san || !body?.fenBefore) {
     return NextResponse.json({ error: "missing data" }, { status: 400 });
   }
 
-  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, phase, gameId, ply } = body;
+  const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, gameId, ply } = body;
 
   // 1. Cache lookup. Matching by (move_number, move) is AMBIGUOUS: White's and
-  // Black's move at the same move_number can share the exact same SAN (e.g.
-  // both play "dxe5" on a recapture, or "Nxg4" on either side of a trade) —
-  // that collision silently attached one ply's classification/explanation to
-  // the OTHER ply too. `ply` (the 0-indexed absolute move index, unique per
-  // game) is the real key; fall back to the old ambiguous match only for
-  // games analyzed before the `ply` column existed.
+  // Black's move at the same move_number can share the same SAN (both play
+  // "dxe5" on a recapture), and that collision silently attached one ply's
+  // explanation to the OTHER ply too. `ply` is the real key; the old match
+  // remains only for games analysed before that column existed.
   if (gameId) {
     try {
       const query = supabase.from("moves").select("explanation").eq("game_id", gameId);
@@ -33,70 +62,79 @@ export async function POST(req: NextRequest) {
     } catch { /* column may not exist yet */ }
   }
 
-  const fmt = (e: unknown) =>
-    typeof e === "number" ? (Math.abs(e) >= 90 ? (e > 0 ? "mate a tu favor" : "mate en tu contra") : `${e > 0 ? "+" : ""}${e.toFixed(1)}`) : "?";
+  // 2. Compose from what this request can actually verify.
+  let played;
+  try {
+    const board = new Chess(fenBefore);
+    played = board.move(san);
+  } catch {
+    return NextResponse.json({ error: "invalid move" }, { status: 400 });
+  }
+  if (!played) return NextResponse.json({ error: "invalid move" }, { status: 400 });
 
-  // How big was the swing, in plain pawn-equivalents — gives the model a
-  // concrete magnitude to reach for instead of just parroting the raw evals.
-  const swing = typeof evalBefore === "number" && typeof evalAfter === "number"
-    ? Math.abs(evalBefore - evalAfter) : null;
-  const swingLine = swing != null
-    ? swing >= 9000 ? "Esta jugada deja escapar un mate forzado." : `La ventaja cambió en unos ${swing.toFixed(1)} peones.`
-    : "";
+  const rawMotifs = detectMotifs(fenBefore, san);
+  const selfHang = rawMotifs.find((m) => m.key === "hangs_own");
 
-  // Rule-based tactical-pattern detection (real board geometry, not the
-  // model guessing) — grounds the coach's vocabulary in the standard Spanish
-  // terms (horquilla, clavada, ataque descubierto) instead of vague language,
-  // and only when a pattern is ACTUALLY there to name.
-  //
-  // fork/pin/skewer/discovered/hanging all describe a threat the MOVER
-  // creates against the OPPONENT — they're never a self-inflicted problem,
-  // so a hit on the student's own move is not blame-worthy and must not be
-  // read as "why the move was bad". hangs_own is the opposite direction
-  // (the mover's own piece left undefended) and is the one genuine
-  // self-caused-problem signal — split it out so the prompt can't conflate
-  // the two.
-  const playedMotifs = detectMotifs(fenBefore, san);
-  const bestMotifs = bestMove ? detectMotifs(fenBefore, bestMove) : [];
-  const playedSelfHang = playedMotifs.find((m) => m.key === "hangs_own");
-  const playedThreats = playedMotifs.filter((m) => m.key !== "hangs_own");
-  const bestThreats = bestMotifs.filter((m) => m.key !== "hangs_own");
-  // Name the exact piece/square whenever we have one — otherwise the model
-  // has to guess which piece is involved, and it reliably guesses wrong
-  // (e.g. blaming the piece that just moved when a DIFFERENT piece is the
-  // one actually left hanging).
-  const motifLine = [
-    playedSelfHang ? `La jugada del alumno (${san}) deja su ${playedSelfHang.pieceName} en ${playedSelfHang.square} sin ningún defensor (pieza propia colgada) — esta SÍ es un problema causado por su jugada, y esa es la pieza y casilla exactas, no otra.` : null,
-    bestThreats.length ? `La mejor jugada (${bestMove}) logra: ${bestThreats.map((m) => `${m.label}${m.square ? ` (sobre el ${m.pieceName} en ${m.square})` : ""}`).join(", ")} — esto es lo que el alumno dejó pasar.` : null,
-    playedThreats.length ? `Nota aparte (NO es la causa del error, es solo información): la jugada del alumno también genera ${playedThreats.map((m) => m.label).join(", ")} contra el rival.` : null,
-  ].filter(Boolean).join(" ");
+  // Resolve the best move to a piece and square, so the alternative clause can
+  // name them instead of echoing UCI coordinates at the player.
+  let bestPiece: string | null = null, bestTo: string | null = null;
+  let bestCapturedPiece: string | null = null, bestGivesCheck = false;
+  let bestIsCastle = false, bestIsCenterPawn = false;
+  let bestMotifs: Motif[] = [];
+  if (bestMove) {
+    try {
+      const b = new Chess(fenBefore);
+      const bmv = b.move(bestMove);
+      if (bmv) {
+        bestPiece = PIECE_ES[bmv.piece] ?? null;
+        bestTo = bmv.to;
+        if (bmv.captured) bestCapturedPiece = PIECE_ES[bmv.captured] ?? null;
+        bestGivesCheck = /[+#]/.test(bmv.san);
+        bestIsCastle = bmv.san.startsWith("O-O");
+        bestIsCenterPawn = bmv.piece === "p" && ["d4", "e4", "d5", "e5"].includes(bmv.to);
+        bestMotifs = detectMotifs(fenBefore, bmv.san)
+          .filter((m) => m.key !== "hangs_own").map(toMotif);
+      }
+    } catch { /* an unparseable best move just means no alternative clause */ }
+  }
 
-  const prompt = `Eres el entrenador virtual de un jugador de club, dentro de la revisión de su partida — el mismo momento en que Chess.com muestra a su "Coach" explicando por qué una jugada fue buena o mala. Escribe en español, con la voz de un coach real: directa, cercana, en frases completas y naturales — nunca un volcado de datos ni fragmentos cortados.
+  const before = typeof evalBefore === "number" ? evalBefore : 0;
+  const after = typeof evalAfter === "number" ? evalAfter : 0;
+  const swing = before - after;
 
-Ejemplo del estilo esperado (tema distinto, solo para calibrar tono y longitud — no copies estas palabras ni esta idea):
-"Cxd7 abre la columna e y deja tu rey expuesto a un jaque directo. Con Bg5 mantenías la clavada sobre el caballo y una posición mucho más sólida."
+  const text = composeCoachComment({
+    variantSeed: typeof ply === "number" ? ply : moveNumber ?? 0,
+    playedPiece: PIECE_ES[played.piece] ?? "pieza",
+    playedTo: played.to,
+    isMate: played.san.includes("#"),
+    capturedPiece: played.captured ? (PIECE_ES[played.captured] ?? null) : null,
+    classification: classify(swing),
+    good: swing <= 0.25,
+    evalBefore: before,
+    evalAfter: after,
+    bestPiece, bestTo, bestCapturedPiece, bestGivesCheck, bestIsCastle, bestIsCenterPawn,
+    bestDefendsHung: false,
+    onlyGoodMove: false,
+    missedForcedMate: false,
+    selfHang: selfHang?.pieceName && selfHang.square
+      ? { piece: selfHang.pieceName, square: selfHang.square }
+      : null,
+    playedMotifs: rawMotifs.filter((m) => m.key !== "hangs_own").map(toMotif),
+    bestMotifs,
+    // No deep line is available here, so no material claim is made. Asserting
+    // "pierdes la torre" without a verified punishment line is exactly the kind
+    // of confident-but-unfounded statement this whole design exists to avoid.
+    materialLostPiece: null, materialNet: 0, materialSettled: false, materialTrades: false,
+    oppCapturesPiece: null,
+    isSacrificeConfirmed: false,
+    isCastle: played.san.startsWith("O-O"),
+    isPromotion: played.promotion != null,
+    developsPiece: (played.piece === "n" || played.piece === "b") && /[18]$/.test(played.from),
+    toCenter: ["d4", "e4", "d5", "e5"].includes(played.to),
+    gaveCheck: played.san.includes("+"),
+  });
 
-Ahora los datos reales de esta jugada:
-Posición (FEN): ${fenBefore}
-Jugada del alumno: ${moveNumber}. ${san}
-Mejor jugada según Stockfish: ${bestMove ?? "(desconocida)"}
-Evaluación antes (perspectiva del alumno): ${fmt(evalBefore)}
-Evaluación después de su jugada: ${fmt(evalAfter)}
-${swingLine}
-Fase: ${phase}
-${motifLine ? `Patrones tácticos verificados (detectados por análisis de tablero, NO los inventes ni uses otros distintos a estos): ${motifLine}` : "No se detectó ningún patrón táctico estándar (horquilla/clavada/pincho/descubierta/pieza colgada/pieza propia colgada) en esta jugada — no menciones ninguno."}
-
-Escribe 2 frases completas (no fragmentos), cada una de entre 10 y 20 palabras:
-- Primero decide CUÁL de estos casos aplica, según lo verificado arriba (en este orden de prioridad): (a) "pieza propia colgada" verificada → ESA es la causa real: la jugada del alumno deja su propia pieza sin defensa, dilo así directamente. (b) si no hay pieza propia colgada pero SÍ hay algo verificado en "la mejor jugada" → el problema de ${san} es que no vio/jugó esa táctica que sí estaba disponible ("no aprovechaste...", "dejaste pasar..."). (c) si no hay ningún patrón verificado en ninguno de los dos casos anteriores → elige la categoría posicional que de verdad aplica (seguridad del rey / una casilla o diagonal clave / desarrollo / tiempo / estructura de peones), pero solo si es real, nunca inventada. La "nota aparte" (si aparece) es solo contexto — NUNCA la uses como la causa del error.
-- Frase 1: el hecho concreto según el caso que identificaste arriba — arranca nombrando la pieza, la casilla o el patrón, no con "perdiste la oportunidad de..." ni otra frase hecha.
-- Frase 2: qué logra ${bestMove ?? "la mejor jugada"} en concreto que ${san} no logra — la lección puntual, no un consejo genérico de "desarrolla tus piezas" o "controla el centro" salvo que sea literalmente el punto.
-- Si hay un patrón táctico verificado arriba, NÓMBRALO con esa palabra exacta — es más preciso que describirlo en general. NUNCA inventes un defecto posicional (estructura de peones, flanco de rey, etc.) que no esté respaldado por los datos de arriba.
-- El número de peones de la evaluación es un dato de apoyo opcional, no el tema central — puedes omitirlo si las dos frases ya son claras sin él.
-- Está bien repetir el nombre de la pieza o el patrón en ambas frases si es el mismo hecho — NO inventes un motivo nuevo (abrir el centro, mejorar la estructura, etc.) solo para que la frase 2 suene distinta.
-- Prohibido: comillas, encabezados, "en esta posición", "es importante", cualquier variante o amenaza que no te haya dado arriba.`;
-
-  const text = await coachChat(prompt, { temperature: 0.6, maxTokens: 140 });
-  if (!text) return NextResponse.json({ error: "coach unavailable" }, { status: 503 });
+  if (!text) return NextResponse.json({ error: "sin comentario" }, { status: 404 });
 
   if (gameId) {
     try {

@@ -679,7 +679,14 @@ export async function analyzeGame(
     // `ply` may not exist yet on databases that haven't run the migration —
     // degrade gracefully instead of failing the whole analysis pass.
     if (error) {
-      await supabase.from("moves").insert(moves.map(({ ply: _ply, ...rest }) => rest));
+      // Retry without `ply` for databases that haven't run that migration. The
+      // column is dropped by rebuilding each row rather than destructuring it
+      // into an unused binding, which is what the linter was objecting to.
+      await supabase.from("moves").insert(moves.map((m) => {
+        const rest: Record<string, unknown> = { ...m };
+        delete rest.ply;
+        return rest;
+      }));
     }
   }
 

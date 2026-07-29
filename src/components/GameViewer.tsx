@@ -662,8 +662,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
 
   const criticalMoment = criticalMoments.length > 0 ? criticalMoments[0] : null;
 
-  const fmtEval = (e: number | null) =>
-    e === null ? "—" : Math.abs(e) >= 9000 ? (e > 0 ? "#" : "-#") + mateInN(e) : (e > 0 ? "+" : "") + e.toFixed(1);
+  // (fmtEval lived here. Its only caller was the comment fallback, which stopped
+  // printing pawn numbers — the eval bar already shows them, and mixing that
+  // register into the prose is what made those lines read like debug output.)
 
   // ── Story Mode: guided EMOTIONAL arc through the game ───────────────────────
   const storySlides = useMemo<StorySlide[]>(() => {
@@ -896,16 +897,22 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
             // what lets the player draw conclusions about the game as a whole.
             const rawAi = currentMove?.explanation ?? null;
             const ai = rawAi ? (isMine ? rawAi : `Tu oponente: ${rawAi}`) : null;
+            // Fallback for a game with no stored comment — in practice only games
+            // analysed before every move got one. Deliberately carries NO pawn
+            // numbers: "Perdiste 1.8 (+0.3 a -1.5)" is engine jargon, the eval bar
+            // above already shows the number, and mixing the two registers is what
+            // made these read like debug output instead of coaching.
             let computed = c?.text ?? "";
             if (currentMove && c && curE != null && prevE != null && Math.abs(curE) < 9000 && Math.abs(prevE) < 9000) {
-              const swing = curE - prevE;
-              const to = fmtEval(curE);
-              const loseVerb = isMine ? "Perdiste" : "El rival perdió";
-              const keepVerb = isMine ? "Mantienes" : "El rival mantiene";
-              const worseVerb = isMine ? "Sigues" : "El rival sigue";
-              if (cls === "blunder" || cls === "mistake") computed = `${loseVerb} ${Math.abs(swing).toFixed(1)} (${fmtEval(prevE)} a ${to}).`;
-              else if (cls === "inaccuracy") computed = `Imprecisa (${fmtEval(prevE)} a ${to}).`;
-              else if (cls === "best" || cls === "excellent" || cls === "good") computed = curE >= 1 ? `${keepVerb} ventaja (${to}).` : curE <= -1 ? `${worseVerb} peor (${to}).` : `Equilibrio (${to}).`;
+              const subject = isMine ? "" : "El rival: ";
+              if (cls === "blunder") computed = `${subject}la posición cambia de golpe, y no a favor de quien movió.`;
+              else if (cls === "mistake") computed = `${subject}se pierde el control de la partida aquí.`;
+              else if (cls === "inaccuracy") computed = `${subject}se puede jugar mejor, aunque no es grave.`;
+              else if (cls === "best" || cls === "excellent" || cls === "good") {
+                computed = curE >= 1 ? `${subject}sigue con ventaja.`
+                  : curE <= -1 ? `${subject}sigue en desventaja.`
+                  : `${subject}la posición sigue equilibrada.`;
+              }
             }
             const color = currentIsBook ? BOOK_COLOR : (c?.color ?? "var(--muted-foreground)");
             const commentText = ai || computed || (currentMove ? "" : "Usa las flechas para revisar la partida.");
