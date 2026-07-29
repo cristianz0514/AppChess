@@ -1,4 +1,5 @@
 import { ECO_LINES } from "./ecoOpenings";
+import { ECO_POSITIONS } from "./ecoPositions";
 
 // A curated list of common opening lines (SAN, from the starting position)
 // used to flag "book"/theory moves — chess.com-style — during game review.
@@ -87,8 +88,41 @@ for (const line of [...OPENING_LINES, ...ECO_LINES]) {
   }
 }
 
-// Whether the move at `plyIndex` (0-indexed) continues a known opening line,
-// given the game's full SAN history so far.
+// ── Position-based book lookup ───────────────────────────────────────────────
+// The sequence match below is kept, but position matching is the one that's
+// right: a game reaching a known position by a different move order is still in
+// the book. Real case — `e4 c6 Nf3 d5 e5 Bf5 d4` reaches a position the book
+// holds as `e4 c6 d4 d5 e5 Bf5 Nf3`, and sequence matching called it out-of-book
+// from move 3. Ten theory moves lost their book comment and the "theory ends
+// here" marker fired at move 2 instead of move 7.
+const bookPositions = new Set<number>(ECO_POSITIONS);
+
+const hashPosition = (fen: string): number => {
+  // Placement + side to move + castling only. Move counters must not
+  // participate: the same position reached in a different number of moves is the
+  // same position, which is the whole reason this exists.
+  const [placement, turn, castling] = fen.split(" ");
+  const key = `${placement} ${turn} ${castling}`;
+  let x = 5381;
+  for (let i = 0; i < key.length; i++) x = ((x * 33) ^ key.charCodeAt(i)) >>> 0;
+  return x;
+};
+
+/**
+ * Whether this POSITION is a known opening position. `fen` is the position AFTER
+ * the move in question.
+ *
+ * Preferred over isBookMove wherever the caller already has the FEN, which both
+ * real callers do.
+ */
+export function isBookPosition(fen: string | null | undefined): boolean {
+  if (!fen) return false;
+  return bookPositions.has(hashPosition(fen));
+}
+
+// Whether the move at `plyIndex` (0-indexed) continues a known opening line by
+// EXACT move order. Retained for callers without a FEN to hand; prefer
+// isBookPosition, which also matches transpositions.
 export function isBookMove(sanHistory: string[], plyIndex: number): boolean {
   if (plyIndex < 0 || plyIndex >= sanHistory.length) return false;
   const key = sanHistory.slice(0, plyIndex + 1).join("|");

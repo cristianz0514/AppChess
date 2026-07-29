@@ -9,7 +9,7 @@ import { ReviewSummaryModal } from "./ReviewSummaryModal";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
 import { estimateEloFromAcpl } from "@/lib/eloEstimate";
-import { isBookMove } from "@/lib/openingBook";
+import { isBookPosition } from "@/lib/openingBook";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -466,7 +466,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
   const currentMove = idx >= 0 ? moves[idx]       : null;
   const lastMove    = currentMove ? { from: currentMove.from, to: currentMove.to } : null;
-  const currentIsBook = isBookMove(sanHistory, idx);
+  const currentIsBook = idx >= 0 && isBookPosition(moves[idx].fen);
 
   // Best move arrow state (Story Mode's per-moment arrow; general review now
   // uses the automatic autoBest cache below instead of a manual fetch).
@@ -623,7 +623,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     const acplFor = (color: "w" | "b") => {
       const losses = moves
         .map((m, i) => ({ m, i }))
-        .filter(({ m, i }) => m.color === color && m.centipawnLoss !== null && !isBookMove(sanHistory, i))
+        .filter(({ m }) => m.color === color && m.centipawnLoss !== null && !isBookPosition(m.fen))
         .map(({ m }) => m.centipawnLoss as number);
       if (losses.length < MIN_MOVES_FOR_ELO_ESTIMATE) return null;
       return losses.reduce((s, v) => s + v, 0) / losses.length;
@@ -634,7 +634,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       mine: myAcpl !== null ? estimateEloFromAcpl(myAcpl) : null,
       theirs: theirAcpl !== null ? estimateEloFromAcpl(theirAcpl) : null,
     };
-  }, [moves, sanHistory, playerColor, opponentColor]);
+  }, [moves, playerColor, opponentColor]);
   const toMine = useCallback(
     (e: number | null) => (e === null ? null : playerColor === "w" ? e : -e),
     [playerColor],

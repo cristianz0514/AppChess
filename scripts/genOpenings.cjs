@@ -23,6 +23,18 @@ for (const f of ["a", "b", "c", "d", "e"]) {
 }
 
 const uniq = [...new Set(lines)].sort();
+
+// Refuse to write an empty book. This generator needs the lichess-org TSV, which
+// isn't in the repo — run it without that source and it happily produced a file
+// with zero lines, overwriting 139KB of committed data. A generator that can
+// silently destroy its own output is a generator with a missing guard.
+if (uniq.length < 1000) {
+  console.error(
+    `[genOpenings] ABORTA: solo ${uniq.length} lineas. Falta la fuente de datos ` +
+    `(lichess-org/chess-openings). No se sobrescribe src/lib/ecoOpenings.ts.`,
+  );
+  process.exit(1);
+}
 const header = [
   "// GENERATED from lichess-org/chess-openings (CC0) by scripts/genOpenings.cjs.",
   "// Do not edit by hand.",

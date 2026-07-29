@@ -3,7 +3,7 @@ import type { CoachEngine } from "@/lib/engineApi";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
 import { composeCoachComment, type Motif } from "@/lib/coachComment";
-import { isBookMove } from "@/lib/openingBook";
+import { isBookPosition } from "@/lib/openingBook";
 import { overloadedDefender, underDefended } from "@/lib/attackMap";
 import { structureChange, pawnStructure } from "@/lib/pawnStructure";
 import { dominantChange, pressureOnOpponent } from "@/lib/evalTerms";
@@ -540,9 +540,6 @@ export async function analyzeGame(
   }
 
   const history = chess.history({ verbose: true });
-  // Hoisted here because BOTH comment tiers need it for the opening book, not
-  // just the later one where it used to be declared.
-  const sanHistory = history.map((m) => m.san);
   chess.reset();
 
   // Build FEN list for every position after each move
@@ -551,6 +548,13 @@ export async function analyzeGame(
     chess.move(move.san);
     fens.push(chess.fen());
   }
+
+  // Book status per ply, by POSITION so transpositions count. `lastBookPly` is
+  // the last ply that is still theory anywhere in the game — a single marker,
+  // because transposing out and back in makes the book non-contiguous and
+  // "book now, not next" would announce the end of theory twice.
+  const bookPly = fens.map((f) => isBookPosition(f));
+  const lastBookPly = bookPly.lastIndexOf(true);
 
   // ── Pass 1: shallow sweep over every position ──────────────────────────────
   const evals = await engine.analyzeAllFens(fens, SHALLOW_DEPTH, (d, t) => onProgress?.(d, t, "Evaluando cada posición…"));
@@ -948,7 +952,7 @@ export async function analyzeGame(
       developsPiece: (h.piece === "n" || h.piece === "b") && /[18]$/.test(h.from),
       toCenter: ["d4", "e4", "d5", "e5"].includes(h.to),
       gaveCheck: /\+/.test(h.san),
-      isLastBookMove: isBookMove(sanHistory, i) && !isBookMove(sanHistory, i + 1),
+      isLastBookMove: i === lastBookPly,
       openingName,
       tradeVerdict: tradeVerdictFor(fens[i], h),
       trappedPiece: trappedPieceAfter(fens[i], h),
@@ -1021,9 +1025,8 @@ export async function analyzeGame(
       // The opening book already existed for the viewer's 📖 badge but was
       // never used for commentary — so four consecutive theory moves each got
       // "sacas la pieza y ganas actividad".
-      isBook: isBookMove(sanHistory, i),
-      // The move where theory ends: book now, not book next.
-      isLastBookMove: isBookMove(sanHistory, i) && !isBookMove(sanHistory, i + 1),
+      isBook: bookPly[i],
+      isLastBookMove: i === lastBookPly,
       openingName,
       tradeVerdict: tradeVerdictFor(fens[i], h),
       trappedPiece: trappedPieceAfter(fens[i], h),
