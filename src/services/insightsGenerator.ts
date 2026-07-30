@@ -3,7 +3,6 @@ import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
 import { detectMotifs } from "@/lib/tacticalMotifs";
 import { hasModernSchema } from "./dashboardData";
-import { coachChat, coachAvailable } from "@/lib/groqCoach";
 import type { Insight } from "@/types";
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
@@ -358,7 +357,7 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
       const examples = uniqueExamples.slice(0, 3).join(", ");
       message = `Colgaste una pieza sin defensa en ${n} jugadas: ${examples}${uniqueExamples.length > 3 ? ", entre otras" : ""}.${phaseHint} Antes de mover, revisa si tu pieza queda defendida.`;
     }
-    facts.push({ category: "recurring_blunder", message, severity: n >= 6 ? "high" : "medium", weight: 95 + n, skipDeepen: true });
+    facts.push({ category: "recurring_blunder", message, severity: n >= 6 ? "high" : "medium", weight: 95 + n });
   }
 
   // 2. Peak error window — where in the game your mistakes cluster.
@@ -440,51 +439,24 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
     category: f.category,
     message: f.message,
     severity: f.severity,
-    skipDeepen: f.skipDeepen,
   }));
 }
 
-// ─── Deepen (LLM rewrite of an already-correct fact) ────────────────────────
+// NOTE: an LLM "deepen" step used to rewrite each finished insight into warmer
+// prose. It is gone, and the reason is the one /api/explain already recorded when
+// it dropped its own model call: a model-written sentence among template-written
+// ones reads like a different person wrote it, and consistency across the app
+// matters more than any single sentence. It was also the only thing in the project
+// that could not run without a server, since an API key cannot live in the client.
 //
-// The fixed templates read as generic/robotic — same phrasing every time,
-// no matter the player. This rewrites each one into a warmer, more specific
-// coach note, but the model NEVER sees raw numbers to compute on its own:
-// it's handed the finished, verified sentence and told to explain/expand it,
-// repeating every figure verbatim. Falls back to the original template on
-// any failure (missing key, timeout, empty response) — never blocks or
-// blanks out an insight just because the rewrite didn't work.
-const CATEGORY_LABEL_ES: Record<Insight["category"], string> = {
-  opening: "aperturas",
-  tactical: "táctica",
-  time_management: "manejo del reloj",
-  recurring_blunder: "errores recurrentes",
-};
-
-async function deepenInsight(fact: GeneratedInsight): Promise<string> {
-  if (!coachAvailable) return fact.message;
-  const prompt = `Eres el entrenador personal de un jugador de ajedrez de club, escribiendo una nota corta para su panel de progreso (categoría: ${CATEGORY_LABEL_ES[fact.category]}).
-
-Hecho verificado sobre este jugador (ya calculado, con datos reales de sus partidas — NO recalcules ni inventes ningún número distinto a los que aparecen aquí):
-"${fact.message}"
-
-Reescríbelo en EXACTAMENTE 2 frases completas (nunca 3, nunca fragmentos), cada una de 12 a 20 palabras:
-- Frase 1: repite el hecho con sus datos EXACTOS — números, y también piezas, casillas, fase o apertura si aparecen (ni los redondees ni inventes otros). Apóyate en esos detalles concretos que YA están escritos arriba para explicar el patrón; están verificados, úsalos. Lo único prohibido es inventar piezas, casillas, jugadas, aperturas o causas que NO estén en el texto de arriba.
-- Frase 2: una acción/ejercicio concreto y específico a este patrón exacto (usando las piezas o la fase mencionadas si las hay) — prohibido "practica más", "ten cuidado", "revisa con calma" o cualquier consejo que serviría igual para cualquier otro problema.
-- Tono directo, cercano, de entrenador — no acusador ni condescendiente.
-- Solo el texto final, sin comillas ni encabezados.`;
-
-  const raw = await coachChat(prompt, { temperature: 0.5, maxTokens: 160 });
-  if (!raw) return fact.message;
-  let text = raw.replace(/^["“]|["”]$/g, "");
-  // Soft length cap at a word boundary — never surface a sentence cut off
-  // mid-word if the model overruns despite the length instruction above.
-  if (text.length > 320) {
-    const cut = text.slice(0, 320);
-    const lastSpace = cut.lastIndexOf(" ");
-    text = (lastSpace > 240 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
-  }
-  return text || fact.message;
-}
+// Nothing is lost in substance. computeFacts() below produces the verified
+// sentence; deepening only reworded it, and already fell back to that same
+// sentence whenever the key was missing or the call failed — so this is the path
+// that was already running in every failure case.
+//
+// If the wording reads repetitive, the fix is the one that worked for
+// lib/coachComment today: several variants per fact chosen deterministically, not
+// a model. A template can be proven correct; a rewrite has to be trusted.
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -492,26 +464,16 @@ interface GeneratedInsight {
   category: Insight["category"];
   message: string;
   severity: Insight["severity"];
-  // Facts already grounded in concrete, well-phrased specifics (real pieces/
-  // squares) skip the LLM "deepen" rewrite — that step exists to de-genericize
-  // the aggregate stat templates, and running it over an already-specific
-  // sentence only re-introduces awkwardness/repetition. Show these verbatim.
-  skipDeepen?: boolean;
 }
 
 export async function generateInsights(userId: string): Promise<void> {
   const snapshot = await buildSnapshot(userId);
   if (!snapshot) return;
 
-  // Facts are computed directly from the player's data — deterministic and
-  // always correct (see computeFacts) — then each one is deepened into a
-  // fuller, less templated coach note (see deepenInsight) before saving.
-  const facts = computeFacts(snapshot);
-  if (facts.length === 0) return;
-
-  const insights = await Promise.all(
-    facts.map(async (f) => ({ ...f, message: f.skipDeepen ? f.message : await deepenInsight(f) }))
-  );
+  // Computed directly from the player's data: deterministic, and every figure in
+  // the sentence came from their own games (see computeFacts).
+  const insights = computeFacts(snapshot);
+  if (insights.length === 0) return;
 
   await supabase.from("insights").delete().eq("user_id", userId);
   await supabase.from("insights").insert(
