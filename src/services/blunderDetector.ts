@@ -624,7 +624,10 @@ export async function analyzeGame(
   // What the player could do about the opponent's mistake at each ply, filled in
   // by the engine tier. Indexed by the OPPONENT's ply; read back on the player's
   // reply to say whether they took it.
-  interface Opportunity { san: string; piece: string; to: string; captures: string | null; isMate: boolean }
+  // `capturedVal` is carried alongside the Spanish `captures` name purely so the
+  // taken/missed rule below can COMPARE what the opportunity was worth against
+  // what the player actually won. The name alone can't be compared.
+  interface Opportunity { san: string; piece: string; to: string; captures: string | null; capturedVal: number; isMate: boolean }
   const opportunityAt = new Map<number, Opportunity>();
 
   // The player's viewpoint facts for one ply. Shared by both comment tiers so the
@@ -633,13 +636,23 @@ export async function analyzeGame(
     const prev = opportunityAt.get(ply - 1);
     const isPlayerReply = prev != null && !isOpponentPly(ply);
     const took = isPlayerReply ? history[ply].san === prev.san : null;
+    // Playing a DIFFERENT move that won at least as much is not a missed
+    // opportunity. Seen in a real game: the player captured a bishop while the
+    // engine's line took a pawn, and the comment read "Ganas el alfil. Se te
+    // escapó: podías llevarte el peón" — scolding them for doing better. Praise
+    // still needs the exact move (`took` is unchanged), but the reproach is
+    // withheld, and with no missedOpportunity the clause is simply omitted.
+    const playedVal = isPlayerReply && history[ply].captured
+      ? (PIECE_VAL[history[ply].captured!] ?? 0)
+      : 0;
+    const wonAsMuch = playedVal > 0 && prev != null && playedVal >= prev.capturedVal;
     return {
       byOpponent: isOpponentPly(ply),
       opportunity: opportunityAt.get(ply) ?? null,
       tookOpportunity: took,
       // Only described when it was actually missed, so an absent opportunity can
       // never read as one the player failed to take.
-      missedOpportunity: took === false && prev
+      missedOpportunity: took === false && prev && !wonAsMuch
         ? { piece: prev.piece, to: prev.to, captures: prev.captures }
         : null,
     };
@@ -996,6 +1009,7 @@ export async function analyzeGame(
                   piece: PIECE_ES[mv.piece] ?? "pieza",
                   to: mv.to,
                   captures: mv.captured ? (PIECE_ES[mv.captured] ?? null) : null,
+                  capturedVal: mv.captured ? (PIECE_VAL[mv.captured] ?? 0) : 0,
                   isMate: mv.san.includes("#"),
                 });
               }

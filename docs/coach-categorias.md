@@ -5,8 +5,8 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 123
-- **Variantes de texto:** 301
+- **Categorías:** 127
+- **Variantes de texto:** 327
 - **Sin nombre humano todavía:** 20
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -54,20 +54,25 @@ _Bandera:_ `isMate`
 _Bandera:_ `isRecapture`
 
 1. El rival recupera en ${to}: el cambio queda saldado.${check}
+2. El rival retoma en ${to} y el material vuelve a estar igual.${check}
 
 ### Veredicto del cambio (gana / parejo / pierde)
 
 _Bandera:_ `tradeVerdict`
 
 1. El rival se lleva ${cp} de ${to} y gana material.${check}
-2. El rival cambia ${cp} en ${to}: un cambio parejo.${check}
-3. El rival captura ${cp} en ${to}.${check}
+2. ${cap(cp)} de ${to} cae y el rival no lo paga: sale ganando.${check}
+3. El rival cambia ${cp} en ${to}: un cambio parejo.${check}
+4. Cambio parejo en ${to}: el rival se lleva ${cp} y tú recuperas.${check}
+5. El rival captura ${cp} en ${to}.${check}
+6. El rival se lleva ${cp} de ${to}.${check}
 
 ### Jaque
 
 _Bandera:_ `gaveCheck`
 
 1. El rival da jaque con ${piece} en ${to}.
+2. Jaque: ${piece} del rival entra en ${to}.
 
 ### Amenaza propia creada (null-move)
 
@@ -130,12 +135,14 @@ _Bandera:_ `attacksBigger`
 _Bandera:_ `theirKingWorse`
 
 1. El rival suma presión sobre tu rey con ${piece} en ${to}.
+2. ${cap(piece)} en ${to} aprieta el cerco sobre tu rey.
 
 ### Torre a la séptima
 
 _Bandera:_ `rookToSeventh`
 
 1. El rival mete la torre en tu séptima fila, donde más muerde.
+2. Torre rival en tu séptima: desde ${to} muerde tus peones y encierra a tu rey.
 
 ### Estructura de peones
 
@@ -258,6 +265,7 @@ _Bandera:_ `dominantTerm`
 1. El rival gana movilidad con ${piece} en ${to}.
 2. El rival gana espacio en tu campo.
 3. El rival suma una pieza al juego: va por delante en desarrollo.
+4. El rival refuerza la cobertura de su rey.
 
 ### Debilita el escudo del rey
 
@@ -276,6 +284,7 @@ _Bandera:_ `knightToRim`
 _Bandera:_ `movesPieceTwice`
 
 1. El rival mueve otra vez ${piece} en vez de desarrollar.
+2. ${cap(piece)} del rival vuelve a moverse; le quedan piezas sin sacar.
 
 ### Dama fuera demasiado pronto
 
@@ -288,18 +297,22 @@ _Bandera:_ `queenOutEarly`
 _Bandera:_ `retreats`
 
 1. El rival repliega ${piece} a ${to}.
+2. El rival retira ${piece} a ${to} para reagrupar.
 
 ### Desarrolla una pieza
 
 _Bandera:_ `developsPiece`
 
 1. El rival pone ${piece} en juego desde ${to}.
+2. El rival desarrolla ${piece} a ${to}.
+3. ${cap(piece)} del rival entra en juego en ${to}.
 
 ### Ocupa el centro
 
 _Bandera:_ `toCenter`
 
 1. El rival ocupa el centro con ${piece} en ${to}.
+2. El rival planta ${piece} en ${to} y reclama el centro.
 
 ### Pieza olvidada / pasiva
 
@@ -636,6 +649,36 @@ _Bandera:_ `dominantTerm`
 3. Ganas espacio en el campo rival.
 4. Avanzas tu frente y le quitas terreno al rival.
 5. Sumas una pieza al juego: vas por delante en desarrollo.
+6. Tu rey queda mejor cubierto tras esta jugada.
+7. Mejoras la seguridad de tu rey: menos líneas abiertas hacia él.
+
+### Pieza propia atrapada
+
+_Bandera:_ `trappedPiece`
+
+1. ${lead} Ojo: ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square} se queda sin casillas seguras.
+2. ${lead} Cuidado con ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square}: no tiene por dónde salir.
+
+### Riesgo de mate en la última fila
+
+_Bandera:_ `backRankRisk`
+
+1. ${lead} Ojo a la última fila: tu rey no tiene casilla de escape.
+2. ${lead} Tu rey sigue encerrado en la última fila; conviene darle aire.
+
+### Defensor sobrecargado
+
+_Bandera:_ `overloaded`
+
+1. ${lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.
+2. ${lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.
+
+### Más atacantes que defensores
+
+_Bandera:_ `underDefended`
+
+1. ${lead} Ojo: ${art(f.underDefended.piece)} de ${f.underDefended.square} tiene más atacantes que defensores.
+2. ${lead} No te alcanzan los defensores en ${f.underDefended.square}.
 
 ### Pieza olvidada / pasiva
 
@@ -653,12 +696,15 @@ _Bandera:_ `passivePiece`
 _Bandera:_ `isEndgame`
 
 1. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
-2. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
-3. Jugada de final tranquila: quedas ${standing}.
-4. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
-5. Jugada sólida, quedas ${standing}.
-6. Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.
+2. ${cap(art(f.playedPiece))} a ${f.playedTo} en el final; la posición ${shifted ? "queda" : "sigue"} ${state}.
+3. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
+4. Jugada de final tranquila: quedas ${standing}.
+5. ${cap(art(f.playedPiece))} a ${f.playedTo} en el final, y ${stays} ${standing}.
+6. Maniobra de final con ${art(f.playedPiece)} a ${f.playedTo}; nada cambia de fondo.
 7. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
+8. Jugada sólida, quedas ${standing}.
+9. Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.
+10. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
 
 ---
 
@@ -702,7 +748,7 @@ _Bandera:_ `capturedPiece`
 
 _Bandera:_ `missedForcedMate`
 
-1. Tenías jaque mate forzado y se te escapó.
+1. Tenías jaque mate forzado y esta jugada lo desperdicia.
 2. Había mate forzado a tu favor: esta jugada lo deja ir.
 
 ### Deja una pieza propia colgada

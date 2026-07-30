@@ -220,7 +220,19 @@ function hangingPhrase(m: Motif): string {
 }
 // Stable pick — the same move always renders the same text, but different moves
 // rotate through the variants so consecutive comments don't read as one mold.
-const pick = (variants: string[], seed: number) => variants[Math.abs(seed) % variants.length];
+// The seed is the PLY index, and one side's plies are ALL the same parity — so
+// `seed % variants.length` was constant per side on every two-variant array,
+// making one of the two variants literally unreachable for that side and printing
+// the same sentence on consecutive same-side moves. Seen in a real game: "Ojo,
+// ahora va contra tu dama de f3" on plies 15 AND 17, and "El rival mueve otra vez
+// el caballo en vez de desarrollar" on plies 12 AND 14 of another. On four-variant
+// arrays it wasted half the variants the same way.
+//
+// Halving turns the ply into a move number, which counts 0,1,2,3… for BOTH sides,
+// so each side cycles through every variant instead of standing on one. Still a
+// pure function of the ply, so the output stays deterministic per game.
+const pick = (variants: string[], seed: number) =>
+  variants[Math.abs(Math.floor(seed / 2)) % variants.length];
 
 const MATE_MAG = 90; // |eval| at/above this means mate, not a pawn count
 
@@ -502,7 +514,44 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
       `Avanzas tu frente y le quitas terreno al rival.`,
     ], s), namesMaterial: false };
     if (dq.term === "development") return { text: `Sumas una pieza al juego: vas por delante en desarrollo.`, namesMaterial: false };
+    // kingSafety is one of the five terms dominantChange can return, and it was
+    // the only improving one with no branch here — so a move whose main effect was
+    // covering the king fell to the wildcard. Live on 3 of 44 measured wildcards.
+    if (dq.term === "kingSafety") return { text: pick([
+      `Tu rey queda mejor cubierto tras esta jugada.`,
+      `Mejoras la seguridad de tu rey: menos líneas abiertas hacia él.`,
+    ], s), namesMaterial: false };
   }
+  // ── Warnings the error tier had a monopoly on ───────────────────────────────
+  // These four facts are computed on EVERY move but were read only by slotA, so a
+  // move the engine did NOT flag could leave a rook loose, a defender doing two
+  // jobs, or a back rank ready to collapse, and the coach said nothing about it —
+  // which is exactly the warning a club player most needs. Measured: `overloaded`
+  // was live on one of six wildcard plies in a real game.
+  //
+  // Placed here, below everything the move ACHIEVED and above the generic
+  // fallback, so they never displace a better sentence. Each names the move first
+  // so the remark reads as an aside about the POSITION rather than as a claim that
+  // this move caused it — the move was fine, or it would have been classified as
+  // an error and never reached this function.
+  const lead = `${cap(art(f.playedPiece))} a ${f.playedTo}.`;
+  if (f.trappedPiece) return { text: pick([
+    `${lead} Ojo: ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square} se queda sin casillas seguras.`,
+    `${lead} Cuidado con ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square}: no tiene por dónde salir.`,
+  ], s), namesMaterial: false };
+  if (f.backRankRisk) return { text: pick([
+    `${lead} Ojo a la última fila: tu rey no tiene casilla de escape.`,
+    `${lead} Tu rey sigue encerrado en la última fila; conviene darle aire.`,
+  ], s), namesMaterial: false };
+  if (f.overloaded) return { text: pick([
+    `${lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.`,
+    `${lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.`,
+  ], s), namesMaterial: false };
+  if (f.underDefended) return { text: pick([
+    `${lead} Ojo: ${art(f.underDefended.piece)} de ${f.underDefended.square} tiene más atacantes que defensores.`,
+    `${lead} No te alcanzan los defensores en ${f.underDefended.square}.`,
+  ], s), namesMaterial: false };
+
   // Last resort before the wildcard: the piece the player has forgotten. It
   // isn't about the move that was played, which is exactly why it belongs here —
   // when there's nothing to say about the move, there's still something worth
@@ -531,11 +580,23 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
   }
   // Phase modifier: in an endgame the same standing means something different to
   // the player, and naming the phase costs nothing since we already know it.
+  // Four variants, not two. This is the single most repeated sentence in the whole
+  // engine on a real game: "Jugada de final tranquila: quedas en una posición
+  // equilibrada" printed FIVE times in one endgame (plies 47, 61, 63, 71, 73). Long
+  // endgames pile up quiet moves, so this fallback needs more room than any other,
+  // and naming the move at least distinguishes consecutive ones.
   if (f.isEndgame) return { text: pick(soft ? [
     `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.`,
+    `${cap(art(f.playedPiece))} a ${f.playedTo} en el final; la posición ${shifted ? "queda" : "sigue"} ${state}.`,
   ] : [
     `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.`,
     `Jugada de final tranquila: quedas ${standing}.`,
+    // NOT "el final sigue ${state}": `state` is feminine because it was written to
+    // follow "la posición", so that reads "el final sigue equilibrada". Any new
+    // variant has to pick ONE of the two carriers — `standing` after a verb, or
+    // `state` after "la posición" — and never graft one onto the other noun.
+    `${cap(art(f.playedPiece))} a ${f.playedTo} en el final, y ${stays} ${standing}.`,
+    `Maniobra de final con ${art(f.playedPiece)} a ${f.playedTo}; nada cambia de fondo.`,
   ], s), namesMaterial: false };
   return { text: pick(soft ? [
     `${cap(art(f.playedPiece))} a ${f.playedTo}: ${stays} ${standing}.`,
@@ -602,7 +663,11 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
 
   if (f.missedForcedMate) {
     return { text: pick([
-      `Tenías jaque mate forzado y se te escapó.`,
+      // Not "se te escapó" here: opportunityOutcome's own miss clause opens with
+      // exactly that phrase, and the two slots are concatenated — a real game
+      // printed "Tenías jaque mate forzado y se te escapó. Se te escapó: podías
+      // jugar la dama a…" Two slots must never reach for the same words.
+      `Tenías jaque mate forzado y esta jugada lo desperdicia.`,
       `Había mate forzado a tu favor: esta jugada lo deja ir.`,
     ], s), namesMaterial: false };
   }
@@ -1102,16 +1167,36 @@ function opponentQuietComment(f: MoveFacts): string {
   // rival taking the queen on d8 came out as "Cuidado: el rival amenaza tu torre
   // de a8", which is true and leaves out the queen. A capture that ALSO gives
   // check says both rather than picking one.
+  // Two variants each, not one. quietComment gives the player's own captures two
+  // to four; the rival's had exactly one, and these are the branches that fire
+  // most often in a game — a single game showed "El rival recupera en X: el cambio
+  // queda saldado" on two separate plies, word for word. Every asymmetry in
+  // variant COUNT between the two sides shows up as the rival sounding repetitive.
   if (f.capturedPiece) {
     const cp = art(f.capturedPiece);
     const check = f.gaveCheck ? " Con jaque." : "";
-    if (f.isRecapture) return `El rival recupera en ${to}: el cambio queda saldado.${check}`;
-    if (f.tradeVerdict === "gana") return `El rival se lleva ${cp} de ${to} y gana material.${check}`;
-    if (f.tradeVerdict === "pareja") return `El rival cambia ${cp} en ${to}: un cambio parejo.${check}`;
-    return `El rival captura ${cp} en ${to}.${check}`;
+    if (f.isRecapture) return pick([
+      `El rival recupera en ${to}: el cambio queda saldado.${check}`,
+      `El rival retoma en ${to} y el material vuelve a estar igual.${check}`,
+    ], s);
+    if (f.tradeVerdict === "gana") return pick([
+      `El rival se lleva ${cp} de ${to} y gana material.${check}`,
+      `${cap(cp)} de ${to} cae y el rival no lo paga: sale ganando.${check}`,
+    ], s);
+    if (f.tradeVerdict === "pareja") return pick([
+      `El rival cambia ${cp} en ${to}: un cambio parejo.${check}`,
+      `Cambio parejo en ${to}: el rival se lleva ${cp} y tú recuperas.${check}`,
+    ], s);
+    return pick([
+      `El rival captura ${cp} en ${to}.${check}`,
+      `El rival se lleva ${cp} de ${to}.${check}`,
+    ], s);
   }
 
-  if (f.gaveCheck) return `El rival da jaque con ${piece} en ${to}.`;
+  if (f.gaveCheck) return pick([
+    `El rival da jaque con ${piece} en ${to}.`,
+    `Jaque: ${piece} del rival entra en ${to}.`,
+  ], s);
 
   // A threat against the player outranks everything else on a QUIET move — one
   // that neither took material nor gave check.
@@ -1182,8 +1267,14 @@ function opponentQuietComment(f: MoveFacts): string {
 
   // Their threats and gains against the player: warnings.
   if (f.attacksBigger) return `El rival ataca ${art(f.attacksBigger)} con ${piece} en ${to}.`;
-  if (f.theirKingWorse) return `El rival suma presión sobre tu rey con ${piece} en ${to}.`;
-  if (f.rookToSeventh) return `El rival mete la torre en tu séptima fila, donde más muerde.`;
+  if (f.theirKingWorse) return pick([
+    `El rival suma presión sobre tu rey con ${piece} en ${to}.`,
+    `${cap(piece)} en ${to} aprieta el cerco sobre tu rey.`,
+  ], s);
+  if (f.rookToSeventh) return pick([
+    `El rival mete la torre en tu séptima fila, donde más muerde.`,
+    `Torre rival en tu séptima: desde ${to} muerde tus peones y encierra a tu rey.`,
+  ], s);
   if (f.structure?.createdPassed) return `El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.`;
   if (f.structure?.brokeTheirStructure) return `Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.`;
   if (f.structure?.isolatedTheirs) return `El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`;
@@ -1238,17 +1329,36 @@ function opponentQuietComment(f: MoveFacts): string {
       if (dq.term === "mobility") return `El rival gana movilidad con ${piece} en ${to}.`;
       if (dq.term === "space") return `El rival gana espacio en tu campo.`;
       if (dq.term === "development") return `El rival suma una pieza al juego: va por delante en desarrollo.`;
+      if (dq.term === "kingSafety") return `El rival refuerza la cobertura de su rey.`;
     }
   }
 
   // Their position getting worse without being an outright error: openings for you.
+  //
+  // Two variants on the four that fire repeatedly within one game (a piece moved
+  // twice, a retreat, a development, taking the centre). A real game printed "El
+  // rival mueve otra vez el caballo en vez de desarrollar" on plies 12 AND 14 —
+  // and unlike the parity bug in pick(), a one-variant array has nothing to cycle.
   if (f.weakensKingShield) return `El rival adelanta un peón de su escudo y abre líneas hacia su rey.`;
   if (f.knightToRim) return `El caballo del rival se va a la banda en ${to}: desde ahí controla poco.`;
-  if (f.movesPieceTwice) return `El rival mueve otra vez ${piece} en vez de desarrollar.`;
+  if (f.movesPieceTwice) return pick([
+    `El rival mueve otra vez ${piece} en vez de desarrollar.`,
+    `${cap(piece)} del rival vuelve a moverse; le quedan piezas sin sacar.`,
+  ], s);
   if (f.queenOutEarly) return `El rival saca la dama pronto: puedes ganar tiempos atacándola.`;
-  if (f.retreats) return `El rival repliega ${piece} a ${to}.`;
-  if (f.developsPiece) return `El rival pone ${piece} en juego desde ${to}.`;
-  if (f.toCenter) return `El rival ocupa el centro con ${piece} en ${to}.`;
+  if (f.retreats) return pick([
+    `El rival repliega ${piece} a ${to}.`,
+    `El rival retira ${piece} a ${to} para reagrupar.`,
+  ], s);
+  if (f.developsPiece) return pick([
+    `El rival pone ${piece} en juego desde ${to}.`,
+    `El rival desarrolla ${piece} a ${to}.`,
+    `${cap(piece)} del rival entra en juego en ${to}.`,
+  ], s);
+  if (f.toCenter) return pick([
+    `El rival ocupa el centro con ${piece} en ${to}.`,
+    `El rival planta ${piece} en ${to} y reclama el centro.`,
+  ], s);
 
   // Last resort before the wildcard: a RIVAL piece that never got developed is
   // an opportunity you can play against, same idea as the mover's own
