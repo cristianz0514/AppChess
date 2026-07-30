@@ -6,7 +6,7 @@ los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
 - **Categorías:** 137
-- **Variantes de texto:** 360
+- **Variantes de texto:** 362
 - **Sin nombre humano todavía:** 28
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -841,6 +841,8 @@ _Bandera:_ `selfHang`
 1. ${cap(p)} de ${sq} queda sin defensa.
 2. Dejas ${p} de ${sq} sin ningún defensor.
 3. ${cap(p)} de ${sq} se queda colgado.
+4. Capturas ${cp} en ${f.playedTo} y el cambio te favorece.
+5. Cambias ${cp} en ${f.playedTo}: un cambio parejo.
 
 ### Material perdido en la línea de castigo
 

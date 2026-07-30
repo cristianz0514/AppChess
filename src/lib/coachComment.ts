@@ -777,13 +777,39 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     ], s), namesMaterial: false };
   }
 
-  if (f.selfHang) {
+  // A piece sitting "undefended" on the very square where it just captured is not
+  // a piece given away — it is the recapture half of a TRADE, and SEE already
+  // judged that trade. The isError gate above was added for exactly this false
+  // claim ("el alfil de f3 se queda colgado" on a routine retake), but
+  // classification alone does not catch it: a move can score as an inaccuracy AND
+  // still be an ordinary exchange. Reported from a real game — Qxe3+, an even queen
+  // trade the king recaptures, came out as "La dama de e3 queda sin defensa", which
+  // reads as though the queen had been handed over and never mentions that a QUEEN
+  // was captured at all.
+  const tradeRecapture = f.selfHang != null
+    && f.capturedPiece != null
+    && f.selfHang.square === f.playedTo
+    && f.tradeVerdict !== "pierde";
+
+  if (f.selfHang && !tradeRecapture) {
     const p = art(f.selfHang.piece), sq = f.selfHang.square;
     return { text: pick([
       `${cap(p)} de ${sq} queda sin defensa.`,
       `Dejas ${p} de ${sq} sin ningún defensor.`,
       `${cap(p)} de ${sq} se queda colgado.`,
     ], s), namesMaterial: true };
+  }
+
+  // Name the exchange, so suppressing the false claim above doesn't silently drop
+  // the capture too. Slot C still adds what was better, which is where the reason
+  // this move was scored an error actually belongs: "Cambias la dama en e3: un
+  // cambio parejo. Con la torre a a8 era mejor."
+  if (tradeRecapture) {
+    const cp = art(f.capturedPiece!);
+    return { text: f.tradeVerdict === "gana"
+      ? `Capturas ${cp} en ${f.playedTo} y el cambio te favorece.`
+      : `Cambias ${cp} en ${f.playedTo}: un cambio parejo.`,
+      namesMaterial: true };
   }
 
   if (f.materialLostPiece && f.materialSettled && f.materialNet >= 2) {
