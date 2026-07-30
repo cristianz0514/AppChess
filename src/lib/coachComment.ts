@@ -17,7 +17,7 @@
 
 export interface Motif {
   key: string;        // fork | pin | skewer | discovered | hanging | hangs_own
-  label: string;      // Spanish term ("horquilla", "clavada"…)
+  label: string;      // Spanish term ("doble", "clavada", "enfilada"…)
   piece?: string;     // Spanish piece name
   square?: string;
 }
@@ -206,12 +206,17 @@ const deArt = (p: string | null | undefined) => {
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // Motif labels carry their own article because Spanish gender isn't guessable
-// from the word: "una horquilla" but "un pincho". A blanket `una ${label}`
-// produced "una pincho".
+// from the word: "una clavada" but "un doble". A blanket `una ${label}`
+// produced "una doble".
+// Latin American terminology, because that's who reads this. A Colombian player
+// reported not recognising "pincho" at all, and "horquilla" is likewise the
+// Iberian/literal rendering of the English "fork" — "doble" and "enfilada" are the
+// terms actually used across Latin America. "clavada" and "ataque a la
+// descubierta" are universal and unchanged.
 const MOTIF_ART: Record<string, string> = {
-  horquilla: `una horquilla`,
+  doble: `un doble`,
   clavada: "una clavada",
-  pincho: "un pincho",
+  enfilada: "una enfilada",
   "ataque a la descubierta": `un ataque a la descubierta`,
   "doble amenaza": `una doble amenaza`,
   "doble amenaza con jaque": `una doble amenaza con jaque`,
@@ -298,13 +303,24 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
   const tactic = f.playedMotifs.find((m) => !isHanging(m));
   if (tactic) {
     const p = art(f.playedPiece);
+    // Every clause NAMES the tactic and then explains the geometry, in that order.
+    // A coach that says "ensartas dos piezas" to someone who has never met the word
+    // has taught nothing — and worse, the reader can't tell whether the claim is
+    // even true. The explanation is what makes the term learnable and checkable, so
+    // it is not optional decoration.
     const clause =
-      tactic.key === "fork" ? `montas una horquilla: ${p} en ${f.playedTo} ataca dos piezas a la vez`
-      : tactic.key === "pin" ? `clavas una pieza rival con ${p} en ${f.playedTo}: no se puede mover`
-      : tactic.key === "skewer" ? `ensartas dos piezas en la misma línea con ${p} en ${f.playedTo}`
+      tactic.key === "fork" ? `haces un doble: ${p} en ${f.playedTo} ataca dos piezas a la vez, y solo puedes salvar una`
+      // detectPinOrSkewer calls it a pin only when the piece BEHIND is the king,
+      // so "no se puede mover" is literal here: moving it would be illegal.
+      // "el rey rival", not "su rey": with two kings on the board a possessive
+      // leaves the reader working out whose king is behind the pinned piece.
+      : tactic.key === "pin" ? `clavas una pieza: ${p} en ${f.playedTo} la deja inmóvil, porque detrás está el rey rival`
+      // And a skewer only when the piece behind is worth LESS than the one in
+      // front — that ordering is the whole idea, so the sentence says it.
+      : tactic.key === "skewer" ? `haces una enfilada: ${p} en ${f.playedTo} ataca dos piezas en la misma línea, y al mover la de delante cae la de atrás`
       // This motif only fires when the position IS in check and the check does NOT
       // come from the piece that moved, so "jaque a la descubierta" is exact.
-      : `das jaque a la descubierta: el jaque lo da la pieza que estaba detrás`;
+      : `das jaque a la descubierta: al mover ${p}, el jaque lo da la pieza que estaba detrás`;
     return {
       text: f.capturedPiece
         ? `Capturas ${art(f.capturedPiece)} en ${f.playedTo} y ${clause}.`
@@ -664,7 +680,7 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
     }
     return { text: pick([
       `${aside} Aparte, ${art(pp.piece)} de ${pp.square} está en mal sitio: desde la banda controla muy poco.`,
-      `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} pinta poco ahí; su lugar está más al centro.`,
+      `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} no está haciendo nada ahí; su lugar está más al centro.`,
     ], s), namesMaterial: false };
   }
   // Phase modifier: in an endgame the same standing means something different to
@@ -1000,7 +1016,7 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
       return { text: pick([
         `Imprecisión: cedes algo de terreno.`,
         `No es grave, pero hay algo mejor aquí.`,
-        `Se puede jugar mejor, aunque no es un error de bulto.`,
+        `Se puede jugar mejor, aunque no es un error grave.`,
         `Pequeña imprecisión; la posición aguanta.`,
       ], s), namesMaterial: false };
     }
@@ -1009,7 +1025,7 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
         `Error grave: la posición se te complica de golpe.`,
         `Esta jugada le entrega la partida al rival.`,
         `Esto cambia la partida, y no a tu favor.`,
-        `Error de bulto: a partir de aquí el rival lleva la iniciativa.`,
+        `Error importante: a partir de aquí el rival lleva la iniciativa.`,
       ], s), namesMaterial: false };
     }
     if (f.classification === "mistake") {
@@ -1096,7 +1112,7 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
     return `${cap(bp)} a ${sq} abría una secuencia forzada que gana ${art(f.bestLineWins.piece)}.`;
   }
   // Skipped when slot A already named this same motif, so the two halves don't
-  // repeat each other ("Había un pincho. Con el alfil montabas un pincho.").
+  // repeat each other ("Había un doble. Con el alfil montabas un doble.").
   const bm = usedBestMotif ? undefined : f.bestMotifs.find((x) => x.key !== "hangs_own" && !isHanging(x));
   if (bm) return `Con ${bp} a ${sq} montabas ${motifArt(bm.label)}.`;
   if (f.bestGivesCheck) return `${cap(bp)} a ${sq} daba jaque y cambiaba el ritmo.`;
@@ -1256,10 +1272,11 @@ function opponentQuietComment(f: MoveFacts): string {
   {
     const t = f.playedMotifs.find((m) => !isHanging(m));
     if (t) {
+      // Same rule as the player's side: name it, then explain the geometry.
       const clause =
-        t.key === "fork" ? `te monta una horquilla: ${piece} en ${to} ataca dos de tus piezas a la vez`
-        : t.key === "pin" ? `te clava una pieza con ${piece} en ${to}`
-        : t.key === "skewer" ? `te ensarta dos piezas en la misma línea con ${piece} en ${to}`
+        t.key === "fork" ? `te hace un doble: ${piece} en ${to} ataca dos de tus piezas a la vez, y solo puedes salvar una`
+        : t.key === "pin" ? `te clava una pieza: ${piece} en ${to} la deja inmóvil contra tu rey`
+        : t.key === "skewer" ? `te hace una enfilada: ${piece} en ${to} ataca dos de tus piezas en línea, y al mover la de delante cae la de atrás`
         : `te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás`;
       return f.capturedPiece
         ? `El rival captura ${art(f.capturedPiece)} en ${to} y ${clause}.`
@@ -1504,7 +1521,7 @@ function opponentQuietComment(f: MoveFacts): string {
       // rival … está mal ubicada" in a real game. Every template here has to work
       // for both genders, so the wording avoids adjectives that inflect.
       `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.`,
-      `${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} pinta poco ahí.`,
+      `${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} no está haciendo nada ahí.`,
     ], s);
   }
 

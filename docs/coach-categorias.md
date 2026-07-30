@@ -6,7 +6,7 @@ los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
 - **Categorías:** 137
-- **Variantes de texto:** 361
+- **Variantes de texto:** 360
 - **Sin nombre humano todavía:** 28
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -32,12 +32,11 @@ va solo.
 _Bandera:_ `(varios)`
 
 1. y después te llevas la torre de d5
-2. una horquilla
-3. un ataque a la descubierta
-4. una doble amenaza
-5. una doble amenaza con jaque
-6. podías capturar ${art(m.piece)} de ${m.square}, que estaba sin defensa
-7. había una pieza sin defensa
+2. un ataque a la descubierta
+3. una doble amenaza
+4. una doble amenaza con jaque
+5. podías capturar ${art(m.piece)} de ${m.square}, que estaba sin defensa
+6. había una pieza sin defensa
 
 ---
 
@@ -53,9 +52,9 @@ _Bandera:_ `isMate`
 
 _Bandera:_ `playedMotifs`
 
-1. te monta una horquilla: ${piece} en ${to} ataca dos de tus piezas a la vez
-2. te clava una pieza con ${piece} en ${to}
-3. te ensarta dos piezas en la misma línea con ${piece} en ${to}
+1. te hace un doble: ${piece} en ${to} ataca dos de tus piezas a la vez, y solo puedes salvar una
+2. te clava una pieza: ${piece} en ${to} la deja inmóvil contra tu rey
+3. te hace una enfilada: ${piece} en ${to} ataca dos de tus piezas en línea, y al mover la de delante cae la de atrás
 4. te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás
 5. El rival captura ${art(f.capturedPiece)} en ${to} y ${clause}.
 6. ¡Cuidado! El rival ${clause}.
@@ -355,7 +354,7 @@ _Bandera:_ `passivePiece`
 1. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} sigue sin entrar en juego.
 2. ${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
 3. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.
-4. ${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} pinta poco ahí.
+4. ${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} no está haciendo nada ahí.
 
 ### isEndgame
 
@@ -427,10 +426,10 @@ _Bandera:_ `variantSeed`
 
 _Bandera:_ `playedMotifs`
 
-1. montas una horquilla: ${p} en ${f.playedTo} ataca dos piezas a la vez
-2. clavas una pieza rival con ${p} en ${f.playedTo}: no se puede mover
-3. ensartas dos piezas en la misma línea con ${p} en ${f.playedTo}
-4. das jaque a la descubierta: el jaque lo da la pieza que estaba detrás
+1. haces un doble: ${p} en ${f.playedTo} ataca dos piezas a la vez, y solo puedes salvar una
+2. clavas una pieza: ${p} en ${f.playedTo} la deja inmóvil, porque detrás está el rey rival
+3. haces una enfilada: ${p} en ${f.playedTo} ataca dos piezas en la misma línea, y al mover la de delante cae la de atrás
+4. das jaque a la descubierta: al mover ${p}, el jaque lo da la pieza que estaba detrás
 5. ${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.
 6. Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.
 
@@ -773,7 +772,7 @@ _Bandera:_ `passivePiece`
 3. ${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} está encerrado por tus propias piezas.
 4. ${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} casi no tiene casillas.
 5. ${aside} Aparte, ${art(pp.piece)} de ${pp.square} está en mal sitio: desde la banda controla muy poco.
-6. ${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} pinta poco ahí; su lugar está más al centro.
+6. ${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} no está haciendo nada ahí; su lugar está más al centro.
 
 ### isEndgame
 
@@ -997,7 +996,7 @@ _Bandera:_ `bestTo`
 
 1. Imprecisión: cedes algo de terreno.
 2. No es grave, pero hay algo mejor aquí.
-3. Se puede jugar mejor, aunque no es un error de bulto.
+3. Se puede jugar mejor, aunque no es un error grave.
 4. Pequeña imprecisión; la posición aguanta.
 
 ### Genérico por clasificación
@@ -1007,7 +1006,7 @@ _Bandera:_ `classification`
 1. Error grave: la posición se te complica de golpe.
 2. Esta jugada le entrega la partida al rival.
 3. Esto cambia la partida, y no a tu favor.
-4. Error de bulto: a partir de aquí el rival lleva la iniciativa.
+4. Error importante: a partir de aquí el rival lleva la iniciativa.
 5. Error: le das la iniciativa al rival.
 6. Con esta jugada pierdes el hilo de la posición.
 7. Aquí se te escapa el control de la partida.

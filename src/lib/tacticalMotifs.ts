@@ -71,7 +71,7 @@ function findKing(chess: Chess, color: "w" | "b"): string | null {
   return null;
 }
 
-// Absolute pin (clavada) or skewer (pincho): from a sliding piece, the first
+// Absolute pin (clavada) or skewer (enfilada): from a sliding piece, the first
 // enemy piece hit along a direction, followed (nothing in between) by a
 // second enemy piece on the same line. If that second piece is the king, the
 // front piece is pinned to it. If the front piece is worth MORE than the
@@ -152,10 +152,11 @@ export function detectMotifs(fenBefore: string, san: string): DetectedMotif[] {
     .map((s) => ({ sq: s, piece: after.get(s as Square) }))
     .filter((t): t is { sq: string; piece: NonNullable<ReturnType<Chess["get"]>> } => !!t.piece && t.piece.color === oppColor);
 
-  // Fork (horquilla) — the piece that just moved now attacks 2+ enemy pieces
+  // Fork ("doble" in Latin American Spanish, which is the audience) — the piece
+  // that just moved now attacks 2+ enemy pieces
   // each worth more than a pawn (a real simultaneous double attack).
   if (enemyTargets.filter((t) => PIECE_VALUE[t.piece.type] >= 3).length >= 2) {
-    motifs.push({ key: "fork", label: "horquilla" });
+    motifs.push({ key: "fork", label: "doble" });
   }
 
   // Pieza colgada — an enemy piece (knight or up; pawns excluded) the mover
@@ -168,11 +169,13 @@ export function detectMotifs(fenBefore: string, san: string): DetectedMotif[] {
   const hanging = enemyTargets.find((t) => PIECE_VALUE[t.piece.type] >= 3 && !isSquareAttackedBy(after, t.sq, oppColor));
   if (hanging) motifs.push({ key: "hanging", label: "pieza colgada", square: hanging.sq, pieceName: PIECE_NAME_ES[hanging.piece.type] });
 
-  // Pin (clavada) / skewer (pincho) — same ray-cast geometry, distinguished
+  // Pin ("clavada", universal) / skewer ("enfilada" in Latin America; "pincho" is
+  // Iberian and a Colombian reader reported not recognising it at all) — same
+  // ray-cast geometry, distinguished
   // by whether the piece behind the front one is the king or just cheaper.
   const pinOrSkewer = detectPinOrSkewer(after, move.to, move.piece, myColor);
   if (pinOrSkewer === "pin") motifs.push({ key: "pin", label: "clavada" });
-  else if (pinOrSkewer === "skewer") motifs.push({ key: "skewer", label: "pincho" });
+  else if (pinOrSkewer === "skewer") motifs.push({ key: "skewer", label: "enfilada" });
 
   // Ataque a la descubierta (discovered attack/check) — in check, but not
   // from the piece that just moved (Lichess's exact Spanish theme name).
