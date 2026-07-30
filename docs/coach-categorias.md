@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 118
-- **Variantes de texto:** 288
-- **Sin nombre humano todavía:** 18
+- **Categorías:** 119
+- **Variantes de texto:** 292
+- **Sin nombre humano todavía:** 19
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -43,19 +43,25 @@ _Bandera:_ `(varios)`
 
 ## Jugadas del rival — descriptivo
 
-### Amenaza propia creada (null-move)
-
-_Bandera:_ `ownThreat`
-
-1. ¡Cuidado! El rival amenaza mate en ${t.square}.
-2. Cuidado: el rival amenaza ${mine} de ${t.square}.
-3. Ojo, ahora va contra ${mine} de ${t.square}.
-
 ### Jaque mate ejecutado
 
 _Bandera:_ `isMate`
 
 1. El rival da jaque mate con ${piece} en ${to}.
+
+### isRecapture
+
+_Bandera:_ `isRecapture`
+
+1. El rival recupera en ${to}: el cambio queda saldado.${check}
+
+### Veredicto del cambio (gana / parejo / pierde)
+
+_Bandera:_ `tradeVerdict`
+
+1. El rival se lleva ${cp} de ${to} y gana material.${check}
+2. El rival cambia ${cp} en ${to}: un cambio parejo.${check}
+3. El rival captura ${cp} en ${to}.${check}
 
 ### Jaque
 
@@ -63,19 +69,13 @@ _Bandera:_ `gaveCheck`
 
 1. El rival da jaque con ${piece} en ${to}.
 
-### isRecapture
+### Amenaza propia creada (null-move)
 
-_Bandera:_ `isRecapture`
+_Bandera:_ `ownThreat`
 
-1. El rival recupera en ${to}: el cambio queda saldado.
-
-### Veredicto del cambio (gana / parejo / pierde)
-
-_Bandera:_ `tradeVerdict`
-
-1. El rival se lleva ${cp} de ${to} y gana material.
-2. El rival cambia ${cp} en ${to}: un cambio parejo.
-3. El rival captura ${cp} en ${to}.
+1. ¡Cuidado! El rival amenaza mate en ${t.square}.
+2. Cuidado: el rival amenaza ${mine} de ${t.square}.
+3. Ojo, ahora va contra ${mine} de ${t.square}.
 
 ### Coronación
 
@@ -144,23 +144,24 @@ _Bandera:_ `defendsAttacked`
 
 1. El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.
 
+### Torres dobladas
+
+_Bandera:_ `doublesRooks`
+
+1. El rival dobla las torres en la columna ${to[0]}.
+
 ### battery
 
 _Bandera:_ `battery`
 
-1. El rival forma una batería con ${art(f.battery.front)} y ${art(f.battery.back)} en la misma línea.
+1. El rival dobla dos piezas mayores en la misma línea.
+2. El rival forma una batería con ${art(b.front)} y ${art(b.back)} en la misma línea.
 
 ### Puesto avanzado
 
 _Bandera:_ `outpost`
 
 1. El rival instala ${piece} en ${to}: ningún peón tuyo puede echarlo.
-
-### Torres dobladas
-
-_Bandera:_ `doublesRooks`
-
-1. El rival dobla las torres en la columna ${to[0]}.
 
 ### Torre a columna abierta
 
@@ -284,7 +285,7 @@ _Bandera:_ `passivePiece`
 
 1. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} sigue sin entrar en juego.
 2. ${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
-3. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está mal ubicada y controla poco.
+3. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.
 4. ${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} pinta poco ahí.
 5. El rival juega ${piece} a ${to}.
 6. ${cap(piece)} del rival va a ${to}.
@@ -585,8 +586,9 @@ _Bandera:_ `theirKingWorse`
 
 _Bandera:_ `battery`
 
-1. Formas una batería: ${art(b.front)} con ${art(b.back)} detrás, apuntando a la misma línea.
-2. ${cap(art(b.front))} se apoya en ${art(b.back)}: dos piezas presionando la misma línea.
+1. Doblas dos piezas mayores en la misma línea: juntas pesan mucho más.
+2. Formas una batería: ${art(b.front)} con ${art(b.back)} detrás, apuntando a la misma línea.
+3. ${cap(art(b.front))} se apoya en ${art(b.back)}: dos piezas presionando la misma línea.
 
 ### Refuerza la cadena de peones
 
@@ -622,10 +624,12 @@ _Bandera:_ `passivePiece`
 _Bandera:_ `isEndgame`
 
 1. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
-2. Jugada de final tranquila: quedas ${standing}.
-3. Jugada sólida, quedas ${standing}.
-4. Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.
-5. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
+2. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
+3. Jugada de final tranquila: quedas ${standing}.
+4. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
+5. Jugada sólida, quedas ${standing}.
+6. Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.
+7. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
 
 ---
 
@@ -828,22 +832,27 @@ _Bandera:_ `dominantTerm`
 7. Te retrasas en el desarrollo y el rival toma la delantera.
 8. Pierdes tiempo de desarrollo.
 
-### Genérico por clasificación
+### bestTo
 
-_Bandera:_ `classification`
+_Bandera:_ `bestTo`
 
 1. Imprecisión: cedes algo de terreno.
 2. No es grave, pero hay algo mejor aquí.
 3. Se puede jugar mejor, aunque no es un error de bulto.
 4. Pequeña imprecisión; la posición aguanta.
-5. Error grave: la posición se te complica de golpe.
-6. Esta jugada le entrega la partida al rival.
-7. Esto cambia la partida, y no a tu favor.
-8. Error de bulto: a partir de aquí el rival lleva la iniciativa.
-9. Error: le das la iniciativa al rival.
-10. Con esta jugada pierdes el hilo de la posición.
-11. Aquí se te escapa el control de la partida.
-12. Jugada equivocada: el rival pasa a mandar.
+
+### Genérico por clasificación
+
+_Bandera:_ `classification`
+
+1. Error grave: la posición se te complica de golpe.
+2. Esta jugada le entrega la partida al rival.
+3. Esto cambia la partida, y no a tu favor.
+4. Error de bulto: a partir de aquí el rival lleva la iniciativa.
+5. Error: le das la iniciativa al rival.
+6. Con esta jugada pierdes el hilo de la posición.
+7. Aquí se te escapa el control de la partida.
+8. Jugada equivocada: el rival pasa a mandar.
 
 ---
 

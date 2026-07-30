@@ -237,7 +237,11 @@ function band(e: number): Band {
 // search — just the move's own shape plus the shallow eval — which is why every
 // move can afford a comment now. Book moves get chess.com's "jugada de libro"
 // treatment instead of a fourth repeat of "sacas la pieza y ganas actividad".
-function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
+// `soft` is set when this is reached from the ERROR chain rather than because the
+// move was fine — a light inaccuracy the engine tier never looked at. Everything
+// here still applies (the board is the board), except the fallbacks that APPROVE
+// of the move: "Jugada sólida" would contradict the imprecisión badge next to it.
+function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial: boolean } {
   const s = f.variantSeed;
   const where = band(f.evalAfter);
   const standing =
@@ -471,6 +475,9 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   ], s), namesMaterial: false };
   if (f.battery) {
     const b = f.battery;
+    // Same guard as the opponent's side: two of the same piece is a doubling, and
+    // naming it as a pairing produces "la torre con la torre detrás".
+    if (b.front === b.back) return { text: `Doblas dos piezas mayores en la misma línea: juntas pesan mucho más.`, namesMaterial: false };
     return { text: pick([
       `Formas una batería: ${art(b.front)} con ${art(b.back)} detrás, apuntando a la misma línea.`,
       `${cap(art(b.front))} se apoya en ${art(b.back)}: dos piezas presionando la misma línea.`,
@@ -524,11 +531,16 @@ function quietComment(f: MoveFacts): { text: string; namesMaterial: boolean } {
   }
   // Phase modifier: in an endgame the same standing means something different to
   // the player, and naming the phase costs nothing since we already know it.
-  if (f.isEndgame) return { text: pick([
+  if (f.isEndgame) return { text: pick(soft ? [
+    `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.`,
+  ] : [
     `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.`,
     `Jugada de final tranquila: quedas ${standing}.`,
   ], s), namesMaterial: false };
-  return { text: pick([
+  return { text: pick(soft ? [
+    `${cap(art(f.playedPiece))} a ${f.playedTo}: ${stays} ${standing}.`,
+    `${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.`,
+  ] : [
     `${cap(art(f.playedPiece))} a ${f.playedTo}: ${stays} ${standing}.`,
     `Jugada sólida, quedas ${standing}.`,
     `Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.`,
@@ -823,6 +835,14 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
 
   if (Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG) {
     if (f.classification === "inaccuracy") {
+      // These four only work PAIRED with slot C ("…el caballo a e4 era mejor").
+      // Alone they say nothing, and alone is exactly what happens to a light
+      // inaccuracy: blunderDetector skips `loss < 80` inaccuracies in the engine
+      // tier, so there is no better-move to pair with and "No es grave, pero hay
+      // algo mejor aquí" became the WHOLE comment on a real game's 7th move.
+      // The descriptive tier has 30 categories and names something true instead —
+      // that same ply reads "El caballo entra en juego desde d7".
+      if (f.bestTo == null) return quietComment(f, true);
       return { text: pick([
         `Imprecisión: cedes algo de terreno.`,
         `No es grave, pero hay algo mejor aquí.`,
@@ -1074,28 +1094,37 @@ function opponentQuietComment(f: MoveFacts): string {
   const piece = art(f.playedPiece);
   const to = f.playedTo;
 
-  // A threat against the player outranks everything else on a quiet move.
+  if (f.isMate) return `El rival da jaque mate con ${piece} en ${to}.`;
+
+  // Material changing hands is the headline, above both check and any threat —
+  // the same priority quietComment already gives the player's own captures.
+  // ownThreat used to sit above this and silently swallowed the capture: the
+  // rival taking the queen on d8 came out as "Cuidado: el rival amenaza tu torre
+  // de a8", which is true and leaves out the queen. A capture that ALSO gives
+  // check says both rather than picking one.
+  if (f.capturedPiece) {
+    const cp = art(f.capturedPiece);
+    const check = f.gaveCheck ? " Con jaque." : "";
+    if (f.isRecapture) return `El rival recupera en ${to}: el cambio queda saldado.${check}`;
+    if (f.tradeVerdict === "gana") return `El rival se lleva ${cp} de ${to} y gana material.${check}`;
+    if (f.tradeVerdict === "pareja") return `El rival cambia ${cp} en ${to}: un cambio parejo.${check}`;
+    return `El rival captura ${cp} en ${to}.${check}`;
+  }
+
+  if (f.gaveCheck) return `El rival da jaque con ${piece} en ${to}.`;
+
+  // A threat against the player outranks everything else on a QUIET move — one
+  // that neither took material nor gave check.
   if (f.ownThreat) {
     const t = f.ownThreat;
     if (t.kind === "mate") return `¡Cuidado! El rival amenaza mate en ${t.square}.`;
     // "tu", not "el": the threatened piece belongs to the player, and "va contra
     // el alfil de d3" leaves it ambiguous whose bishop is in danger.
-    const mine = art(t.piece).replace(/^(el|la) /, (m) => (m === "el " ? "tu " : "tu "));
+    const mine = art(t.piece).replace(/^(el|la) /, () => "tu ");
     return pick([
       `Cuidado: el rival amenaza ${mine} de ${t.square}.`,
       `Ojo, ahora va contra ${mine} de ${t.square}.`,
     ], s);
-  }
-
-  if (f.isMate) return `El rival da jaque mate con ${piece} en ${to}.`;
-  if (f.gaveCheck) return `El rival da jaque con ${piece} en ${to}.`;
-
-  if (f.capturedPiece) {
-    const cp = art(f.capturedPiece);
-    if (f.isRecapture) return `El rival recupera en ${to}: el cambio queda saldado.`;
-    if (f.tradeVerdict === "gana") return `El rival se lleva ${cp} de ${to} y gana material.`;
-    if (f.tradeVerdict === "pareja") return `El rival cambia ${cp} en ${to}: un cambio parejo.`;
-    return `El rival captura ${cp} en ${to}.`;
   }
 
   if (f.isPromotion) return `El rival corona en ${to}.`;
@@ -1151,9 +1180,20 @@ function opponentQuietComment(f: MoveFacts): string {
 
   // Their position improving: worth knowing, not alarming.
   if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.`;
-  if (f.battery) return `El rival forma una batería con ${art(f.battery.front)} y ${art(f.battery.back)} en la misma línea.`;
-  if (f.outpost) return `El rival instala ${piece} en ${to}: ningún peón tuyo puede echarlo.`;
+  // doublesRooks BEFORE battery: batteryCreated also matches rook-behind-rook and
+  // it won this race in a real game, producing "una batería con la torre y la
+  // torre" — the doubled-rooks sentence is simply the right name for that shape.
   if (f.doublesRooks) return `El rival dobla las torres en la columna ${to[0]}.`;
+  if (f.battery) {
+    const b = f.battery;
+    // Two of the SAME piece is a doubling, not a pairing, and naming it as a
+    // pairing repeats the noun. Only torre+torre and dama+dama can reach here
+    // (same-colour bishops never share a diagonal), so "piezas mayores" is
+    // always accurate and sidesteps having to pluralise the piece name.
+    if (b.front === b.back) return `El rival dobla dos piezas mayores en la misma línea.`;
+    return `El rival forma una batería con ${art(b.front)} y ${art(b.back)} en la misma línea.`;
+  }
+  if (f.outpost) return `El rival instala ${piece} en ${to}: ningún peón tuyo puede echarlo.`;
   if (f.rookToOpenFile) return `El rival toma la columna abierta ${to[0]} con la torre.`;
   if (f.rookToSemiOpen) return `El rival pone la torre en la columna ${to[0]}, semiabierta.`;
   if (f.knightToCenter) return `El rival centraliza el caballo en ${to}.`;
@@ -1194,7 +1234,11 @@ function opponentQuietComment(f: MoveFacts): string {
       `${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
     ], s);
     return pick([
-      `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está mal ubicada y controla poco.`,
+      // "está en mal sitio", not "está mal ubicada": the adjective would have to
+      // agree with the piece's gender, and hardcoding one produced "el caballo
+      // rival … está mal ubicada" in a real game. Every template here has to work
+      // for both genders, so the wording avoids adjectives that inflect.
+      `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.`,
       `${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} pinta poco ahí.`,
     ], s);
   }

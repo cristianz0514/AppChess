@@ -265,6 +265,7 @@ function positionalFlags(
   let rookToOpenFile = false, doublesRooks = false, semiOpen = false, heavyPieces = 0;
   let allowsEnPassant = false, pawnBreak = false, attacksBigger: string | null = null;
   let undevelopedMinors = 0;
+  let myKingFile: string | null = null;
   try {
     const b = new Chess(fenAfter);
     if (h.piece === "r") {
@@ -281,6 +282,7 @@ function positionalFlags(
       for (const sq of row) {
         if (!sq) continue;
         if (sq.type === "q" || sq.type === "r" || sq.type === "b" || sq.type === "n") heavyPieces++;
+        if (sq.type === "k" && sq.color === me) myKingFile = sq.square[0];
         // Minor still sitting on its starting square.
         if ((sq.type === "b" || sq.type === "n") && sq.color === me
           && sq.square[1] === String(moverWhite ? 1 : 8)) undevelopedMinors++;
@@ -355,8 +357,22 @@ function positionalFlags(
   }
 
   return {
+    // Two gates the file list alone didn't provide, both found by reading a real
+    // game where "el rival adelanta un peón de su escudo y abre líneas hacia su
+    // rey" fired on h3 AND on a3 with the king on g1 — a3 is six files away from
+    // that king and opens nothing near it.
+    //   • The pawn has to be NEXT TO the king, so a queenside push can't be
+    //     described as weakening a kingside king.
+    //   • It has to be the TWO-square push. h2-h3 and g2-g3 are routine luft and
+    //     fianchetto moves; h2-h4 and g2-g4 are the committal ones that actually
+    //     open lines. A false statement costs the coach more than a generic one,
+    //     so this fires rarely and is true when it does.
     weakensKingShield:
-      h.piece === "p" && fromRank === homePawnRank && ["a", "b", "c", "f", "g", "h"].includes(h.from[0]),
+      h.piece === "p" && fromRank === homePawnRank
+      && ["a", "b", "c", "f", "g", "h"].includes(h.from[0])
+      && Math.abs(toRank - fromRank) === 2
+      && myKingFile != null
+      && Math.abs(h.from[0].charCodeAt(0) - myKingFile.charCodeAt(0)) <= 1,
     retreats: h.piece !== "p" && h.piece !== "k" && !forward && fromRank !== toRank,
     knightToRim: h.piece === "n" && (file === "a" || file === "h"),
     // A king step along its own back rank is the classic "make luft" move.
