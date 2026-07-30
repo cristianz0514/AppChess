@@ -8,7 +8,7 @@ import { overloadedDefender, underDefended, defendsAttacked, batteryCreated } fr
 import { structureChange, pawnStructure } from "@/lib/pawnStructure";
 import { dominantChange, pressureOnOpponent } from "@/lib/evalTerms";
 import { ignoredThreat, ownThreat } from "@/lib/threats";
-import { ruleOfTheSquare } from "@/lib/endgameRules";
+import { ruleOfTheSquare, endgameKind, pawnMajority } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
 import { sideAccuracy } from "@/lib/accuracy";
@@ -416,11 +416,22 @@ function endgameFlags(
   rookBehindPassed: boolean; pawnRunsToPromote: boolean; connectsRooks: boolean;
   squareRule: { pawnSquare: string; promotes: boolean; margin: number } | null;
   passivePiece: { piece: string; square: string; stillHome: boolean; reason: string } | null;
+  // Endgame vocabulary. Measured: 19 of 41 wildcard plies across eight real games
+  // were endgame moves whose ONLY live fact was `isEndgame` — the templates had
+  // nothing to work with, so no wording change could have helped. These are facts,
+  // not phrasings, which is why they belong here.
+  endgameKind: string | null;
+  majority: "dama" | "rey" | null;
+  connectedPassed: string[];
+  backwardPawn: string | null;
+  islands: { mine: number; theirs: number } | null;
 } {
   const none = {
     isEndgame: false, kingActivates: false, opposition: false,
     rookBehindPassed: false, pawnRunsToPromote: false, connectsRooks: false,
     squareRule: null, passivePiece: null,
+    endgameKind: null, majority: null, connectedPassed: [],
+    backwardPawn: null, islands: null,
   };
   try {
     const me: "w" | "b" = moverWhite ? "w" : "b";
@@ -460,7 +471,10 @@ function endgameFlags(
       }
     }
 
-    const passed = pawnStructure(fenAfter, me).passed;
+    // The whole PawnFacts record, not just `passed`: the other five fields were
+    // already being computed on this same call and discarded.
+    const myPawns = pawnStructure(fenAfter, me);
+    const passed = myPawns.passed;
     const behind = (rookSq: string, pawnSq: string) =>
       fileOf(rookSq) === fileOf(pawnSq)
       && (moverWhite ? Number(rookSq[1]) < Number(pawnSq[1]) : Number(rookSq[1]) > Number(pawnSq[1]));
@@ -486,6 +500,16 @@ function endgameFlags(
       // fenAfter has the opponent to move, and that tempo is often the whole game.
       squareRule: ruleOfTheSquare(fenAfter, me, me === "w" ? "b" : "w", passed),
       passivePiece: passive,
+      // Standing endgame features, as opposed to what this move changed. Most of
+      // these came free: pawnStructure has computed `backward`, `connectedPassed`
+      // and `islands` since it was written and NOTHING ever read them — only
+      // `passed` was wired up. auditCoverage couldn't catch it because they were
+      // never lifted into MoveFacts to begin with.
+      endgameKind: endgameKind(fenAfter),
+      majority: pawnMajority(fenAfter, me),
+      connectedPassed: myPawns.connectedPassed,
+      backwardPawn: myPawns.backward[0] ?? null,
+      islands: { mine: myPawns.islands, theirs: pawnStructure(fenAfter, me === "w" ? "b" : "w").islands },
     };
   } catch { return none; }
 }

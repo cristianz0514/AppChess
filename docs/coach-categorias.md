@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 127
-- **Variantes de texto:** 327
-- **Sin nombre humano todavía:** 20
+- **Categorías:** 137
+- **Variantes de texto:** 361
+- **Sin nombre humano todavía:** 28
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -48,6 +48,19 @@ _Bandera:_ `(varios)`
 _Bandera:_ `isMate`
 
 1. El rival da jaque mate con ${piece} en ${to}.
+
+### Táctica que la jugada montó
+
+_Bandera:_ `playedMotifs`
+
+1. te monta una horquilla: ${piece} en ${to} ataca dos de tus piezas a la vez
+2. te clava una pieza con ${piece} en ${to}
+3. te ensarta dos piezas en la misma línea con ${piece} en ${to}
+4. te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás
+5. El rival captura ${art(f.capturedPiece)} en ${to} y ${clause}.
+6. ¡Cuidado! El rival ${clause}.
+7. Cuidado: tu ${loose.piece} de ${loose.square} se queda sin defensa.
+8. Ojo, nadie defiende tu ${loose.piece} de ${loose.square}.
 
 ### isRecapture
 
@@ -251,6 +264,27 @@ _Bandera:_ `rookBehindPassed`
 _Bandera:_ `connectsRooks`
 
 1. El rival conecta sus torres.
+2. El rival tiene dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): hay que frenarlos ya.
+
+### connectedPassed
+
+_Bandera:_ `connectedPassed`
+
+1. El peón pasado del rival en ${f.connectedPassed[0]} va apoyado por otro peón. Vigílalo.
+2. Cuidado con el pasado del rival en ${f.connectedPassed[0]}: tiene compañero al lado.
+
+### majority
+
+_Bandera:_ `majority`
+
+1. El rival tiene mayoría de peones en el flanco de ${f.majority}: de ahí le va a salir un pasado.
+
+### endgameKind
+
+_Bandera:_ `endgameKind`
+
+1. Estamos en un ${f.endgameKind}. ${cap(piece)} del rival va a ${to}.
+2. ${cap(piece)} del rival a ${to}, en un ${f.endgameKind}.
 
 ### Da aire al rey
 
@@ -389,6 +423,17 @@ _Bandera:_ `variantSeed`
 
 1. en una posición muy difícil
 
+### Táctica que la jugada montó
+
+_Bandera:_ `playedMotifs`
+
+1. montas una horquilla: ${p} en ${f.playedTo} ataca dos piezas a la vez
+2. clavas una pieza rival con ${p} en ${f.playedTo}: no se puede mover
+3. ensartas dos piezas en la misma línea con ${p} en ${f.playedTo}
+4. das jaque a la descubierta: el jaque lo da la pieza que estaba detrás
+5. ${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.
+6. Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.
+
 ### openingName
 
 _Bandera:_ `openingName`
@@ -519,6 +564,41 @@ _Bandera:_ `rookBehindPassed`
 _Bandera:_ `connectsRooks`
 
 1. Conectas las torres: ya se defienden entre ellas.
+2. Tienes dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): avanzan apoyándose y son muy difíciles de parar.
+3. Peones pasados conectados en ${f.connectedPassed!.slice(0, 2).join(" y ")}. Empújalos juntos: se defienden solos.
+
+### connectedPassed
+
+_Bandera:_ `connectedPassed`
+
+1. Tu peón pasado de ${f.connectedPassed[0]} tiene un compañero al lado que lo apoya: eso es lo que lo hace peligroso.
+2. El pasado de ${f.connectedPassed[0]} va acompañado. Avanza con los dos, no solo con uno.
+
+### majority
+
+_Bandera:_ `majority`
+
+1. Tienes mayoría de peones en el flanco de ${f.majority}: ahí está tu peón pasado, empuja por ese lado.
+2. Mayoría en el flanco de ${f.majority}. El plan es crear un pasado con ella.
+
+### endgameKind
+
+_Bandera:_ `endgameKind`
+
+1. Estamos en un ${f.endgameKind}. ${cap(art(f.playedPiece))} a ${f.playedTo}.
+2. ${cap(art(f.playedPiece))} a ${f.playedTo}, en un ${f.endgameKind}.
+
+### backwardPawn
+
+_Bandera:_ `backwardPawn`
+
+1. El peón de ${f.backwardPawn} está retrasado: no puede avanzar ni recibir apoyo, y en el final eso pesa.
+
+### islands
+
+_Bandera:_ `islands`
+
+1. Tienes ${f.islands.mine} islas de peones contra ${f.islands.theirs}: tu estructura está más partida y es más difícil de defender.
 
 ### Ataca una pieza mayor (gana tiempo)
 
@@ -616,6 +696,10 @@ _Bandera:_ `structure`
 2. El peón de ${f.structure.createdPassed} queda pasado, y eso pesa en el final.
 3. Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.
 4. Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.
+5. Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: es un defecto permanente, pesa sobre todo en el final.
+6. Ojo: peones doblados en ${f.structure.gaveSelfDoubled}. Ya no se arregla.
+7. El peón de ${f.structure.gaveSelfIsolated} queda aislado: nadie lo puede defender con otro peón.
+8. Dejas aislado tu peón de ${f.structure.gaveSelfIsolated}; tendrás que defenderlo con piezas.
 
 ### Presión sobre el rey rival
 

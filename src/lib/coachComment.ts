@@ -149,6 +149,14 @@ export interface MoveFacts {
   // The piece the player has forgotten about — badly placed for its type and
   // with nowhere to go.
   passivePiece?: { piece: string; square: string; stillHome: boolean; reason: string } | null;
+  // Standing endgame features. Added because 19 of 41 measured wildcards were
+  // endgame moves whose only live fact was `isEndgame` — no wording could fix
+  // that, only more facts could.
+  endgameKind?: string | null;              // "final de torres", "final de alfiles de distinto color"…
+  majority?: "dama" | "rey" | null;         // pawn majority on a wing
+  connectedPassed?: string[];               // passed pawns with a friendly neighbour
+  backwardPawn?: string | null;             // a pawn that can't advance and can't be supported
+  islands?: { mine: number; theirs: number } | null;
 
   // ── The player's point of view ─────────────────────────────────────────────
   // Every comment used to be advice to WHOEVER moved, which is why the same
@@ -276,6 +284,35 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
   const shifted = band(f.evalBefore) !== where;
   const stays = shifted ? "quedas" : "sigues";
 
+  // ── Tactics, above everything including the opening book ────────────────────
+  // Measured over eight real games: 84 of 84 plies where tacticalMotifs found a
+  // fork, pin, skewer or discovered check got a comment that never mentioned it.
+  // The detector has run since the beginning and only slotA's `if (f.good)` branch
+  // ever read it — and `good` is set only in the engine tier, so every tactic on
+  // the other ~40 moves of a game was detected and thrown away. A real example:
+  // Nxf7 forking, described as "Teoría de la apertura, el caballo a f7".
+  //
+  // Above the book check on purpose: a concrete tactic on the board is worth more
+  // to a club player than being told the move is theory. The capture is folded in
+  // rather than displaced, so nothing that used to be said is lost.
+  const tactic = f.playedMotifs.find((m) => !isHanging(m));
+  if (tactic) {
+    const p = art(f.playedPiece);
+    const clause =
+      tactic.key === "fork" ? `montas una horquilla: ${p} en ${f.playedTo} ataca dos piezas a la vez`
+      : tactic.key === "pin" ? `clavas una pieza rival con ${p} en ${f.playedTo}: no se puede mover`
+      : tactic.key === "skewer" ? `ensartas dos piezas en la misma línea con ${p} en ${f.playedTo}`
+      // This motif only fires when the position IS in check and the check does NOT
+      // come from the piece that moved, so "jaque a la descubierta" is exact.
+      : `das jaque a la descubierta: el jaque lo da la pieza que estaba detrás`;
+    return {
+      text: f.capturedPiece
+        ? `Capturas ${art(f.capturedPiece)} en ${f.playedTo} y ${clause}.`
+        : `${cap(clause)}.`,
+      namesMaterial: f.capturedPiece != null,
+    };
+  }
+
   if (f.isBook) {
     // Said once per game, on the move where theory runs out — not on all
     // fourteen book moves, which would be noise.
@@ -365,6 +402,19 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
     ], s), namesMaterial: false };
   }
 
+  // A loose enemy piece your move now attacks. Ranked BELOW ownThreat on purpose:
+  // ownThreat asks the same question with a null-move search and a gain filter, so
+  // when both are true the rigorous one should speak. This catches the rest.
+  {
+    const loose = f.playedMotifs.find((m) => m.key === "hanging");
+    if (loose?.piece && loose.square) {
+      return { text: pick([
+        `${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.`,
+        `Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.`,
+      ], s), namesMaterial: true };
+    }
+  }
+
   // Defending a piece that was genuinely hanging is the POINT of the move, so it
   // sits up here with the threats rather than below the shape-describing branches.
   // Placed lower first, it fired once in 199 moves — "repliegas el alfil" and
@@ -410,6 +460,33 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
   ], s), namesMaterial: false };
   if (f.rookBehindPassed) return { text: `Torre detrás del peón pasado, que es su sitio: lo empuja según avanza.`, namesMaterial: false };
   if (f.connectsRooks) return { text: `Conectas las torres: ya se defienden entre ellas.`, namesMaterial: false };
+  // ── Standing endgame features ───────────────────────────────────────────────
+  // Ordered by how much a club player can DO with them: two connected passed
+  // pawns win on their own, a wing majority is the plan for the next ten moves,
+  // naming the endgame type points at a body of theory, and the structural
+  // defects are what to avoid trading into. All of these used to fall through to
+  // "Jugada de final tranquila".
+  if ((f.connectedPassed?.length ?? 0) >= 2) return { text: pick([
+    `Tienes dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): avanzan apoyándose y son muy difíciles de parar.`,
+    `Peones pasados conectados en ${f.connectedPassed!.slice(0, 2).join(" y ")}. Empújalos juntos: se defienden solos.`,
+  ], s), namesMaterial: false };
+  // A single supported passer, not just two of them: one passed pawn with a pawn
+  // neighbour is already the feature that decides most endgames, and requiring two
+  // left every one of the remaining wildcard plies unexplained.
+  if (f.connectedPassed?.length === 1) return { text: pick([
+    `Tu peón pasado de ${f.connectedPassed[0]} tiene un compañero al lado que lo apoya: eso es lo que lo hace peligroso.`,
+    `El pasado de ${f.connectedPassed[0]} va acompañado. Avanza con los dos, no solo con uno.`,
+  ], s), namesMaterial: false };
+  if (f.majority) return { text: pick([
+    `Tienes mayoría de peones en el flanco de ${f.majority}: ahí está tu peón pasado, empuja por ese lado.`,
+    `Mayoría en el flanco de ${f.majority}. El plan es crear un pasado con ella.`,
+  ], s), namesMaterial: false };
+  if (f.endgameKind) return { text: pick([
+    `Estamos en un ${f.endgameKind}. ${cap(art(f.playedPiece))} a ${f.playedTo}.`,
+    `${cap(art(f.playedPiece))} a ${f.playedTo}, en un ${f.endgameKind}.`,
+  ], s), namesMaterial: false };
+  if (f.backwardPawn) return { text: `El peón de ${f.backwardPawn} está retrasado: no puede avanzar ni recibir apoyo, y en el final eso pesa.`, namesMaterial: false };
+  if (f.islands && f.islands.mine > f.islands.theirs) return { text: `Tienes ${f.islands.mine} islas de peones contra ${f.islands.theirs}: tu estructura está más partida y es más difícil de defender.`, namesMaterial: false };
   // Attacking something bigger than what you moved wins a tempo — the opponent
   // has to answer. Ranked high because it's the concrete point of the move.
   if (f.attacksBigger) return { text: pick([
@@ -481,6 +558,18 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
   ], s), namesMaterial: false };
   if (f.structure?.brokeTheirStructure) return { text: `Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.`, namesMaterial: false };
   if (f.structure?.isolatedTheirs) return { text: `Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`, namesMaterial: false };
+  // Your OWN structural damage. StructureChange has computed these two since it
+  // was written and no template read either — the three gains above were wired up
+  // and the two costs were not, so the coach only ever reported good structural
+  // news. auditCoverage misses it because they're nested inside `structure`.
+  if (f.structure?.gaveSelfDoubled) return { text: pick([
+    `Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: es un defecto permanente, pesa sobre todo en el final.`,
+    `Ojo: peones doblados en ${f.structure.gaveSelfDoubled}. Ya no se arregla.`,
+  ], s), namesMaterial: false };
+  if (f.structure?.gaveSelfIsolated) return { text: pick([
+    `El peón de ${f.structure.gaveSelfIsolated} queda aislado: nadie lo puede defender con otro peón.`,
+    `Dejas aislado tu peón de ${f.structure.gaveSelfIsolated}; tendrás que defenderlo con piezas.`,
+  ], s), namesMaterial: false };
   if (f.theirKingWorse) return { text: pick([
     `Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.`,
     `${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.`,
@@ -1161,6 +1250,32 @@ function opponentQuietComment(f: MoveFacts): string {
 
   if (f.isMate) return `El rival da jaque mate con ${piece} en ${to}.`;
 
+  // Their tactic, above the capture for the same reason as on the player's side —
+  // and here it doubles as the warning that matters most: a fork or a pin against
+  // you is the thing you have to answer, not the pawn that changed hands.
+  {
+    const t = f.playedMotifs.find((m) => !isHanging(m));
+    if (t) {
+      const clause =
+        t.key === "fork" ? `te monta una horquilla: ${piece} en ${to} ataca dos de tus piezas a la vez`
+        : t.key === "pin" ? `te clava una pieza con ${piece} en ${to}`
+        : t.key === "skewer" ? `te ensarta dos piezas en la misma línea con ${piece} en ${to}`
+        : `te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás`;
+      return f.capturedPiece
+        ? `El rival captura ${art(f.capturedPiece)} en ${to} y ${clause}.`
+        : `¡Cuidado! El rival ${clause}.`;
+    }
+    // `hanging` on THEIR ply is one of YOUR pieces, now attacked and undefended.
+    // Suppressed when the move also captured, so the capture stays the headline.
+    const loose = f.playedMotifs.find((m) => m.key === "hanging");
+    if (loose?.piece && loose.square && !f.capturedPiece) {
+      return pick([
+        `Cuidado: tu ${loose.piece} de ${loose.square} se queda sin defensa.`,
+        `Ojo, nadie defiende tu ${loose.piece} de ${loose.square}.`,
+      ], s);
+    }
+  }
+
   // Material changing hands is the headline, above both check and any threat —
   // the same priority quietComment already gives the player's own captures.
   // ownThreat used to sit above this and silently swallowed the capture: the
@@ -1322,6 +1437,19 @@ function opponentQuietComment(f: MoveFacts): string {
   if (f.kingActivates) return `El rival activa su rey hacia ${to}: en el final es una pieza más.`;
   if (f.rookBehindPassed) return `El rival pone la torre detrás de su peón pasado: lo empuja según avanza.`;
   if (f.connectsRooks) return `El rival conecta sus torres.`;
+  // Same standing endgame features, read from the player's side: their connected
+  // passers and their wing majority are threats, and naming the endgame type is
+  // useful to the player whoever just moved.
+  if ((f.connectedPassed?.length ?? 0) >= 2) return `El rival tiene dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): hay que frenarlos ya.`;
+  if (f.connectedPassed?.length === 1) return pick([
+    `El peón pasado del rival en ${f.connectedPassed[0]} va apoyado por otro peón. Vigílalo.`,
+    `Cuidado con el pasado del rival en ${f.connectedPassed[0]}: tiene compañero al lado.`,
+  ], s);
+  if (f.majority) return `El rival tiene mayoría de peones en el flanco de ${f.majority}: de ahí le va a salir un pasado.`;
+  if (f.endgameKind) return pick([
+    `Estamos en un ${f.endgameKind}. ${cap(piece)} del rival va a ${to}.`,
+    `${cap(piece)} del rival a ${to}, en un ${f.endgameKind}.`,
+  ], s);
   if (f.givesKingLuft) return `El rival le da aire a su rey: gana casilla de escape.`;
   {
     const dq = f.dominantTerm;

@@ -67,3 +67,62 @@ export function ruleOfTheSquare(
   const effective = sideToMove === side ? kingSteps : kingSteps - 1;
   return { pawnSquare: advanced, promotes: effective > steps, margin: effective - steps };
 }
+
+/**
+ * What KIND of endgame this is. Naming it is the most instructive single sentence
+ * available in an endgame and it costs one board read — a club player who is told
+ * "esto es un final de torres" has a whole body of knowledge to reach for, while
+ * "jugada de final tranquila" gives them nothing.
+ *
+ * Returns null outside an endgame, so the caller doesn't have to gate twice.
+ */
+export function endgameKind(fen: string): string | null {
+  const all = piecesOf(fen);
+  const heavy = all.filter((p) => p.type !== "p" && p.type !== "k");
+  if (heavy.length > 4) return null;
+
+  const kinds = new Set(heavy.map((p) => p.type));
+  if (heavy.length === 0) return "final de reyes y peones";
+  if (kinds.size === 1) {
+    const only = [...kinds][0];
+    if (only === "r") return "final de torres";
+    if (only === "q") return "final de damas";
+    if (only === "n") return "final de caballos";
+    if (only === "b") {
+      // Same-colour vs opposite-colour bishops is THE question in a bishop
+      // ending — opposite colours draw material deficits that same colours win.
+      const bishops = heavy.filter((p) => p.type === "b");
+      if (bishops.length === 2 && bishops[0].color !== bishops[1].color) {
+        const sqColor = (s: string) => (fileIdx(s) + rankOf(s)) % 2;
+        return sqColor(bishops[0].square) === sqColor(bishops[1].square)
+          ? "final de alfiles del mismo color"
+          : "final de alfiles de distinto color";
+      }
+      return "final de alfiles";
+    }
+  }
+  if (kinds.size === 2 && kinds.has("b") && kinds.has("n")) return "final de alfil contra caballo";
+  return "final con pocas piezas";
+}
+
+/**
+ * A pawn majority on one wing: more pawns than the opponent on the queenside or
+ * the kingside. This is the plan a club player most often has and never sees —
+ * a majority is a future passed pawn, which is what decides most endgames.
+ *
+ * Only reported when the OTHER wing isn't also a majority for the same side
+ * (that's just being a pawn up, which material already covers).
+ */
+export function pawnMajority(fen: string, side: Color): "dama" | "rey" | null {
+  const pawns = piecesOf(fen).filter((p) => p.type === "p");
+  const wing = (s: string) => (fileIdx(s) <= 3 ? "dama" : "rey");
+  let mineQ = 0, mineK = 0, theirsQ = 0, theirsK = 0;
+  for (const p of pawns) {
+    const w = wing(p.square);
+    if (p.color === side) { if (w === "dama") mineQ++; else mineK++; }
+    else { if (w === "dama") theirsQ++; else theirsK++; }
+  }
+  const q = mineQ > theirsQ, k = mineK > theirsK;
+  if (q === k) return null;          // both or neither: not a wing majority
+  return q ? "dama" : "rey";
+}
