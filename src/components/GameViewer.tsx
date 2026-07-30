@@ -836,6 +836,20 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // real position.
   const [previewBest, setPreviewBest] = useState(false);
   const bestHere = storedBest[idx] ?? autoBest[idx];
+  // WHOSE move this readout is about. The board shows the position AFTER move idx,
+  // so the side to move in it is the opposite of whoever just moved — which means
+  // that while you are looking at your OWN mistake, this suggestion is always the
+  // opponent's. Reported from a real game: "Qe7 — Error … con el alfil a g3 te
+  // llevabas el alfil" sat directly above a bare "Nxc7", and Nxc7 was what the
+  // RIVAL should have played on the following ply. Both were correct; nothing said
+  // they answered different questions, so it read as the tool contradicting itself.
+  //
+  // The arrow has to stay a move from the CURRENT position — it is drawn on this
+  // board and any other move would be illegal here — so the honest fix is to name
+  // whose move it is instead of pretending it is always yours.
+  const bestIsMine = (() => {
+    try { return new Chess(currentFen).turn() === playerColor; } catch { return true; }
+  })();
   const previewMoveInfo = !inExplore && !inStory && previewBest ? bestHere : null;
   const previewFen = useMemo(() => {
     if (!previewMoveInfo) return null;
@@ -1189,11 +1203,15 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               <button
                 onClick={() => bestHere && setPreviewBest((p) => !p)}
                 disabled={!bestHere}
-                title={bestHere ? `Mejor: ${bestHere.san}` : undefined}
+                title={bestHere ? (bestIsMine ? `Tu mejor jugada aquí: ${bestHere.san}` : `Mejor jugada del rival aquí: ${bestHere.san}`) : undefined}
                 className="w-[4.75rem] h-11 shrink-0 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition active:scale-[0.98] disabled:opacity-60"
                 style={{ background: previewBest ? "var(--bv-electric)" : "color-mix(in oklab, var(--bv-electric) 12%, transparent)", color: previewBest ? "#fff" : "var(--bv-electric)" }}>
                 <Target size={14} className="shrink-0" />
-                <span className="truncate">{bestHere ? bestHere.san : autoBest[idx] === null ? "—" : "…"}</span>
+                <span className="truncate">
+                  {bestHere
+                    ? (bestIsMine ? bestHere.san : `Rival ${bestHere.san}`)
+                    : autoBest[idx] === null ? "—" : "…"}
+                </span>
               </button>
               {/* Resumen + sonido used to sit in a header row above the coach
                   comment — moved here, bottom-right of the action row, once
