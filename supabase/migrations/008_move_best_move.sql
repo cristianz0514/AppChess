@@ -1,0 +1,27 @@
+-- 008 — The recommended move, stored next to the sentence that recommends it
+--
+-- Run this once against the Supabase database (SQL Editor in the dashboard, or
+-- `supabase db push` if you use the CLI). It is idempotent — safe to re-run.
+--
+-- The viewer's green arrow and the written advice were two DIFFERENT
+-- computations, so they could point at different moves:
+--
+--   arrow: /api/bestmove -> services/stockfish getBestMove(fen, 12)
+--          SERVER, lite-single build (7MB, single-threaded, small net), 4s cap
+--   text:  blunderDetector pass 3 -> getAnalysis(fen, EXPLAIN_DEPTH = 16, 2)
+--          BROWSER, public/engine build (can be the full multi-threaded net), 13s
+--
+-- Four plies of depth AND a different evaluation function: disagreement was the
+-- expected outcome, not a bug in either one. The reason the arrow had to ask a
+-- second engine at all is that the analysis never PERSISTED what it recommended
+-- — the suggestion existed only baked into the explanation text, so there was
+-- nothing for the arrow to read.
+--
+-- `best_move` holds that recommendation in SAN, written by the same pass that
+-- writes `explanation`, and only when it differs from the move actually played.
+-- The viewer prefers it and falls back to /api/bestmove for games analysed
+-- before this column existed, so nothing breaks on either side of the migration.
+--
+-- No index: it is only ever read as part of a row already fetched by
+-- (game_id, ply), which moves_game_ply_idx from migration 006 already covers.
+alter table moves add column if not exists best_move text;
