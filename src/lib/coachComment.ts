@@ -1135,13 +1135,40 @@ function opponentQuietComment(f: MoveFacts): string {
       : `El rival sigue la teoría: ${piece} a ${to}.`;
   }
 
-  // Same reading as the mover's quiescence check, from the other side: the
-  // trades already on the board resolve in the RIVAL's favour, not a
-  // consequence of this specific quiet move.
-  if ((f.dustMaterial ?? 0) >= 3) return pick([
+  // ── Openings for the player, ranked above anything describing their move ────
+  // These three facts are computed from the MOVER's side, and on the rival's ply
+  // the mover is the rival — so each one reads as an opportunity rather than a
+  // warning. Measured over six real games: they were live on 5 of the 15 plies
+  // that fell to the wildcard, which is why they're here and in this order
+  // (material first, then a threat they ignored, then a piece short of cover).
+  const dust = f.dustMaterial ?? 0;
+  if (dust >= 3) return pick([
     `Los cambios que vienen dejan al rival con material de más.`,
     `Cuando se resuelvan las capturas, el rival sale ganando material.`,
   ], s);
+  if (dust <= -3) return pick([
+    `La secuencia de cambios te favorece: acabas con material de más.`,
+    `Cuando se resuelvan las capturas, sales ganando material.`,
+  ], s);
+  // ignoredThreat on their ply is YOUR threat, which they did not answer: the
+  // piece named is theirs and the capture is yours to make.
+  if (f.ignoredThreat) {
+    const it = f.ignoredThreat;
+    if (it.kind === "mate") return `El rival no para tu mate en ${it.square}. Ahí lo tienes.`;
+    return pick([
+      `El rival no atiende tu amenaza: puedes llevarte ${art(it.piece)} de ${it.square}.`,
+      `Tu amenaza sigue en pie y él no la ve: ${art(it.piece)} de ${it.square} se puede caer.`,
+    ], s);
+  }
+  // Likewise underDefended: on their ply this is one of THEIR pieces with more
+  // attackers than defenders — something to pile onto, not something to fear.
+  if (f.underDefended) {
+    const ud = f.underDefended;
+    return pick([
+      `${cap(art(ud.piece))} del rival en ${ud.square} tiene más atacantes que defensores: puedes apretar ahí.`,
+      `Al rival no le alcanzan los defensores en ${ud.square}. Vale la pena sumar presión.`,
+    ], s);
+  }
 
   // ── The same structural detectors, worded from the player's side ────────────
   // Written out rather than transformed: possessives change owner between the two
@@ -1243,6 +1270,14 @@ function opponentQuietComment(f: MoveFacts): string {
     ], s);
   }
 
+  // Phase modifier, the same one quietComment has and this function was missing:
+  // in an endgame naming the phase costs nothing since we already know it, and it
+  // was 4 of the 15 measured wildcards on the rival's side — every one of them a
+  // rook or pawn shuffle in a long endgame.
+  if (f.isEndgame) return pick([
+    `${cap(piece)} del rival va a ${to}. Seguimos en el final.`,
+    `Jugada de final del rival: ${piece} a ${to}.`,
+  ], s);
   return pick([
     `El rival juega ${piece} a ${to}.`,
     `${cap(piece)} del rival va a ${to}.`,

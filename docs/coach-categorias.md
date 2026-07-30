@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 119
-- **Variantes de texto:** 292
-- **Sin nombre humano todavía:** 19
+- **Categorías:** 123
+- **Variantes de texto:** 301
+- **Sin nombre humano todavía:** 20
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -94,8 +94,30 @@ _Bandera:_ `isCastle`
 _Bandera:_ `isBook`
 
 1. El rival sigue la teoría: ${piece} a ${to}.
-2. Los cambios que vienen dejan al rival con material de más.
-3. Cuando se resuelvan las capturas, el rival sale ganando material.
+
+### Material tras los cambios (quiescence)
+
+_Bandera:_ `dustMaterial`
+
+1. Los cambios que vienen dejan al rival con material de más.
+2. Cuando se resuelvan las capturas, el rival sale ganando material.
+3. La secuencia de cambios te favorece: acabas con material de más.
+4. Cuando se resuelvan las capturas, sales ganando material.
+
+### Amenaza del rival ignorada (null-move)
+
+_Bandera:_ `ignoredThreat`
+
+1. El rival no para tu mate en ${it.square}. Ahí lo tienes.
+2. El rival no atiende tu amenaza: puedes llevarte ${art(it.piece)} de ${it.square}.
+3. Tu amenaza sigue en pie y él no la ve: ${art(it.piece)} de ${it.square} se puede caer.
+
+### Más atacantes que defensores
+
+_Bandera:_ `underDefended`
+
+1. ${cap(art(ud.piece))} del rival en ${ud.square} tiene más atacantes que defensores: puedes apretar ahí.
+2. Al rival no le alcanzan los defensores en ${ud.square}. Vale la pena sumar presión.
 
 ### Ataca una pieza mayor (gana tiempo)
 
@@ -287,10 +309,17 @@ _Bandera:_ `passivePiece`
 2. ${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
 3. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.
 4. ${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} pinta poco ahí.
-5. El rival juega ${piece} a ${to}.
-6. ${cap(piece)} del rival va a ${to}.
-7. Jugada tranquila del rival: ${piece} a ${to}.
-8. El rival mueve ${piece} a ${to}, sin cambios en la posición.
+
+### isEndgame
+
+_Bandera:_ `isEndgame`
+
+1. ${cap(piece)} del rival va a ${to}. Seguimos en el final.
+2. Jugada de final del rival: ${piece} a ${to}.
+3. El rival juega ${piece} a ${to}.
+4. ${cap(piece)} del rival va a ${to}.
+5. Jugada tranquila del rival: ${piece} a ${to}.
+6. El rival mueve ${piece} a ${to}, sin cambios en la posición.
 
 ---
 
