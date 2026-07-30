@@ -39,6 +39,11 @@ export interface MoveFacts {
   bestPiece: string | null;
   bestTo: string | null;
   bestCapturedPiece: string | null;
+  // SEE's verdict on the RECOMMENDED capture. Separate from bestCapturedPiece on
+  // purpose: that field says a capture exists, this one says whether it wins
+  // anything, and conflating the two is what produced "te llevabas el alfil" about
+  // an even trade.
+  bestTradeVerdict?: "gana" | "pareja" | "pierde" | null;
   bestGivesCheck: boolean;
   bestIsCastle: boolean;
   bestIsCenterPawn: boolean;  // pawn move into d4/e4/d5/e5
@@ -1131,10 +1136,26 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
   // mate — "te llevabas el peón" badly undersells it.
   if (f.missedForcedMate) return `Con ${bp} a ${sq} forzabas el mate.`;
   if (f.bestDefendsHung && f.selfHang) return `Con ${bp} a ${sq} lo defendías.`;
-  if (f.bestCapturedPiece) return pick([
-    `Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.`,
-    `${cap(bp)} a ${sq} capturaba ${art(f.bestCapturedPiece)}.`,
-  ], s);
+  if (f.bestCapturedPiece) {
+    // "te llevabas" asserts a GAIN, and bestCapturedPiece only ever established
+    // that a capture happens. Verified false in a real game: "Con el alfil a g3 te
+    // llevabas el alfil" on a square defended by two pawns, where the engine's own
+    // line is `Bxg3 hxg3` — bishops come off, nobody wins one. SEE answers this,
+    // and until now it was asked about the played move but never the recommended
+    // one. Found by scripts/auditClaims.cjs, not by another screenshot.
+    if (f.bestTradeVerdict === "pareja") return pick([
+      `Con ${bp} a ${sq} cambiabas ${art(f.bestCapturedPiece)}, un cambio parejo.`,
+      `${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad.`,
+    ], s);
+    // A recommended capture that LOSES material only makes sense as a sacrifice,
+    // and slot C has no room to justify one — better to name the move and stop
+    // than to sell it as winning something.
+    if (f.bestTradeVerdict === "pierde") return `${cap(bp)} a ${sq} era mejor.`;
+    return pick([
+      `Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.`,
+      `${cap(bp)} a ${sq} capturaba ${art(f.bestCapturedPiece)}.`,
+    ], s);
+  }
 
   // Naming the FOLLOW-UP is what turns a move into an idea. "La dama a c7" is a
   // move; "la dama a c7, y después te llevas el caballo de d5" is the reason it

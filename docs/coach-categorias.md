@@ -6,8 +6,8 @@ los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
 - **Categorías:** 137
-- **Variantes de texto:** 366
-- **Sin nombre humano todavía:** 28
+- **Variantes de texto:** 369
+- **Sin nombre humano todavía:** 29
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -1071,11 +1071,14 @@ _Bandera:_ `bestDefendsHung`
 
 1. Con ${bp} a ${sq} lo defendías.
 
-### La mejor jugada capturaba algo
+### bestTradeVerdict
 
-_Bandera:_ `bestCapturedPiece`
+_Bandera:_ `bestTradeVerdict`
 
-1. Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.
+1. Con ${bp} a ${sq} cambiabas ${art(f.bestCapturedPiece)}, un cambio parejo.
+2. ${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad.
+3. ${cap(bp)} a ${sq} era mejor.
+4. Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.
 
 ### bestFollowUp
 

@@ -1133,6 +1133,13 @@ export async function analyzeGame(
     let bestPiece: string | null = null, bestTo: string | null = null;
     let bestCapturedPiece: string | null = null, bestGivesCheck = false;
     let bestIsCastle = false, bestIsCenterPawn = false, bestDefendsHung = false;
+    // Whether the recommended capture GAINS or merely TRADES. bestCapturedPiece
+    // only ever said a capture happens, and slot C read that as a gain: "Con el
+    // alfil a g3 te llevabas el alfil" on a square defended by two pawns, where
+    // the engine's own line is `Bxg3 hxg3` — an even bishop trade. SEE was
+    // already answering this question for the move the player PLAYED; it simply
+    // was never asked about the move being recommended.
+    let bestTradeVerdict: "gana" | "pareja" | "pierde" | null = null;
     if (bestSan && bestSan !== moves[i].move) {
       bestIsCastle = bestSan.startsWith("O-O");
       try {
@@ -1141,7 +1148,13 @@ export async function analyzeGame(
         if (bmv) {
           bestPiece = PIECE_ES[bmv.piece] ?? null;
           bestTo = bmv.to;
-          if (bmv.captured) bestCapturedPiece = PIECE_ES[bmv.captured] ?? null;
+          if (bmv.captured) {
+            bestCapturedPiece = PIECE_ES[bmv.captured] ?? null;
+            // cb is the position AFTER the best move, which is the perspective
+            // tradeVerdictFor expects — the same call already used for the played
+            // move, now asked about the recommended one.
+            bestTradeVerdict = tradeVerdictFor(cb.fen(), bmv);
+          }
           bestGivesCheck = /[+#]/.test(bmv.san);
           bestIsCenterPawn = bmv.piece === "p" && ["d4", "e4", "d5", "e5"].includes(bmv.to);
           // The best move "defends" the hung piece if playing it doesn't leave
@@ -1161,7 +1174,7 @@ export async function analyzeGame(
       good,
       evalBefore, evalAfter,
       bestPiece, bestTo, bestCapturedPiece, bestGivesCheck, bestIsCastle,
-      bestIsCenterPawn, bestDefendsHung,
+      bestIsCenterPawn, bestDefendsHung, bestTradeVerdict,
       onlyGoodMove,
       missedForcedMate: !good && lines[0]?.mate != null && (lines[0].mate ?? 0) > 0,
       selfHang: playedSelfHang?.pieceName && playedSelfHang.square
