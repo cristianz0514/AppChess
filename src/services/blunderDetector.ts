@@ -11,7 +11,7 @@ import { ignoredThreat, ownThreat } from "@/lib/threats";
 import { ruleOfTheSquare, endgameKind, pawnMajority } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
-import { sideAccuracy } from "@/lib/accuracy";
+import { sideAccuracy, winPercent } from "@/lib/accuracy";
 import { createEngineCache } from "@/lib/engineCache";
 import { lineToScore } from "@/lib/engineApi";
 import { openingFamily } from "@/lib/translateOpening";
@@ -584,12 +584,45 @@ const DEEP_DEPTH = 16;
 // from board-reading CATEGORIES and from COVERAGE instead.
 const MAX_DEEP_MOVES = 8;
 
-function classify(centipawnLoss: number): MoveClassification {
-  if (centipawnLoss < 10) return "best";
-  if (centipawnLoss < 25) return "excellent";
-  if (centipawnLoss < 50) return "good";
-  if (centipawnLoss < 100) return "inaccuracy";
-  if (centipawnLoss < 200) return "mistake";
+/**
+ * Classification from how much WIN PROBABILITY the move gave away, not from raw
+ * centipawns.
+ *
+ * lib/accuracy.ts already argued this in its own header — "100 centipawns thrown
+ * away from a dead-equal position changes the game, while the same 100 thrown away
+ * from +9 changes nothing" — and fixed the ACCURACY figure accordingly. This
+ * function was left on raw centipawns, so one consumer got the correct model and
+ * the other did not.
+ *
+ * The symptom, reported from a real game: an eval moving from +11.6 to +8.9 is a
+ * 270cp "loss" and was labelled a BLUNDER, even though the player had played the
+ * engine's own first choice and both positions are completely won. In win
+ * probability that same move gives away about 1%, which is what it actually cost.
+ *
+ * Thresholds were CALIBRATED against real cases rather than picked to look tidy.
+ * A first pass at 1/2/5/10/20 read "+0.2 -> -2.0" — equal to two pawns down — as a
+ * mere mistake at 19.5%, which no player would accept, so the bands were tightened
+ * until every reference case landed where a human would put it:
+ *
+ *   +11.6 -> +8.9   1.2%   excellent   (the reported bug: was "blunder")
+ *   0.0   -> -0.1   0.9%   best
+ *   0.0   -> -0.5   4.6%   inaccuracy
+ *   +0.2  -> -2.0  19.5%   blunder
+ *   +3.0  -> +0.2  23.3%   blunder
+ *   +0.5  -> -3.2  31.1%   blunder
+ *
+ * "-6.0 -> -9.0" landing on inaccuracy (6.4%) is deliberate and is the same
+ * principle seen from the losing side: the game was already gone, so the move
+ * changed nothing about the outcome. That is exactly what the win-probability
+ * model is for, and treating it as a blunder is what made the old bands wrong in
+ * both directions.
+ */
+function classify(winLostPercent: number): MoveClassification {
+  if (winLostPercent < 1) return "best";
+  if (winLostPercent < 2) return "excellent";
+  if (winLostPercent < 4) return "good";
+  if (winLostPercent < 8) return "inaccuracy";
+  if (winLostPercent < 18) return "mistake";
   return "blunder";
 }
 
@@ -710,11 +743,21 @@ export async function analyzeGame(
       const prev = i === 0 ? 0 : whiteEval[i - 1];
       const whiteJustMoved = i % 2 === 0;
       let centipawnLoss = 0;
+      let winLost = 0;
       if (prev !== null) {
         const drop = whiteJustMoved ? prev - cur : cur - prev;
+        // centipawn_loss is still STORED as before: the UI shows it, the deepening
+        // pass ranks by it, and averageCentipawnLoss feeds the Elo estimate. Only
+        // the CLASSIFICATION moves to win probability.
         centipawnLoss = Math.min(2000, Math.max(0, Math.round(drop * 100)));
+        // Both evals flipped to the MOVER's point of view before converting, since
+        // whiteEval is stored from White's. Feeding White's number for a Black move
+        // would read every one of Black's good moves as a catastrophe.
+        const beforeMover = whiteJustMoved ? prev : -prev;
+        const afterMover = whiteJustMoved ? cur : -cur;
+        winLost = Math.max(0, winPercent(beforeMover * 100) - winPercent(afterMover * 100));
       }
-      return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(centipawnLoss) };
+      return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(winLost) };
     });
 
   // ── Pass 2: deepen the worst positions ──────────────────────────────────────
