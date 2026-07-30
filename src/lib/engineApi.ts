@@ -8,6 +8,17 @@
 export interface EvalResult {
   score: number;      // pawns, side-to-move perspective; |score| ≈ 10000 means mate
   mate: number | null;
+  /**
+   * The engine's best move in this position, UCI ("e2e4"), when the search
+   * reported one.
+   *
+   * Every UCI search ends with a `bestmove` line, and evaluateOne was already
+   * watching for it — only to know the search had finished, discarding the move
+   * itself. Keeping it makes the sweep in pass 1 yield a recommendation for EVERY
+   * position at no additional engine cost, which is what lets the viewer's arrow
+   * stop asking a second, shallower engine on the plies the comment tier skipped.
+   */
+  bestMove?: string | null;
 }
 
 export interface EngineLine {

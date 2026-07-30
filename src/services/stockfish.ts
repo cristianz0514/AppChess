@@ -13,6 +13,7 @@ import { Chess } from "chess.js";
 interface EvalResult {
   score: number;      // pawns, side-to-move perspective; ±9999 = mate
   mate: number | null;
+  bestMove?: string | null;   // UCI, from the search's own `bestmove` line
 }
 
 interface StockfishEngine {
@@ -87,6 +88,7 @@ function runExclusive<T>(task: () => Promise<T>): Promise<T> {
 function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promise<EvalResult> {
   return new Promise((resolve) => {
     let best: EvalResult = { score: 0, mate: null };
+    let bestMove: string | null = null;
     let settled = false;
 
     const finish = () => {
@@ -94,7 +96,10 @@ function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promi
       settled = true;
       clearTimeout(timer);
       engine.listener = null;
-      resolve(best);
+      // bestMove kept for parity with the browser engine: both implement the same
+      // CoachEngine contract, and last time the two sides drifted the bug only
+      // showed up wherever the fix hadn't been applied.
+      resolve({ ...best, bestMove });
     };
 
     const timer = setTimeout(finish, 6000);
@@ -121,6 +126,8 @@ function evaluateOne(engine: StockfishEngine, fen: string, depth: number): Promi
           best = { score: parseInt(cpMatch[1]) / 100, mate: null };
         }
       } else if (line.startsWith("bestmove")) {
+        const uci = line.split(/\s+/)[1];
+        if (uci && uci !== "(none)") bestMove = uci;
         finish();
       }
     };

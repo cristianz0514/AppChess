@@ -722,6 +722,29 @@ export async function analyzeGame(
   // Convert to WHITE's perspective so the stored eval is consistent everywhere.
   const whiteEval: (number | null)[] = evals.map((r, i) => (r ? toWhite(r.score, i) : null));
 
+  // The sweep's own recommendation for EVERY ply, in SAN — free, because the
+  // search already produced it and evaluateOne used to discard it.
+  //
+  // Mapping, stated because getting it wrong is invisible: the sweep evaluated
+  // `fens[i]`, the position AFTER ply i, so its bestmove answers ply i+1. The
+  // recommendation for ply i therefore comes from `evals[i - 1]`. Ply 0 has no
+  // predecessor in `fens` and simply gets none (it is a book move anyway).
+  //
+  // This exists because the viewer's arrow could only read stored moves on the
+  // ~5 plies that reached the comment tier, and fell back to /api/bestmove — a
+  // different engine at a shallower depth — everywhere else. That fallback WAS the
+  // disagreement the user kept seeing.
+  const sweepBest: (string | null)[] = history.map((_, i) => {
+    if (i === 0) return null;
+    const uci = evals[i - 1]?.bestMove;
+    if (!uci) return null;
+    try {
+      const b = new Chess(fens[i - 1]);
+      const mv = b.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.length > 4 ? uci.slice(4, 5) : undefined });
+      return mv ? mv.san : null;
+    } catch { return null; }
+  });
+
   // Builds the moves array (loss + classification) from the current whiteEval.
   // `ply` (the absolute 0-indexed move index) is the only unbiased per-row
   // key — move_number+SAN collides whenever both colors play the same SAN
@@ -734,11 +757,11 @@ export async function analyzeGame(
       // it as a blunder, so short-circuit here.
       if (move.san.includes("#")) {
         const whiteMated = i % 2 === 0;
-        return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: whiteMated ? 9999 : -9999, centipawn_loss: 0, classification: "best" };
+        return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: whiteMated ? 9999 : -9999, centipawn_loss: 0, classification: "best", best_move: null };
       }
       const cur = whiteEval[i];
       if (cur === null) {
-        return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: null, centipawn_loss: null, classification: null };
+        return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: null, centipawn_loss: null, classification: null, best_move: null };
       }
       const prev = i === 0 ? 0 : whiteEval[i - 1];
       const whiteJustMoved = i % 2 === 0;
@@ -757,7 +780,8 @@ export async function analyzeGame(
         const afterMover = whiteJustMoved ? cur : -cur;
         winLost = Math.max(0, winPercent(beforeMover * 100) - winPercent(afterMover * 100));
       }
-      return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(winLost) };
+      const suggestion = sweepBest[i] && sweepBest[i] !== move.san ? sweepBest[i] : null;
+      return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(winLost), best_move: suggestion };
     });
 
   // ── Pass 2: deepen the worst positions ──────────────────────────────────────
@@ -861,15 +885,24 @@ export async function analyzeGame(
 
   await supabase.from("moves").delete().eq("game_id", gameId);
   {
-    const { error } = await supabase.from("moves").insert(moves.map((m) => ({ ...m })));
-    // `ply` may not exist yet on databases that haven't run the migration —
-    // degrade gracefully instead of failing the whole analysis pass.
+    let { error } = await supabase.from("moves").insert(moves.map((m) => ({ ...m })));
+    // `best_move` and `ply` may not exist yet on databases that haven't run those
+    // migrations — degrade one column at a time instead of failing the whole
+    // analysis pass. Dropping best_move first keeps `ply` (the unambiguous row key)
+    // on databases missing only the newer column.
     if (error) {
-      // Retry without `ply` for databases that haven't run that migration. The
-      // column is dropped by rebuilding each row rather than destructuring it
+      ({ error } = await supabase.from("moves").insert(moves.map((m) => {
+        const rest: Record<string, unknown> = { ...m };
+        delete rest.best_move;
+        return rest;
+      })));
+    }
+    if (error) {
+      // The column is dropped by rebuilding each row rather than destructuring it
       // into an unused binding, which is what the linter was objecting to.
       await supabase.from("moves").insert(moves.map((m) => {
         const rest: Record<string, unknown> = { ...m };
+        delete rest.best_move;
         delete rest.ply;
         return rest;
       }));

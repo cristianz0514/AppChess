@@ -153,6 +153,7 @@ function search<T>(
 async function evaluateOne(fen: string, depth: number): Promise<EvalResult> {
   const worker = await getWorker();
   let best: EvalResult = { score: 0, mate: null };
+  let bestMove: string | null = null;
   worker.postMessage("position fen " + fen);
   return search(
     worker, `go depth ${depth}`, 10000,
@@ -160,9 +161,15 @@ async function evaluateOne(fen: string, depth: number): Promise<EvalResult> {
       if (line.startsWith("info") && line.includes("score")) {
         const parsed = parseScore(line);
         if (parsed) best = parsed;
-      } else if (line.startsWith("bestmove")) finish();
+      } else if (line.startsWith("bestmove")) {
+        // Kept, not just used as an end-of-search signal: this is the same answer
+        // /api/bestmove was being asked for separately, already computed here.
+        const uci = line.split(/\s+/)[1];
+        if (uci && uci !== "(none)") bestMove = uci;
+        finish();
+      }
     },
-    () => best,
+    () => ({ ...best, bestMove }),
   );
 }
 
