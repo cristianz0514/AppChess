@@ -6,7 +6,7 @@ los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
 - **Categorías:** 137
-- **Variantes de texto:** 362
+- **Variantes de texto:** 366
 - **Sin nombre humano todavía:** 28
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -1005,14 +1005,18 @@ _Bandera:_ `bestTo`
 
 _Bandera:_ `classification`
 
-1. Error grave: la posición se te complica de golpe.
-2. Esta jugada le entrega la partida al rival.
-3. Esto cambia la partida, y no a tu favor.
-4. Error importante: a partir de aquí el rival lleva la iniciativa.
-5. Error: le das la iniciativa al rival.
-6. Con esta jugada pierdes el hilo de la posición.
-7. Aquí se te escapa el control de la partida.
-8. Jugada equivocada: el rival pasa a mandar.
+1. Error grave: sueltas mucha ventaja de golpe, aunque la posición sigue a tu favor.
+2. Eso regala buena parte de tu ventaja. Sigues mejor, pero era mucho más fácil antes.
+3. Error grave: la posición se te complica de golpe.
+4. Esta jugada le entrega la partida al rival.
+5. Esto cambia la partida, y no a tu favor.
+6. Error importante: a partir de aquí el rival lleva la iniciativa.
+7. Error: cedes parte de la ventaja, aunque sigues por delante.
+8. Eso le devuelve juego al rival. La posición todavía es tuya.
+9. Error: le das la iniciativa al rival.
+10. Con esta jugada pierdes el hilo de la posición.
+11. Aquí se te escapa el control de la partida.
+12. Jugada equivocada: el rival pasa a mandar.
 
 ---
 

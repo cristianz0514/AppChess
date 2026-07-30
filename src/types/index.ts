@@ -36,6 +36,14 @@ export interface Move {
   // same SAN at the same move_number (e.g. a recapture like "dxe5"/"dxe5").
   // Optional: absent on rows analyzed before this column existed.
   ply?: number | null;
+  // The move the analysis recommended instead, in SAN. Stored so the viewer's
+  // green arrow and the written advice come from ONE determination: the arrow used
+  // to call /api/bestmove, which runs a DIFFERENT engine build on the server at
+  // depth 12 while the text came from the browser engine at depth 16 — so the
+  // arrow could point somewhere the comment never mentioned.
+  // Optional: absent on rows analyzed before this column existed, and on plies
+  // that never reached the engine tier.
+  best_move?: string | null;
 }
 
 export interface Insight {

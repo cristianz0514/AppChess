@@ -22,6 +22,7 @@ interface DbMove {
   evaluation?: number | null;
   explanation?: string | null;
   ply?: number | null;    // 0-indexed absolute move index — the real unique key
+  best_move?: string | null;  // SAN the analysis recommended instead, when it did
 }
 
 interface MoveInfo {
@@ -36,6 +37,10 @@ interface MoveInfo {
   centipawnLoss: number | null;
   evaluation: number | null;   // in pawns, white's perspective; ±9999 = mate
   explanation: string | null;  // short AI coach comment (precomputed), when available
+  // The move the ANALYSIS recommended for this ply, in SAN. Preferred over
+  // /api/bestmove for the green arrow so the arrow and the comment can never
+  // disagree — they now come from the same search.
+  bestMove: string | null;
 }
 
 type Tab = "analizar" | "jugadas" | "consejos";
@@ -222,6 +227,7 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
       centipawnLoss: db?.centipawn_loss ?? null,
       evaluation: db?.evaluation ?? null,
       explanation: db?.explanation ?? null,
+      bestMove: db?.best_move ?? null,
     };
   });
 }
@@ -734,6 +740,22 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       }
       return;
     }
+    // The analysis already recorded what it recommended for THIS ply, so use it:
+    // that is what the written comment is talking about. /api/bestmove runs a
+    // different engine build on the server at depth 12, so asking it again could
+    // (and did) point the arrow at a move the comment never mentions. It stays as
+    // the fallback for games analysed before best_move existed.
+    const stored = cm.move.bestMove;
+    if (stored) {
+      try {
+        const mv = new Chess(fenBefore).move(stored);
+        if (mv) {
+          setBestMoveArrow({ from: mv.from, to: mv.to, color: "green" });
+          setStoryBest((prev) => ({ ...prev, [cm.idx]: stored }));
+          return;
+        }
+      } catch { /* unreplayable SAN: fall through to the engine */ }
+    }
     let cancelled = false;
     setBestLoading(true);
     setBestMoveArrow(null);
@@ -759,9 +781,37 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // ply during normal review — chess.com always shows this, not just when
   // asked. Cached per index so scrubbing back and forth doesn't refetch.
   const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string } | null>>({});
+
+  // The analysis's OWN recommendation, per viewed position. Derived with useMemo
+  // rather than fetched into state: there is nothing async about reading a column
+  // already loaded with the game, and setting state synchronously inside an effect
+  // is what triggers the cascading renders eslint objects to.
+  //
+  // Keyed by the index being VIEWED. The position at index i is the one AFTER move
+  // i, so the recommendation that applies to it is the NEXT ply's — that is the
+  // move the player was about to face. Index -1 is the starting position, whose
+  // answer is ply 0's. Getting this off by one would look like the engine
+  // disagreeing with the text rather than like a bug.
+  const storedBest = useMemo(() => {
+    const out: Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string }> = {};
+    const at = (i: number) => (i < 0 ? new Chess().fen() : moves[i]?.fen);
+    for (let i = -1; i < moves.length; i++) {
+      const san = moves[i + 1]?.bestMove;
+      const fen = at(i);
+      if (!san || !fen) continue;
+      try {
+        const mv = new Chess(fen).move(san);
+        if (mv) out[i] = { from: mv.from, to: mv.to, promotion: (mv.promotion ?? "q") as "q" | "r" | "b" | "n", san: mv.san };
+      } catch { /* unreplayable SAN: the engine fallback below covers it */ }
+    }
+    return out;
+  }, [moves]);
   useEffect(() => {
     if (inExplore || inStory) return;
     if (autoBest[idx] !== undefined) return;
+    // Already answered by the analysis itself — don't ask a second, different
+    // engine the same question.
+    if (storedBest[idx]) return;
     let cancelled = false;
     fetch(`/api/bestmove?fen=${encodeURIComponent(currentFen)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -778,14 +828,15 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       })
       .catch(() => { if (!cancelled) setAutoBest((prev) => ({ ...prev, [idx]: null })); });
     return () => { cancelled = true; };
-  }, [idx, inExplore, inStory, currentFen, autoBest]);
+  }, [idx, inExplore, inStory, currentFen, autoBest, storedBest]);
 
   // Tapping the best-move readout plays it out on the board (Lichess-style
   // preview) instead of only pointing an arrow at it — the position itself
   // updates so you can see the resulting structure, then the X restores the
   // real position.
   const [previewBest, setPreviewBest] = useState(false);
-  const previewMoveInfo = !inExplore && !inStory && previewBest ? autoBest[idx] : null;
+  const bestHere = storedBest[idx] ?? autoBest[idx];
+  const previewMoveInfo = !inExplore && !inStory && previewBest ? bestHere : null;
   const previewFen = useMemo(() => {
     if (!previewMoveInfo) return null;
     try {
@@ -1045,8 +1096,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                           { from: storyMomentSlide.cm.move.from, to: storyMomentSlide.cm.move.to, color: "red" },
                           ...(bestMoveArrow ? [bestMoveArrow] : []),
                         ]
-                      : autoBest[idx]
-                        ? [{ from: autoBest[idx]!.from, to: autoBest[idx]!.to, color: "blue" }]
+                      : bestHere
+                        ? [{ from: bestHere.from, to: bestHere.to, color: "blue" }]
                         : []
                 }
                 interactive={inExplore}
@@ -1136,13 +1187,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   shoving Resumen/sonido sideways every time) so the rest of
                   the row stays put regardless of label length. */}
               <button
-                onClick={() => autoBest[idx] && setPreviewBest((p) => !p)}
-                disabled={!autoBest[idx]}
-                title={autoBest[idx] ? `Mejor: ${autoBest[idx]!.san}` : undefined}
+                onClick={() => bestHere && setPreviewBest((p) => !p)}
+                disabled={!bestHere}
+                title={bestHere ? `Mejor: ${bestHere.san}` : undefined}
                 className="w-[4.75rem] h-11 shrink-0 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition active:scale-[0.98] disabled:opacity-60"
                 style={{ background: previewBest ? "var(--bv-electric)" : "color-mix(in oklab, var(--bv-electric) 12%, transparent)", color: previewBest ? "#fff" : "var(--bv-electric)" }}>
                 <Target size={14} className="shrink-0" />
-                <span className="truncate">{autoBest[idx] ? autoBest[idx]!.san : autoBest[idx] === null ? "—" : "…"}</span>
+                <span className="truncate">{bestHere ? bestHere.san : autoBest[idx] === null ? "—" : "…"}</span>
               </button>
               {/* Resumen + sonido used to sit in a header row above the coach
                   comment — moved here, bottom-right of the action row, once

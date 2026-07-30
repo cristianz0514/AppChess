@@ -37,6 +37,19 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   let moves: Array<Record<string, unknown>> | null = null;
   let explanationColumn = false;
   {
+    // Widest first: best_move is what keeps the viewer's green arrow and the
+    // written comment pointing at the SAME move. Each rung below drops one column
+    // that a not-yet-migrated database might be missing, rather than failing the
+    // whole page — same ladder the `ply` migration already established.
+    const withBest = await supabase
+      .from("moves")
+      .select("move_number, move, classification, centipawn_loss, evaluation, explanation, ply, best_move")
+      .eq("game_id", id)
+      .order("move_number", { ascending: true });
+    if (!withBest.error) {
+      moves = withBest.data;
+      explanationColumn = true;
+    } else {
     const withPly = await supabase
       .from("moves")
       .select("move_number, move, classification, centipawn_loss, evaluation, explanation, ply")
@@ -63,6 +76,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
         explanationColumn = true;
       }
     }
+    }
   }
 
   const dbMoves = (moves ?? []) as Array<{
@@ -73,6 +87,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
     evaluation: number | null;
     explanation?: string | null;
     ply?: number | null;
+    best_move?: string | null;
   }>;
 
   // A game analyzed before the coach existed: it has moves but no AI comments.

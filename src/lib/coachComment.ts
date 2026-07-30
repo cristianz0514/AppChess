@@ -1046,7 +1046,19 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
         `Pequeña imprecisión; la posición aguanta.`,
       ], s), namesMaterial: false };
     }
+    // ── Band-aware, because a blunder does not always cost you the game ───────
+    // These templates all assumed the advantage changed hands. Reported from a
+    // real game: Ne4 dropped the eval from +5.26 to +2.88 — a genuine 238cp
+    // blunder — and read "Esto cambia la partida, y no a tu favor" while the
+    // player was still comfortably winning. The centipawn LOSS and the resulting
+    // POSITION are different questions, and only the loss was being consulted.
+    const after = band(f.evalAfter);
+    const stillAhead = after === "ganando" || after === "mejor";
     if (f.classification === "blunder") {
+      if (stillAhead) return { text: pick([
+        `Error grave: sueltas mucha ventaja de golpe, aunque la posición sigue a tu favor.`,
+        `Eso regala buena parte de tu ventaja. Sigues mejor, pero era mucho más fácil antes.`,
+      ], s), namesMaterial: false };
       return { text: pick([
         `Error grave: la posición se te complica de golpe.`,
         `Esta jugada le entrega la partida al rival.`,
@@ -1055,6 +1067,10 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
       ], s), namesMaterial: false };
     }
     if (f.classification === "mistake") {
+      if (stillAhead) return { text: pick([
+        `Error: cedes parte de la ventaja, aunque sigues por delante.`,
+        `Eso le devuelve juego al rival. La posición todavía es tuya.`,
+      ], s), namesMaterial: false };
       return { text: pick([
         `Error: le das la iniciativa al rival.`,
         `Con esta jugada pierdes el hilo de la posición.`,

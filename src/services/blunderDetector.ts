@@ -1121,14 +1121,31 @@ export async function analyzeGame(
     });
 
     if (text) {
+      // The recommended move travels WITH the sentence that recommends it. The
+      // viewer's green arrow used to call /api/bestmove instead, which runs the
+      // server's lite-single build at depth 12 while this text came from the
+      // browser engine at depth 16 — two determinations, so the arrow could point
+      // at a move the comment never mentioned. Persisting it makes them one.
+      // Only when it differs from what was played; otherwise there is nothing to
+      // suggest.
+      const suggest = bestSan && bestSan !== moves[i].move ? bestSan : null;
       try {
         // Match by `ply` (unambiguous) rather than move_number+SAN, which
         // collides whenever both colors play the same SAN at the same
         // move_number (e.g. a recapture) and silently overwrote the wrong
         // row's explanation. Falls back to the old match on databases that
         // haven't run the `ply` migration yet.
-        const { error } = await supabase.from("moves").update({ explanation: text })
+        //
+        // best_move is written in its own attempt so that a database without that
+        // column still gets the explanation — degrading the same way the `ply`
+        // migration does, rather than losing the comment entirely.
+        let { error } = await supabase.from("moves")
+          .update(suggest ? { explanation: text, best_move: suggest } : { explanation: text })
           .eq("game_id", gameId).eq("ply", i);
+        if (error && suggest) {
+          ({ error } = await supabase.from("moves").update({ explanation: text })
+            .eq("game_id", gameId).eq("ply", i));
+        }
         if (error) {
           await supabase.from("moves").update({ explanation: text })
             .eq("game_id", gameId).eq("move_number", moves[i].move_number).eq("move", moves[i].move);
