@@ -53,17 +53,51 @@
 // is assumed rather than measured. Re-run scripts against a wider spread of ratings
 // before trusting the ends of this curve, and re-derive it entirely if
 // SHALLOW_DEPTH changes — the whole scale moves with it.
+// ── Per-move cap, and why it lives HERE ──────────────────────────────────────
+//
+// A single catastrophic move used to dominate the average: `centipawn_loss` is
+// capped at 2000, so one such move adds ~100 to a 20-move mean by itself. Measured
+// over 36 real games against their players' actual ratings, varying only the cap
+// and re-anchoring the curve each time so a cap could not look better merely by
+// shifting everything:
+//
+//     cap 2000 (was)  median |error| 354   within ±200: 13/36
+//     cap  300        median |error| 208   within ±200: 18/36
+//     cap  200        median |error| 188   within ±200: 19/36   <- best
+//     cap  150        median |error| 195   within ±200: 19/36
+//
+// So the cap belongs at 200 for this purpose. It is deliberately NOT applied to the
+// stored `centipawn_loss`: that column is displayed to the player and orders the
+// deepening pass, where the true size of a blunder is exactly what matters. This is
+// a robustness measure for RATING ESTIMATION only, closer in spirit to a trimmed
+// mean than to a correction.
+//
+// It lives in this file, next to the anchors, because the two are calibrated
+// together — the anchor scale below is derived at cap 200, and changing one without
+// the other silently reintroduces the +800 bias this replaced. Callers get
+// acplForElo() rather than being trusted to remember.
+export const ELO_LOSS_CAP = 200;
+
+/** ACPL for rating estimation: per-move losses capped, then averaged. */
+export function acplForElo(losses: number[]): number | null {
+  if (losses.length === 0) return null;
+  const capped = losses.map((v) => Math.min(v, ELO_LOSS_CAP));
+  return capped.reduce((s, v) => s + v, 0) / capped.length;
+}
+
+// Anchors at cap 200, scaled so the measured median lands on the measured rating:
+// median ACPL 41 over 36 games whose players' real median rating is 1040.
 const ANCHORS: [acpl: number, elo: number][] = [
-  [6, 2400],
-  [9, 2200],
-  [13, 2000],
-  [16, 1800],
-  [21, 1600],
-  [31, 1400],
-  [43, 1200],
-  [58, 1000],
-  [75, 800],
-  [100, 600],
+  [4, 2400],
+  [6, 2200],
+  [9, 2000],
+  [12, 1800],
+  [15, 1600],
+  [22, 1400],
+  [31, 1200],
+  [42, 1000],
+  [54, 800],
+  [72, 600],
 ];
 
 export function estimateEloFromAcpl(acpl: number): number {

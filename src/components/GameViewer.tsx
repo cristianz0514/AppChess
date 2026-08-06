@@ -8,7 +8,7 @@ import { Piece } from "./pieces";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
-import { estimateEloFromAcpl } from "@/lib/eloEstimate";
+import { estimateEloFromAcpl, acplForElo } from "@/lib/eloEstimate";
 import { isBookPosition } from "@/lib/openingBook";
 import type { Game } from "@/types";
 
@@ -632,7 +632,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         .filter(({ m }) => m.color === color && m.centipawnLoss !== null && !isBookPosition(m.fen))
         .map(({ m }) => m.centipawnLoss as number);
       if (losses.length < MIN_MOVES_FOR_ELO_ESTIMATE) return null;
-      return losses.reduce((s, v) => s + v, 0) / losses.length;
+      // acplForElo, not a plain mean: it caps each move's loss at the value the
+      // anchor curve was calibrated with, so one catastrophe can't dominate a
+      // 20-move average. Measured over 36 real games, that cap halved the median
+      // error (354 -> 188 points). The cap deliberately does NOT touch the stored
+      // centipawn_loss shown elsewhere — see lib/eloEstimate.ts.
+      return acplForElo(losses);
     };
     const myAcpl = acplFor(playerColor);
     const theirAcpl = acplFor(opponentColor);
