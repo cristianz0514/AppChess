@@ -206,7 +206,12 @@ for (const raw of lines) {
   const line = raw.trim();
 
   // Entering a rule registry: its tier holds until the next function declaration.
-  const reg = line.match(/^const (QUIET_RULES|OPPONENT_RULES)\b/);
+  // `export const`, not just `const`: the registries were exported so auditFirings can
+  // read the real thing, and this regex silently stopped matching. Both descriptive
+  // tiers vanished from the catalogue and only the totals moved, which is exactly the
+  // kind of drift the generated catalogue exists to prevent — so it is worth matching
+  // the optional prefix rather than assuming the declaration keeps its shape.
+  const reg = line.match(/^(?:export )?const (QUIET_RULES|OPPONENT_RULES)\b/);
   if (reg) { tier = REGISTRY_TIERS[reg[1]]; category = ""; inRegistry = true; continue; }
 
   const fn = line.match(

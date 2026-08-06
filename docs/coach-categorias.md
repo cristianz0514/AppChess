@@ -793,7 +793,7 @@ _Bandera:_ `backRankAside`
 _Bandera:_ `overloadedAside`
 
 1. ${c.lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.
-2. ${c.lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.
+2. ${c.lead} Le pides demasiado ${aArt(f.overloaded.piece)}: es el único defensor de dos piezas.
 
 ### Aviso: más atacantes que defensores
 
@@ -958,7 +958,7 @@ _Bandera:_ `underDefended`
 _Bandera:_ `overloaded`
 
 1. ${cap(art(f.overloaded.piece))} está sobrecargado: defiende dos cosas a la vez y no puede con ambas.
-2. Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.
+2. Le pides demasiado ${aArt(f.overloaded.piece)}: es el único defensor de dos piezas.
 
 ### Estructura de peones
 

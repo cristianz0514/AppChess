@@ -10,56 +10,56 @@ fixtures 8   plies medidos 399   (36 saltados: van por el tier de error)
   tactic                          16      16   
   book                            16      16   
   promotion                        1       1   
-  castle                           5       5   
   capture                         40      46   tactic×6
-  check                            7      14   capture×6, tactic×1
   dustGain                         0       0     <- nunca aplicó
   ownThreat                        5      17   capture×8, tactic×3, promotion×1
   looseEnemy                       0       7   capture×3, tactic×2, ownThreat×2
+  check                            7      14   capture×6, tactic×1
+  attacksBigger                    5       8   ownThreat×3
   defendsAttacked                  0       0     <- nunca aplicó
+  createdPassed                    2      12   capture×7, check×2, tactic×1
+  gaveSelfDoubled                  0       7   capture×7
+  gaveSelfIsolated                 0       5   capture×4, promotion×1
+  brokeTheirStructure              0       0     <- nunca aplicó
+  isolatedTheirs                   0       5   capture×5
+  pawnBreak                        4       5   promotion×1
+  backwardPawn                     0       0     <- nunca aplicó
+  supportsPawnChain                4       7   book×2, capture×1
   squareRule                       0       0     <- nunca aplicó
   pawnRunsToPromote                0       1   check×1
   opposition                       1       1   
   kingActivates                    1       1   
   rookBehindPassed                 0       0     <- nunca aplicó
   connectsRooks                    0       0     <- nunca aplicó
-  connectedPassedPair              5      11   capture×2, check×2, opposition×1
+  connectedPassedPair              3      11   capture×2, createdPassed×2, check×2
   connectedPassedOne               0       0     <- nunca aplicó
-  majority                         5      20   connectedPassedPair×5, capture×3, check×2
-  endgameKind                      0      20   majority×5, connectedPassedPair×5, capture×3
-  backwardPawn                     0       0     <- nunca aplicó
-  islands                          0      12   connectedPassedPair×5, capture×2, check×2
-  attacksBigger                    5       8   ownThreat×3
-  pawnBreak                        4       5   promotion×1
+  majority                         5      20   capture×3, connectedPassedPair×3, createdPassed×2
+  endgameKind                      0      20   majority×5, capture×3, connectedPassedPair×3
   outpost                          1       1   
-  knightToCenter                   2       6   capture×2, ownThreat×1, attacksBigger×1
-  givesKingLuft                    0       5   castle×5
-  retreats                        15      22   capture×4, tactic×2, outpost×1
   rookToSeventh                    1       4   ownThreat×1, connectedPassedPair×1, check×1
   doublesRooks                     0       0     <- nunca aplicó
-  rookToOpenFile                   4      12   check×2, capture×2, tactic×1
-  rookToSemiOpen                   2       6   tactic×2, capture×1, retreats×1
+  rookToOpenFile                   5      12   check×2, capture×2, tactic×1
+  rookToSemiOpen                   3       6   tactic×2, capture×1
+  knightToCenter                   2       6   capture×2, ownThreat×1, attacksBigger×1
+  battery                          3       9   rookToSemiOpen×3, tactic×2, rookToSeventh×1
   fianchetto                       0       1   tactic×1
-  queenOutEarly                    0       1   capture×1
-  movesPieceTwice                  0       4   retreats×2, tactic×1, knightToCenter×1
-  developsPiece                   19      30   book×6, tactic×3, ownThreat×1
-  toCenter                         2      25   book×8, capture×7, knightToCenter×2
-  createdPassed                    0      12   capture×7, connectedPassedPair×2, check×2
-  brokeTheirStructure              0       0     <- nunca aplicó
-  isolatedTheirs                   0       5   capture×5
-  gaveSelfDoubled                  0       7   capture×7
-  gaveSelfIsolated                 0       5   capture×4, promotion×1
-  theirKingWorse                   1      32   capture×17, check×5, tactic×2
-  battery                          1       9   retreats×3, rookToSemiOpen×2, tactic×2
-  supportsPawnChain                4       7   book×2, capture×1
-  dominantTermGain                 0      13   book×7, capture×3, developsPiece×1
+  castle                           5       5   
+  givesKingLuft                    0       5   castle×5
   trappedAside                     0       0     <- nunca aplicó
   backRankAside                    0       0     <- nunca aplicó
-  overloadedAside                  0       2   capture×1, retreats×1
-  underDefendedAside               2      41   capture×20, check×4, tactic×4
-  passivePiece                     1      16   capture×5, retreats×2, tactic×2
-  endgameFallback                  0      20   majority×5, connectedPassedPair×5, capture×3
-  fallback                        16     182   capture×40, developsPiece×19, book×16
+  overloadedAside                  0       2   capture×1, rookToOpenFile×1
+  underDefendedAside               7      41   capture×20, check×4, tactic×4
+  theirKingWorse                   0      32   capture×17, check×5, tactic×2
+  islands                          0      12   connectedPassedPair×3, capture×2, createdPassed×2
+  retreats                         9      22   capture×4, battery×2, tactic×2
+  movesPieceTwice                  0       4   tactic×1, knightToCenter×1, battery×1
+  queenOutEarly                    0       1   capture×1
+  developsPiece                   17      30   book×6, tactic×3, underDefendedAside×2
+  toCenter                         2      25   book×8, capture×7, knightToCenter×2
+  dominantTermGain                 0      13   book×7, capture×3, underDefendedAside×1
+  passivePiece                     1      16   capture×5, tactic×2, developsPiece×1
+  endgameFallback                  0      20   majority×5, capture×3, connectedPassedPair×3
+  fallback                        16     182   capture×40, developsPiece×17, book×16
 
 ── OPPONENT_RULES ──────────────────────────────────────────────
   regla                        disparó  aplicó   suprimida por
@@ -117,13 +117,13 @@ fixtures 8   plies medidos 399   (36 saltados: van por el tier de error)
 reglas que nunca aplicaron        : 21
   QUIET_RULES/dustGain
   QUIET_RULES/defendsAttacked
+  QUIET_RULES/brokeTheirStructure
+  QUIET_RULES/backwardPawn
   QUIET_RULES/squareRule
   QUIET_RULES/rookBehindPassed
   QUIET_RULES/connectsRooks
   QUIET_RULES/connectedPassedOne
-  QUIET_RULES/backwardPawn
   QUIET_RULES/doublesRooks
-  QUIET_RULES/brokeTheirStructure
   QUIET_RULES/trappedAside
   QUIET_RULES/backRankAside
   OPPONENT_RULES/oppMate
@@ -145,10 +145,10 @@ reglas que aplicaron y NUNCA ganaron: 26
   QUIET_RULES/fianchetto (aplicó 1×, nunca ganó)
   QUIET_RULES/queenOutEarly (aplicó 1×, nunca ganó)
   QUIET_RULES/movesPieceTwice (aplicó 4×, nunca ganó)
-  QUIET_RULES/createdPassed (aplicó 12×, nunca ganó)
   QUIET_RULES/isolatedTheirs (aplicó 5×, nunca ganó)
   QUIET_RULES/gaveSelfDoubled (aplicó 7×, nunca ganó)
   QUIET_RULES/gaveSelfIsolated (aplicó 5×, nunca ganó)
+  QUIET_RULES/theirKingWorse (aplicó 32×, nunca ganó)
   QUIET_RULES/dominantTermGain (aplicó 13×, nunca ganó)
   QUIET_RULES/overloadedAside (aplicó 2×, nunca ganó)
   QUIET_RULES/endgameFallback (aplicó 20×, nunca ganó)

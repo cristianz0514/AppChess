@@ -208,6 +208,12 @@ const deArt = (p: string | null | undefined) => {
   const a = art(p);
   return a.startsWith("el ") ? `del ${a.slice(3)}` : `de ${a}`;
 };
+// And a + el -> al. "Le pides demasiado a el peón" shipped for as long as the rule was
+// unreachable; the priority reorder made it fire and exposed it immediately.
+const aArt = (p: string | null | undefined) => {
+  const a = art(p);
+  return a.startsWith("el ") ? `al ${a.slice(3)}` : `a ${a}`;
+};
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // Motif labels carry their own article because Spanish gender isn't guessable
@@ -907,7 +913,7 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
     applies: (f, c) => {
       if (f.overloaded) return { text: pick([
         `${c.lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.`,
-        `${c.lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.`,
+        `${c.lead} Le pides demasiado ${aArt(f.overloaded.piece)}: es el único defensor de dos piezas.`,
       ], c.s), namesMaterial: false };
       return null;
     },
@@ -998,21 +1004,71 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
 ];
 
+// Ordered by ONE declared principle: what the move ACHIEVED beats how it LOOKED.
+//
+// Groups, most to least: what ended the game -> what won or lost material -> what
+// threatens -> what changed the pawn structure permanently -> what the endgame plan is
+// -> where a piece went -> warnings about the position -> generic.
+//
+// Changes from the transcribed chain order all come from scripts/auditFirings.cjs
+// rather than from taste. Each promoted rule was applying often and never winning:
+//
+//   createdPassed       12x applied, 0 fired  (capture x7) — a permanent gain silenced
+//   gaveSelfDoubled      7x applied, 0 fired  (capture x7) — own damage never spoken
+//   gaveSelfIsolated     5x applied, 0 fired
+//   isolatedTheirs       5x applied, 0 fired
+//   theirKingWorse      32x applied, 1 fired  (capture x17)
+//   underDefendedAside  41x applied, 2 fired  (capture x20)
+//   endgameKind         20x applied, 0 fired
+//   dominantTermGain    13x applied, 0 fired
+//
+// Deliberately NOT promoted, though the same report flags them, because losing is the
+// correct behaviour: `givesKingLuft` loses to `castle` every time (castling IS the king
+// move), and `looseEnemy` loses to `ownThreat` by a documented constraint — the
+// null-move search answers that question better than the heuristic does.
 export const QUIET_PRIORITY: readonly string[] = [
-  "tactic", "book", "promotion", "castle",
-  "capture", "check", "dustGain", "ownThreat",
-  "looseEnemy", "defendsAttacked", "squareRule", "pawnRunsToPromote",
-  "opposition", "kingActivates", "rookBehindPassed", "connectsRooks",
+  // Decisive, then material — nothing outranks the game ending or the count changing.
+  // `book` stays here, second only to a tactic. Demoting it was tried and the A/B diff
+  // rejected it: "Última jugada de teoría. Vienes de la Defensa Philidor. A partir de
+  // aquí decides tú." became "Pones el alfil en e7, fuera de su casilla inicial." That
+  // sentence is said once per game and is one of the most useful the coach has; a
+  // developing move is not a better thing to say about a theory move.
+  "tactic", "book", "promotion", "capture", "dustGain",
+  // Threats and attacks: what the opponent is now forced to answer.
+  "ownThreat", "looseEnemy", "check", "attacksBigger", "defendsAttacked",
+  // Permanent structural facts, gains and costs alike. These used to sit below
+  // development and below `toCenter`, so a created passed pawn or a pair of doubled
+  // pawns of your own lost to "capturas el peón" every single time.
+  "createdPassed", "gaveSelfDoubled", "gaveSelfIsolated",
+  "brokeTheirStructure", "isolatedTheirs", "pawnBreak", "backwardPawn",
+  "supportsPawnChain",
+  // Endgame: the provable answers first (the square rule either works or it doesn't),
+  // then the plan, then naming the ending.
+  // Actions first, standing facts second — the same rule as everywhere else. Taking the
+  // opposition is something the move DID; having connected passers is true whether you
+  // moved or not, so it cannot outrank the move's own achievement.
+  "squareRule", "pawnRunsToPromote", "opposition", "kingActivates",
+  "rookBehindPassed", "connectsRooks",
   "connectedPassedPair", "connectedPassedOne", "majority", "endgameKind",
-  "backwardPawn", "islands", "attacksBigger", "pawnBreak",
-  "outpost", "knightToCenter", "givesKingLuft", "retreats",
-  "rookToSeventh", "doublesRooks", "rookToOpenFile", "rookToSemiOpen",
-  "fianchetto", "queenOutEarly", "movesPieceTwice", "developsPiece",
-  "toCenter", "createdPassed", "brokeTheirStructure", "isolatedTheirs",
-  "gaveSelfDoubled", "gaveSelfIsolated", "theirKingWorse", "battery",
-  "supportsPawnChain", "dominantTermGain", "trappedAside", "backRankAside",
-  "overloadedAside", "underDefendedAside", "passivePiece", "endgameFallback",
-  "fallback",
+  // Where the piece went, when the placement has a NAME — an outpost, the seventh rank,
+  // a battery. These describe what the move achieved, so they stay above the warnings.
+  "outpost", "rookToSeventh", "doublesRooks", "rookToOpenFile", "rookToSemiOpen",
+  "knightToCenter", "battery", "fianchetto", "castle", "givesKingLuft",
+  // Warnings about the position. Between named placements and generic development: they
+  // beat "repliegas el alfil" and "pones el caballo en c6", which say nothing, but they
+  // are standing observations about ANOTHER square and must not displace what this move
+  // actually built.
+  "trappedAside", "backRankAside", "overloadedAside", "underDefendedAside",
+  // theirKingWorse sits HERE, not with the threats. Promoted there first, and the diff
+  // showed it replacing "Tomas la oposición" and "Torre a la séptima" with "el rey
+  // aprieta el cerco" — vague pressure displacing a named, provable idea. `islands`
+  // likewise: it printed "2 islas de peones contra 1" over "dos peones pasados
+  // conectados" three times in one endgame.
+  "theirKingWorse", "islands",
+  "retreats", "movesPieceTwice", "queenOutEarly", "developsPiece", "toCenter",
+  // Eval-term movement is a last resort before the fallbacks: true, but vague.
+  "dominantTermGain",
+  "passivePiece", "endgameFallback", "fallback",
 ];
 
 // ── Arbitration ──────────────────────────────────────────────────────────────
@@ -1420,7 +1476,7 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
   if (f.overloaded) {
     return { text: pick([
       `${cap(art(f.overloaded.piece))} está sobrecargado: defiende dos cosas a la vez y no puede con ambas.`,
-      `Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.`,
+      `Le pides demasiado ${aArt(f.overloaded.piece)}: es el único defensor de dos piezas.`,
     ], s), namesMaterial: false };
   }
 
