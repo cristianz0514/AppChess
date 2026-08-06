@@ -1060,16 +1060,21 @@ export interface QuietCtx {
   lead: string;                     // "El caballo a f3." — prefix for position asides
 }
 
-export interface CoachRule<C = QuietCtx> {
+// Generic over the RESULT as well as the context. The player's tier returns RuleResult
+// (text plus namesMaterial, which slot B reads); the opponent's tier returns a plain
+// string, because there is no second slot on that side for namesMaterial to inform.
+// Making that a type parameter rather than forcing one shape on both means neither
+// registry has to wrap or unwrap anything.
+export interface CoachRule<C = QuietCtx, R = RuleResult> {
   /** Unique within its registry, and the category key the catalogue is generated from. */
   id: string;
   group: string;
   /** The guard is the first statement. Returns null when the rule has nothing to say. */
-  applies(f: MoveFacts, ctx: C): RuleResult | null;
+  applies(f: MoveFacts, ctx: C): R | null;
 }
 
-export interface RuleCandidate { id: string; group: string; result: RuleResult }
-export interface ArbiterTrace { winnerId: string; candidates: RuleCandidate[] }
+export interface RuleCandidate<R = RuleResult> { id: string; group: string; result: R }
+export interface ArbiterTrace<R = RuleResult> { winnerId: string; candidates: RuleCandidate<R>[] }
 
 /**
  * Orderings that are SEMANTIC rather than stylistic: each was learned from a real
@@ -1092,7 +1097,7 @@ const QUIET_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
  *  violates a declared constraint. Called by the audit scripts and at module load in
  *  development, so a bad table cannot ship quietly. */
 export function validatePriority(
-  rules: ReadonlyArray<CoachRule<unknown>>,
+  rules: ReadonlyArray<{ id: string }>,
   priority: readonly string[],
   constraints: ReadonlyArray<readonly [string, string, string]>,
   label: string,
@@ -1115,16 +1120,16 @@ export function validatePriority(
   return problems;
 }
 
-function runRules<C>(
-  rules: ReadonlyArray<CoachRule<C>>,
+function runRules<C, R>(
+  rules: ReadonlyArray<CoachRule<C, R>>,
   rank: Map<string, number>,
   f: MoveFacts,
   ctx: C,
-  trace?: ArbiterTrace[],
-): RuleResult {
-  const candidates: RuleCandidate[] = [];
+  trace?: ArbiterTrace<R>[],
+): R {
+  const candidates: RuleCandidate<R>[] = [];
   for (const rule of rules) {
-    let result: RuleResult | null = null;
+    let result: R | null = null;
     try {
       result = rule.applies(f, ctx);
     } catch {
@@ -1804,6 +1809,621 @@ export function composeCoachComment(f: MoveFacts): string | null {
   return second ? `${a.text} ${second}` : a.text;
 }
 
+/** The opponent registry's own context. `piece` and `to` were locals in the chain and
+ *  are read by nearly every rule, so they are built once per call here. Its rules
+ *  return a plain string: there is no second slot on the opponent's side, so there is
+ *  nothing for namesMaterial to inform. */
+export interface OpponentCtx { s: number; piece: string; to: string; dust: number }
+
+/** Same reasoning as QUIET_CONSTRAINTS: every pair was learned from a real defect. */
+const OPPONENT_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
+  ["oppTacticOrLoose", "oppCapture", "a fork against you matters more than the pawn that changed hands"],
+  ["oppCapture", "oppOwnThreat", "a capture must never be swallowed by a threat report — the d8 queen bug"],
+  ["oppDoublesRooks", "oppBattery", "battery also matches rook-behind-rook: 'una batería con la torre y la torre'"],
+  ["oppEndgameFallback", "oppFallback", "phase-aware beats generic"],
+];
+
+const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
+  {
+    id: "oppMate", group: "tactics",
+    applies: (f, c) => {
+      if (f.isMate) return `El rival da jaque mate con ${c.piece} en ${c.to}.`;
+      return null;
+    },
+  },
+  {
+    id: "oppTacticOrLoose", group: "tactics",
+    applies: (f, c) => {
+
+      // Their tactic, above the capture for the same reason as on the player's side —
+      // and here it doubles as the warning that matters most: a fork or a pin against
+      // you is the thing you have to answer, not the pawn that changed hands.
+      {
+        const t = f.playedMotifs.find((m) => !isHanging(m));
+        if (t) {
+          // Same rule as the player's side: name it, then explain the geometry.
+          const clause =
+            t.key === "fork" ? `te hace un doble: ${c.piece} en ${c.to} ataca dos de tus piezas a la vez, y solo puedes salvar una`
+            : t.key === "pin" ? `te clava una pieza: ${c.piece} en ${c.to} la deja inmóvil contra tu rey`
+            : t.key === "skewer" ? `te hace una enfilada: ${c.piece} en ${c.to} ataca dos de tus piezas en línea, y al mover la de delante cae la de atrás`
+            : `te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás`;
+          return f.capturedPiece
+            ? `El rival captura ${art(f.capturedPiece)} en ${c.to} y ${clause}.`
+            : `¡Cuidado! El rival ${clause}.`;
+        }
+        // `hanging` on THEIR ply is one of YOUR pieces, now attacked and undefended.
+        // Suppressed when the move also captured, so the capture stays the headline.
+        const loose = f.playedMotifs.find((m) => m.key === "hanging");
+        if (loose?.piece && loose.square && !f.capturedPiece) {
+          return pick([
+            `Cuidado: tu ${loose.piece} de ${loose.square} se queda sin defensa.`,
+            `Ojo, nadie defiende tu ${loose.piece} de ${loose.square}.`,
+          ], c.s);
+        }
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppCapture", group: "material",
+    applies: (f, c) => {
+
+      // Material changing hands is the headline, above both check and any threat —
+      // the same priority quietComment already gives the player's own captures.
+      // ownThreat used to sit above this and silently swallowed the capture: the
+      // rival taking the queen on d8 came out as "Cuidado: el rival amenaza tu torre
+      // de a8", which is true and leaves out the queen. A capture that ALSO gives
+      // check says both rather than picking one.
+      // Two variants each, not one. quietComment gives the player's own captures two
+      // to four; the rival's had exactly one, and these are the branches that fire
+      // most often in a game — a single game showed "El rival recupera en X: el cambio
+      // queda saldado" on two separate plies, word for word. Every asymmetry in
+      // variant COUNT between the two sides shows up as the rival sounding repetitive.
+      if (f.capturedPiece) {
+        const cp = art(f.capturedPiece);
+        const check = f.gaveCheck ? " Con jaque." : "";
+        if (f.isRecapture) return pick([
+          `El rival recupera en ${c.to}: el cambio queda saldado.${check}`,
+          `El rival retoma en ${c.to} y el material vuelve a estar igual.${check}`,
+        ], c.s);
+        if (f.tradeVerdict === "gana") return pick([
+          `El rival se lleva ${cp} de ${c.to} y gana material.${check}`,
+          `${cap(cp)} de ${c.to} cae y el rival no lo paga: sale ganando.${check}`,
+        ], c.s);
+        if (f.tradeVerdict === "pareja") return pick([
+          `El rival cambia ${cp} en ${c.to}: un cambio parejo.${check}`,
+          `Cambio parejo en ${c.to}: el rival se lleva ${cp} y tú recuperas.${check}`,
+        ], c.s);
+        return pick([
+          `El rival captura ${cp} en ${c.to}.${check}`,
+          `El rival se lleva ${cp} de ${c.to}.${check}`,
+        ], c.s);
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppCheck", group: "tactics",
+    applies: (f, c) => {
+
+      if (f.gaveCheck) return pick([
+        `El rival da jaque con ${c.piece} en ${c.to}.`,
+        `Jaque: ${c.piece} del rival entra en ${c.to}.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppOwnThreat", group: "threats",
+    applies: (f, c) => {
+
+      // A threat against the player outranks everything else on a QUIET move — one
+      // that neither took material nor gave check.
+      if (f.ownThreat) {
+        const t = f.ownThreat;
+        if (t.kind === "mate") return `¡Cuidado! El rival amenaza mate en ${t.square}.`;
+        // "tu", not "el": the threatened piece belongs to the player, and "va contra
+        // el alfil de d3" leaves it ambiguous whose bishop is in danger.
+        const mine = art(t.piece).replace(/^(el|la) /, () => "tu ");
+        return pick([
+          `Cuidado: el rival amenaza ${mine} de ${t.square}.`,
+          `Ojo, ahora va contra ${mine} de ${t.square}.`,
+        ], c.s);
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppPromotion", group: "material",
+    applies: (f, c) => {
+
+      if (f.isPromotion) return `El rival corona en ${c.to}.`;
+      return null;
+    },
+  },
+  {
+    id: "oppCastle", group: "shape",
+    applies: (f, c) => {
+      if (f.isCastle) return `El rival enroca y pone su rey a salvo.`;
+      return null;
+    },
+  },
+  {
+    id: "oppBook", group: "phase",
+    applies: (f, c) => {
+      if (f.isBook) {
+        return f.isLastBookMove
+          // Not "también": lastBookPly is a SINGLE marker for the whole game, so when
+          // it lands on the rival's ply the player never got their own version — and
+          // "también" asserts that they did. Seen on move 2 of a real game.
+          ? "Hasta aquí llega la teoría en esta partida."
+          : `El rival sigue la teoría: ${c.piece} a ${c.to}.`;
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppDust", group: "material",
+    applies: (f, c) => {
+
+      // ── Openings for the player, ranked above anything describing their move ────
+      // These three facts are computed from the MOVER's side, and on the rival's ply
+      // the mover is the rival — so each one reads as an opportunity rather than a
+      // warning. Measured over six real games: they were live on 5 of the 15 plies
+      // that fell to the wildcard, which is why they're here and in this order
+      // (material first, then a threat they ignored, then a piece short of cover).
+      if (c.dust >= 3) return pick([
+        `Los cambios que vienen dejan al rival con material de más.`,
+        `Cuando se resuelvan las capturas, el rival sale ganando material.`,
+      ], c.s);
+      if (c.dust <= -3) return pick([
+        `La secuencia de cambios te favorece: acabas con material de más.`,
+        `Cuando se resuelvan las capturas, sales ganando material.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppIgnoredThreat", group: "threats",
+    applies: (f, c) => {
+      // ignoredThreat on their ply is YOUR threat, which they did not answer: the
+      // piece named is theirs and the capture is yours to make.
+      if (f.ignoredThreat) {
+        const it = f.ignoredThreat;
+        if (it.kind === "mate") return `El rival no para tu mate en ${it.square}. Ahí lo tienes.`;
+        return pick([
+          `El rival no atiende tu amenaza: puedes llevarte ${art(it.piece)} de ${it.square}.`,
+          `Tu amenaza sigue en pie y él no la ve: ${art(it.piece)} de ${it.square} se puede caer.`,
+        ], c.s);
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppUnderDefended", group: "threats",
+    applies: (f, c) => {
+      // Likewise underDefended: on their ply this is one of THEIR pieces with more
+      // attackers than defenders — something to pile onto, not something to fear.
+      if (f.underDefended) {
+        const ud = f.underDefended;
+        return pick([
+          `${cap(art(ud.piece))} del rival en ${ud.square} tiene más atacantes que defensores: puedes apretar ahí.`,
+          `Al rival no le alcanzan los defensores en ${ud.square}. Vale la pena sumar presión.`,
+        ], c.s);
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppAttacksBigger", group: "threats",
+    applies: (f, c) => {
+
+      // ── The same structural detectors, worded from the player's side ────────────
+      // Written out rather than transformed: possessives change owner between the two
+      // voices ("tu estructura" is the OPPONENT's here, "el rival" is the PLAYER), and
+      // that's precisely what a substitution gets wrong while looking right.
+      //
+      // These exist because the first version of this function fell straight through
+      // to "El alfil del rival va a f5" for anything without a capture — 7 of 21
+      // opponent comments became pure filler, which is worse than the ambiguity it
+      // replaced. The detectors were already firing; only the wording was missing.
+
+      // Their threats and gains against the player: warnings.
+      if (f.attacksBigger) return `El rival ataca ${art(f.attacksBigger)} con ${c.piece} en ${c.to}.`;
+      return null;
+    },
+  },
+  {
+    id: "oppTheirKingWorse", group: "threats",
+    applies: (f, c) => {
+      if (f.theirKingWorse) return pick([
+        `El rival suma presión sobre tu rey con ${c.piece} en ${c.to}.`,
+        `${cap(c.piece)} en ${c.to} aprieta el cerco sobre tu rey.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppRookToSeventh", group: "shape",
+    applies: (f, c) => {
+      if (f.rookToSeventh) return pick([
+        `El rival mete la torre en tu séptima fila, donde más muerde.`,
+        `Torre rival en tu séptima: desde ${c.to} muerde tus peones y encierra a tu rey.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppCreatedPassed", group: "structure",
+    applies: (f, c) => {
+      if (f.structure?.createdPassed) return `El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.`;
+      return null;
+    },
+  },
+  {
+    id: "oppBrokeYourStructure", group: "structure",
+    applies: (f, c) => {
+      if (f.structure?.brokeTheirStructure) return `Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.`;
+      return null;
+    },
+  },
+  {
+    id: "oppIsolatesYours", group: "structure",
+    applies: (f, c) => {
+      if (f.structure?.isolatedTheirs) return `El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`;
+      return null;
+    },
+  },
+  {
+    id: "oppOpposition", group: "endgame",
+    applies: (f, c) => {
+      // Direct opposition taken by the RIVAL's king means the PLAYER's king is the
+      // one that has to give ground — the opposite reading from the mover's own
+      // quiet-move branch, and worth a warning rather than a shrug.
+      if (f.opposition) return `El rival toma la oposición: tu rey tiene que ceder terreno.`;
+      return null;
+    },
+  },
+  {
+    id: "oppSquareRule", group: "endgame",
+    applies: (f, c) => {
+      if (f.squareRule) {
+        const sr = f.squareRule;
+        // sr describes the RIVAL's passed pawn here, so `promotes: true` means
+        // YOUR king fails to reach the square in time — a warning, not trivia.
+        if (sr.promotes) return pick([
+          `Tu rey no entra en el cuadrado: el peón rival de ${sr.pawnSquare} corona solo.`,
+          `Cuenta el cuadrado: el peón rival de ${sr.pawnSquare} llega antes que tu rey.`,
+        ], c.s);
+        return pick([
+          `El peón rival de ${sr.pawnSquare} no corona solo: tu rey llega a tiempo para frenarlo.`,
+          `Tu rey entra en el cuadrado del peón de ${sr.pawnSquare} y lo detiene.`,
+        ], c.s);
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppDefendsAttacked", group: "threats",
+    applies: (f, c) => {
+
+      // Their position improving: worth knowing, not alarming.
+      if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.`;
+      return null;
+    },
+  },
+  {
+    id: "oppDoublesRooks", group: "shape",
+    applies: (f, c) => {
+      // doublesRooks BEFORE battery: batteryCreated also matches rook-behind-rook and
+      // it won this race in a real game, producing "una batería con la torre y la
+      // torre" — the doubled-rooks sentence is simply the right name for that shape.
+      if (f.doublesRooks) return `El rival dobla las torres en la columna ${c.to[0]}.`;
+      return null;
+    },
+  },
+  {
+    id: "oppBattery", group: "shape",
+    applies: (f, c) => {
+      if (f.battery) {
+        const b = f.battery;
+        // Two of the SAME piece is a doubling, not a pairing, and naming it as a
+        // pairing repeats the noun. Only torre+torre and dama+dama can reach here
+        // (same-colour bishops never share a diagonal), so "piezas mayores" is
+        // always accurate and sidesteps having to pluralise the piece name.
+        if (b.front === b.back) return `El rival dobla dos piezas mayores en la misma línea.`;
+        return `El rival forma una batería con ${art(b.front)} y ${art(b.back)} en la misma línea.`;
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppOutpost", group: "shape",
+    applies: (f, c) => {
+      if (f.outpost) return `El rival instala ${c.piece} en ${c.to}: ningún peón tuyo puede echarlo.`;
+      return null;
+    },
+  },
+  {
+    id: "oppRookToOpenFile", group: "shape",
+    applies: (f, c) => {
+      if (f.rookToOpenFile) return `El rival toma la columna abierta ${c.to[0]} con la torre.`;
+      return null;
+    },
+  },
+  {
+    id: "oppRookToSemiOpen", group: "shape",
+    applies: (f, c) => {
+      if (f.rookToSemiOpen) return `El rival pone la torre en la columna ${c.to[0]}, semiabierta.`;
+      return null;
+    },
+  },
+  {
+    id: "oppKnightToCenter", group: "shape",
+    applies: (f, c) => {
+      if (f.knightToCenter) return `El rival centraliza el caballo en ${c.to}.`;
+      return null;
+    },
+  },
+  {
+    id: "oppFianchetto", group: "shape",
+    applies: (f, c) => {
+      if (f.fianchetto) return `Fianchetto del rival: el alfil a ${c.to}, sobre la diagonal larga.`;
+      return null;
+    },
+  },
+  {
+    id: "oppPawnBreak", group: "structure",
+    applies: (f, c) => {
+      if (f.pawnBreak) return `Ruptura del rival: el peón de ${c.to} golpea tu estructura.`;
+      return null;
+    },
+  },
+  {
+    id: "oppSupportsPawnChain", group: "structure",
+    applies: (f, c) => {
+      if (f.supportsPawnChain) return `El rival apuntala su cadena con el peón de ${c.to}.`;
+      return null;
+    },
+  },
+  {
+    id: "oppPawnRunsToPromote", group: "endgame",
+    applies: (f, c) => {
+      if (f.pawnRunsToPromote) return `El peón pasado del rival avanza a ${c.to}. Hay que frenarlo.`;
+      return null;
+    },
+  },
+  {
+    id: "oppKingActivates", group: "endgame",
+    applies: (f, c) => {
+      if (f.kingActivates) return `El rival activa su rey hacia ${c.to}: en el final es una pieza más.`;
+      return null;
+    },
+  },
+  {
+    id: "oppRookBehindPassed", group: "endgame",
+    applies: (f, c) => {
+      if (f.rookBehindPassed) return `El rival pone la torre detrás de su peón pasado: lo empuja según avanza.`;
+      return null;
+    },
+  },
+  {
+    id: "oppConnectsRooks", group: "endgame",
+    applies: (f, c) => {
+      if (f.connectsRooks) return `El rival conecta sus torres.`;
+      return null;
+    },
+  },
+  {
+    id: "oppConnectedPassedPair", group: "endgame",
+    applies: (f, c) => {
+      // Same standing endgame features, read from the player's side: their connected
+      // passers and their wing majority are threats, and naming the endgame type is
+      // useful to the player whoever just moved.
+      if ((f.connectedPassed?.length ?? 0) >= 2) return `El rival tiene dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): hay que frenarlos ya.`;
+      return null;
+    },
+  },
+  {
+    id: "oppConnectedPassedOne", group: "endgame",
+    applies: (f, c) => {
+      if (f.connectedPassed?.length === 1) return pick([
+        `El peón pasado del rival en ${f.connectedPassed[0]} va apoyado por otro peón. Vigílalo.`,
+        `Cuidado con el pasado del rival en ${f.connectedPassed[0]}: tiene compañero al lado.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppMajority", group: "endgame",
+    applies: (f, c) => {
+      if (f.majority) return `El rival tiene mayoría de peones en el flanco de ${f.majority}: de ahí le va a salir un pasado.`;
+      return null;
+    },
+  },
+  {
+    id: "oppEndgameKind", group: "endgame",
+    applies: (f, c) => {
+      if (f.endgameKind) return pick([
+        `Estamos en un ${f.endgameKind}. ${cap(c.piece)} del rival va a ${c.to}.`,
+        `${cap(c.piece)} del rival a ${c.to}, en un ${f.endgameKind}.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppGivesKingLuft", group: "shape",
+    applies: (f, c) => {
+      if (f.givesKingLuft) return `El rival le da aire a su rey: gana casilla de escape.`;
+      return null;
+    },
+  },
+  {
+    id: "oppDominantTermGain", group: "structure",
+    applies: (f, c) => {
+      {
+        const dq = f.dominantTerm;
+        if (dq && dq.delta > 0) {
+          if (dq.term === "mobility") return `El rival gana movilidad con ${c.piece} en ${c.to}.`;
+          if (dq.term === "space") return `El rival gana espacio en tu campo.`;
+          if (dq.term === "development") return `El rival suma una pieza al juego: va por delante en desarrollo.`;
+          if (dq.term === "kingSafety") return `El rival refuerza la cobertura de su rey.`;
+        }
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppWeakensKingShield", group: "shape",
+    applies: (f, c) => {
+
+      // Their position getting worse without being an outright error: openings for you.
+      //
+      // Two variants on the four that fire repeatedly within one game (a piece moved
+      // twice, a retreat, a development, taking the centre). A real game printed "El
+      // rival mueve otra vez el caballo en vez de desarrollar" on plies 12 AND 14 —
+      // and unlike the parity bug in pick(), a one-variant array has nothing to cycle.
+      if (f.weakensKingShield) return `El rival adelanta un peón de su escudo y abre líneas hacia su rey.`;
+      return null;
+    },
+  },
+  {
+    id: "oppKnightToRim", group: "shape",
+    applies: (f, c) => {
+      if (f.knightToRim) return `El caballo del rival se va a la banda en ${c.to}: desde ahí controla poco.`;
+      return null;
+    },
+  },
+  {
+    id: "oppMovesPieceTwice", group: "shape",
+    applies: (f, c) => {
+      if (f.movesPieceTwice) return pick([
+        `El rival mueve otra vez ${c.piece} en vez de desarrollar.`,
+        `${cap(c.piece)} del rival vuelve a moverse; le quedan piezas sin sacar.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppQueenOutEarly", group: "shape",
+    applies: (f, c) => {
+      if (f.queenOutEarly) return `El rival saca la dama pronto: puedes ganar tiempos atacándola.`;
+      return null;
+    },
+  },
+  {
+    id: "oppRetreats", group: "shape",
+    applies: (f, c) => {
+      if (f.retreats) return pick([
+        `El rival repliega ${c.piece} a ${c.to}.`,
+        `El rival retira ${c.piece} a ${c.to} para reagrupar.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppDevelopsPiece", group: "shape",
+    applies: (f, c) => {
+      if (f.developsPiece) return pick([
+        `El rival pone ${c.piece} en juego desde ${c.to}.`,
+        `El rival desarrolla ${c.piece} a ${c.to}.`,
+        `${cap(c.piece)} del rival entra en juego en ${c.to}.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppToCenter", group: "shape",
+    applies: (f, c) => {
+      if (f.toCenter) return pick([
+        `El rival ocupa el centro con ${c.piece} en ${c.to}.`,
+        `El rival planta ${c.piece} en ${c.to} y reclama el centro.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppPassivePiece", group: "warnings",
+    applies: (f, c) => {
+
+      // Last resort before the wildcard: a RIVAL piece that never got developed is
+      // an opportunity you can play against, same idea as the mover's own
+      // passivePiece branch but worth naming here for the opposite reason.
+      if (f.passivePiece) {
+        const pp = f.passivePiece;
+        const aside = `${cap(c.piece)} a ${c.to}.`;
+        if (pp.stillHome) return pick([
+          `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} sigue sin entrar en juego.`,
+          `${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
+        ], c.s);
+        return pick([
+          // "está en mal sitio", not "está mal ubicada": the adjective would have to
+          // agree with the piece's gender, and hardcoding one produced "el caballo
+          // rival … está mal ubicada" in a real game. Every template here has to work
+          // for both genders, so the wording avoids adjectives that inflect.
+          `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.`,
+          `${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} no está haciendo nada ahí.`,
+        ], c.s);
+      }
+      return null;
+    },
+  },
+  {
+    id: "oppEndgameFallback", group: "fallback",
+    applies: (f, c) => {
+
+      // Phase modifier, the same one quietComment has and this function was missing:
+      // in an endgame naming the phase costs nothing since we already know it, and it
+      // was 4 of the 15 measured wildcards on the rival's side — every one of them a
+      // rook or pawn shuffle in a long endgame.
+      if (f.isEndgame) return pick([
+        `${cap(c.piece)} del rival va a ${c.to}. Seguimos en el final.`,
+        `Jugada de final del rival: ${c.piece} a ${c.to}.`,
+      ], c.s);
+      return null;
+    },
+  },
+  {
+    id: "oppFallback", group: "fallback",
+    applies: (f, c) => {
+      return pick([
+        `El rival juega ${c.piece} a ${c.to}.`,
+        `${cap(c.piece)} del rival va a ${c.to}.`,
+        `Jugada tranquila del rival: ${c.piece} a ${c.to}.`,
+        `El rival mueve ${c.piece} a ${c.to}, sin cambios en la posición.`,
+      ], c.s);
+      return null;
+    },
+  },
+];
+
+const OPPONENT_PRIORITY: readonly string[] = [
+  "oppMate", "oppTacticOrLoose", "oppCapture",
+  "oppCheck", "oppOwnThreat", "oppPromotion",
+  "oppCastle", "oppBook", "oppDust",
+  "oppIgnoredThreat", "oppUnderDefended", "oppAttacksBigger",
+  "oppTheirKingWorse", "oppRookToSeventh", "oppCreatedPassed",
+  "oppBrokeYourStructure", "oppIsolatesYours", "oppOpposition",
+  "oppSquareRule", "oppDefendsAttacked", "oppDoublesRooks",
+  "oppBattery", "oppOutpost", "oppRookToOpenFile",
+  "oppRookToSemiOpen", "oppKnightToCenter", "oppFianchetto",
+  "oppPawnBreak", "oppSupportsPawnChain", "oppPawnRunsToPromote",
+  "oppKingActivates", "oppRookBehindPassed", "oppConnectsRooks",
+  "oppConnectedPassedPair", "oppConnectedPassedOne", "oppMajority",
+  "oppEndgameKind", "oppGivesKingLuft", "oppDominantTermGain",
+  "oppWeakensKingShield", "oppKnightToRim", "oppMovesPieceTwice",
+  "oppQueenOutEarly", "oppRetreats", "oppDevelopsPiece",
+  "oppToCenter", "oppPassivePiece", "oppEndgameFallback",
+  "oppFallback",
+];
+
+const OPPONENT_RANK = new Map(OPPONENT_PRIORITY.map((id, i) => [id, i]));
+
+if (process.env.NODE_ENV !== "production") {
+  const problems = validatePriority(OPPONENT_RULES, OPPONENT_PRIORITY, OPPONENT_CONSTRAINTS, "OPPONENT_RULES");
+  if (problems.length) throw new Error("tabla de prioridad inválida:\n  " + problems.join("\n  "));
+}
+
 /**
  * The opponent's quiet move, in the third person and from the player's side.
  *
@@ -1827,286 +2447,18 @@ export function composeCoachComment(f: MoveFacts): string | null {
  * Everything else falls through to naming the move, which is always true.
  */
 function opponentQuietComment(f: MoveFacts): string {
-  const s = f.variantSeed;
-  const piece = art(f.playedPiece);
-  const to = f.playedTo;
+  const ctx: OpponentCtx = {
+    s: f.variantSeed, piece: art(f.playedPiece), to: f.playedTo, dust: f.dustMaterial ?? 0,
+  };
+  return runRules(OPPONENT_RULES, OPPONENT_RANK, f, ctx);
+}
 
-  if (f.isMate) return `El rival da jaque mate con ${piece} en ${to}.`;
-
-  // Their tactic, above the capture for the same reason as on the player's side —
-  // and here it doubles as the warning that matters most: a fork or a pin against
-  // you is the thing you have to answer, not the pawn that changed hands.
-  {
-    const t = f.playedMotifs.find((m) => !isHanging(m));
-    if (t) {
-      // Same rule as the player's side: name it, then explain the geometry.
-      const clause =
-        t.key === "fork" ? `te hace un doble: ${piece} en ${to} ataca dos de tus piezas a la vez, y solo puedes salvar una`
-        : t.key === "pin" ? `te clava una pieza: ${piece} en ${to} la deja inmóvil contra tu rey`
-        : t.key === "skewer" ? `te hace una enfilada: ${piece} en ${to} ataca dos de tus piezas en línea, y al mover la de delante cae la de atrás`
-        : `te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás`;
-      return f.capturedPiece
-        ? `El rival captura ${art(f.capturedPiece)} en ${to} y ${clause}.`
-        : `¡Cuidado! El rival ${clause}.`;
-    }
-    // `hanging` on THEIR ply is one of YOUR pieces, now attacked and undefended.
-    // Suppressed when the move also captured, so the capture stays the headline.
-    const loose = f.playedMotifs.find((m) => m.key === "hanging");
-    if (loose?.piece && loose.square && !f.capturedPiece) {
-      return pick([
-        `Cuidado: tu ${loose.piece} de ${loose.square} se queda sin defensa.`,
-        `Ojo, nadie defiende tu ${loose.piece} de ${loose.square}.`,
-      ], s);
-    }
-  }
-
-  // Material changing hands is the headline, above both check and any threat —
-  // the same priority quietComment already gives the player's own captures.
-  // ownThreat used to sit above this and silently swallowed the capture: the
-  // rival taking the queen on d8 came out as "Cuidado: el rival amenaza tu torre
-  // de a8", which is true and leaves out the queen. A capture that ALSO gives
-  // check says both rather than picking one.
-  // Two variants each, not one. quietComment gives the player's own captures two
-  // to four; the rival's had exactly one, and these are the branches that fire
-  // most often in a game — a single game showed "El rival recupera en X: el cambio
-  // queda saldado" on two separate plies, word for word. Every asymmetry in
-  // variant COUNT between the two sides shows up as the rival sounding repetitive.
-  if (f.capturedPiece) {
-    const cp = art(f.capturedPiece);
-    const check = f.gaveCheck ? " Con jaque." : "";
-    if (f.isRecapture) return pick([
-      `El rival recupera en ${to}: el cambio queda saldado.${check}`,
-      `El rival retoma en ${to} y el material vuelve a estar igual.${check}`,
-    ], s);
-    if (f.tradeVerdict === "gana") return pick([
-      `El rival se lleva ${cp} de ${to} y gana material.${check}`,
-      `${cap(cp)} de ${to} cae y el rival no lo paga: sale ganando.${check}`,
-    ], s);
-    if (f.tradeVerdict === "pareja") return pick([
-      `El rival cambia ${cp} en ${to}: un cambio parejo.${check}`,
-      `Cambio parejo en ${to}: el rival se lleva ${cp} y tú recuperas.${check}`,
-    ], s);
-    return pick([
-      `El rival captura ${cp} en ${to}.${check}`,
-      `El rival se lleva ${cp} de ${to}.${check}`,
-    ], s);
-  }
-
-  if (f.gaveCheck) return pick([
-    `El rival da jaque con ${piece} en ${to}.`,
-    `Jaque: ${piece} del rival entra en ${to}.`,
-  ], s);
-
-  // A threat against the player outranks everything else on a QUIET move — one
-  // that neither took material nor gave check.
-  if (f.ownThreat) {
-    const t = f.ownThreat;
-    if (t.kind === "mate") return `¡Cuidado! El rival amenaza mate en ${t.square}.`;
-    // "tu", not "el": the threatened piece belongs to the player, and "va contra
-    // el alfil de d3" leaves it ambiguous whose bishop is in danger.
-    const mine = art(t.piece).replace(/^(el|la) /, () => "tu ");
-    return pick([
-      `Cuidado: el rival amenaza ${mine} de ${t.square}.`,
-      `Ojo, ahora va contra ${mine} de ${t.square}.`,
-    ], s);
-  }
-
-  if (f.isPromotion) return `El rival corona en ${to}.`;
-  if (f.isCastle) return `El rival enroca y pone su rey a salvo.`;
-  if (f.isBook) {
-    return f.isLastBookMove
-      // Not "también": lastBookPly is a SINGLE marker for the whole game, so when
-      // it lands on the rival's ply the player never got their own version — and
-      // "también" asserts that they did. Seen on move 2 of a real game.
-      ? "Hasta aquí llega la teoría en esta partida."
-      : `El rival sigue la teoría: ${piece} a ${to}.`;
-  }
-
-  // ── Openings for the player, ranked above anything describing their move ────
-  // These three facts are computed from the MOVER's side, and on the rival's ply
-  // the mover is the rival — so each one reads as an opportunity rather than a
-  // warning. Measured over six real games: they were live on 5 of the 15 plies
-  // that fell to the wildcard, which is why they're here and in this order
-  // (material first, then a threat they ignored, then a piece short of cover).
-  const dust = f.dustMaterial ?? 0;
-  if (dust >= 3) return pick([
-    `Los cambios que vienen dejan al rival con material de más.`,
-    `Cuando se resuelvan las capturas, el rival sale ganando material.`,
-  ], s);
-  if (dust <= -3) return pick([
-    `La secuencia de cambios te favorece: acabas con material de más.`,
-    `Cuando se resuelvan las capturas, sales ganando material.`,
-  ], s);
-  // ignoredThreat on their ply is YOUR threat, which they did not answer: the
-  // piece named is theirs and the capture is yours to make.
-  if (f.ignoredThreat) {
-    const it = f.ignoredThreat;
-    if (it.kind === "mate") return `El rival no para tu mate en ${it.square}. Ahí lo tienes.`;
-    return pick([
-      `El rival no atiende tu amenaza: puedes llevarte ${art(it.piece)} de ${it.square}.`,
-      `Tu amenaza sigue en pie y él no la ve: ${art(it.piece)} de ${it.square} se puede caer.`,
-    ], s);
-  }
-  // Likewise underDefended: on their ply this is one of THEIR pieces with more
-  // attackers than defenders — something to pile onto, not something to fear.
-  if (f.underDefended) {
-    const ud = f.underDefended;
-    return pick([
-      `${cap(art(ud.piece))} del rival en ${ud.square} tiene más atacantes que defensores: puedes apretar ahí.`,
-      `Al rival no le alcanzan los defensores en ${ud.square}. Vale la pena sumar presión.`,
-    ], s);
-  }
-
-  // ── The same structural detectors, worded from the player's side ────────────
-  // Written out rather than transformed: possessives change owner between the two
-  // voices ("tu estructura" is the OPPONENT's here, "el rival" is the PLAYER), and
-  // that's precisely what a substitution gets wrong while looking right.
-  //
-  // These exist because the first version of this function fell straight through
-  // to "El alfil del rival va a f5" for anything without a capture — 7 of 21
-  // opponent comments became pure filler, which is worse than the ambiguity it
-  // replaced. The detectors were already firing; only the wording was missing.
-
-  // Their threats and gains against the player: warnings.
-  if (f.attacksBigger) return `El rival ataca ${art(f.attacksBigger)} con ${piece} en ${to}.`;
-  if (f.theirKingWorse) return pick([
-    `El rival suma presión sobre tu rey con ${piece} en ${to}.`,
-    `${cap(piece)} en ${to} aprieta el cerco sobre tu rey.`,
-  ], s);
-  if (f.rookToSeventh) return pick([
-    `El rival mete la torre en tu séptima fila, donde más muerde.`,
-    `Torre rival en tu séptima: desde ${to} muerde tus peones y encierra a tu rey.`,
-  ], s);
-  if (f.structure?.createdPassed) return `El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.`;
-  if (f.structure?.brokeTheirStructure) return `Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.`;
-  if (f.structure?.isolatedTheirs) return `El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`;
-  // Direct opposition taken by the RIVAL's king means the PLAYER's king is the
-  // one that has to give ground — the opposite reading from the mover's own
-  // quiet-move branch, and worth a warning rather than a shrug.
-  if (f.opposition) return `El rival toma la oposición: tu rey tiene que ceder terreno.`;
-  if (f.squareRule) {
-    const sr = f.squareRule;
-    // sr describes the RIVAL's passed pawn here, so `promotes: true` means
-    // YOUR king fails to reach the square in time — a warning, not trivia.
-    if (sr.promotes) return pick([
-      `Tu rey no entra en el cuadrado: el peón rival de ${sr.pawnSquare} corona solo.`,
-      `Cuenta el cuadrado: el peón rival de ${sr.pawnSquare} llega antes que tu rey.`,
-    ], s);
-    return pick([
-      `El peón rival de ${sr.pawnSquare} no corona solo: tu rey llega a tiempo para frenarlo.`,
-      `Tu rey entra en el cuadrado del peón de ${sr.pawnSquare} y lo detiene.`,
-    ], s);
-  }
-
-  // Their position improving: worth knowing, not alarming.
-  if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.`;
-  // doublesRooks BEFORE battery: batteryCreated also matches rook-behind-rook and
-  // it won this race in a real game, producing "una batería con la torre y la
-  // torre" — the doubled-rooks sentence is simply the right name for that shape.
-  if (f.doublesRooks) return `El rival dobla las torres en la columna ${to[0]}.`;
-  if (f.battery) {
-    const b = f.battery;
-    // Two of the SAME piece is a doubling, not a pairing, and naming it as a
-    // pairing repeats the noun. Only torre+torre and dama+dama can reach here
-    // (same-colour bishops never share a diagonal), so "piezas mayores" is
-    // always accurate and sidesteps having to pluralise the piece name.
-    if (b.front === b.back) return `El rival dobla dos piezas mayores en la misma línea.`;
-    return `El rival forma una batería con ${art(b.front)} y ${art(b.back)} en la misma línea.`;
-  }
-  if (f.outpost) return `El rival instala ${piece} en ${to}: ningún peón tuyo puede echarlo.`;
-  if (f.rookToOpenFile) return `El rival toma la columna abierta ${to[0]} con la torre.`;
-  if (f.rookToSemiOpen) return `El rival pone la torre en la columna ${to[0]}, semiabierta.`;
-  if (f.knightToCenter) return `El rival centraliza el caballo en ${to}.`;
-  if (f.fianchetto) return `Fianchetto del rival: el alfil a ${to}, sobre la diagonal larga.`;
-  if (f.pawnBreak) return `Ruptura del rival: el peón de ${to} golpea tu estructura.`;
-  if (f.supportsPawnChain) return `El rival apuntala su cadena con el peón de ${to}.`;
-  if (f.pawnRunsToPromote) return `El peón pasado del rival avanza a ${to}. Hay que frenarlo.`;
-  if (f.kingActivates) return `El rival activa su rey hacia ${to}: en el final es una pieza más.`;
-  if (f.rookBehindPassed) return `El rival pone la torre detrás de su peón pasado: lo empuja según avanza.`;
-  if (f.connectsRooks) return `El rival conecta sus torres.`;
-  // Same standing endgame features, read from the player's side: their connected
-  // passers and their wing majority are threats, and naming the endgame type is
-  // useful to the player whoever just moved.
-  if ((f.connectedPassed?.length ?? 0) >= 2) return `El rival tiene dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): hay que frenarlos ya.`;
-  if (f.connectedPassed?.length === 1) return pick([
-    `El peón pasado del rival en ${f.connectedPassed[0]} va apoyado por otro peón. Vigílalo.`,
-    `Cuidado con el pasado del rival en ${f.connectedPassed[0]}: tiene compañero al lado.`,
-  ], s);
-  if (f.majority) return `El rival tiene mayoría de peones en el flanco de ${f.majority}: de ahí le va a salir un pasado.`;
-  if (f.endgameKind) return pick([
-    `Estamos en un ${f.endgameKind}. ${cap(piece)} del rival va a ${to}.`,
-    `${cap(piece)} del rival a ${to}, en un ${f.endgameKind}.`,
-  ], s);
-  if (f.givesKingLuft) return `El rival le da aire a su rey: gana casilla de escape.`;
-  {
-    const dq = f.dominantTerm;
-    if (dq && dq.delta > 0) {
-      if (dq.term === "mobility") return `El rival gana movilidad con ${piece} en ${to}.`;
-      if (dq.term === "space") return `El rival gana espacio en tu campo.`;
-      if (dq.term === "development") return `El rival suma una pieza al juego: va por delante en desarrollo.`;
-      if (dq.term === "kingSafety") return `El rival refuerza la cobertura de su rey.`;
-    }
-  }
-
-  // Their position getting worse without being an outright error: openings for you.
-  //
-  // Two variants on the four that fire repeatedly within one game (a piece moved
-  // twice, a retreat, a development, taking the centre). A real game printed "El
-  // rival mueve otra vez el caballo en vez de desarrollar" on plies 12 AND 14 —
-  // and unlike the parity bug in pick(), a one-variant array has nothing to cycle.
-  if (f.weakensKingShield) return `El rival adelanta un peón de su escudo y abre líneas hacia su rey.`;
-  if (f.knightToRim) return `El caballo del rival se va a la banda en ${to}: desde ahí controla poco.`;
-  if (f.movesPieceTwice) return pick([
-    `El rival mueve otra vez ${piece} en vez de desarrollar.`,
-    `${cap(piece)} del rival vuelve a moverse; le quedan piezas sin sacar.`,
-  ], s);
-  if (f.queenOutEarly) return `El rival saca la dama pronto: puedes ganar tiempos atacándola.`;
-  if (f.retreats) return pick([
-    `El rival repliega ${piece} a ${to}.`,
-    `El rival retira ${piece} a ${to} para reagrupar.`,
-  ], s);
-  if (f.developsPiece) return pick([
-    `El rival pone ${piece} en juego desde ${to}.`,
-    `El rival desarrolla ${piece} a ${to}.`,
-    `${cap(piece)} del rival entra en juego en ${to}.`,
-  ], s);
-  if (f.toCenter) return pick([
-    `El rival ocupa el centro con ${piece} en ${to}.`,
-    `El rival planta ${piece} en ${to} y reclama el centro.`,
-  ], s);
-
-  // Last resort before the wildcard: a RIVAL piece that never got developed is
-  // an opportunity you can play against, same idea as the mover's own
-  // passivePiece branch but worth naming here for the opposite reason.
-  if (f.passivePiece) {
-    const pp = f.passivePiece;
-    const aside = `${cap(piece)} a ${to}.`;
-    if (pp.stillHome) return pick([
-      `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} sigue sin entrar en juego.`,
-      `${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
-    ], s);
-    return pick([
-      // "está en mal sitio", not "está mal ubicada": the adjective would have to
-      // agree with the piece's gender, and hardcoding one produced "el caballo
-      // rival … está mal ubicada" in a real game. Every template here has to work
-      // for both genders, so the wording avoids adjectives that inflect.
-      `${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.`,
-      `${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} no está haciendo nada ahí.`,
-    ], s);
-  }
-
-  // Phase modifier, the same one quietComment has and this function was missing:
-  // in an endgame naming the phase costs nothing since we already know it, and it
-  // was 4 of the 15 measured wildcards on the rival's side — every one of them a
-  // rook or pawn shuffle in a long endgame.
-  if (f.isEndgame) return pick([
-    `${cap(piece)} del rival va a ${to}. Seguimos en el final.`,
-    `Jugada de final del rival: ${piece} a ${to}.`,
-  ], s);
-  return pick([
-    `El rival juega ${piece} a ${to}.`,
-    `${cap(piece)} del rival va a ${to}.`,
-    `Jugada tranquila del rival: ${piece} a ${to}.`,
-    `El rival mueve ${piece} a ${to}, sin cambios en la posición.`,
-  ], s);
+/** Traced variant, for scripts/auditFirings.cjs. */
+export function opponentQuietCommentTraced(f: MoveFacts): { text: string; trace: ArbiterTrace<string> } {
+  const ctx: OpponentCtx = {
+    s: f.variantSeed, piece: art(f.playedPiece), to: f.playedTo, dust: f.dustMaterial ?? 0,
+  };
+  const trace: ArbiterTrace<string>[] = [];
+  const text = runRules(OPPONENT_RULES, OPPONENT_RANK, f, ctx, trace);
+  return { text, trace: trace[0] };
 }

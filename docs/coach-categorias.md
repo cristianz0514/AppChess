@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 143
+- **Categorías:** 146
 - **Variantes de texto:** 375
-- **Sin nombre humano todavía:** 16
+- **Sin nombre humano todavía:** 12
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -42,330 +42,345 @@ _Bandera:_ `(varios)`
 
 ## Jugadas del rival — descriptivo
 
-### Jaque mate ejecutado
+### El rival da mate
 
-_Bandera:_ `isMate`
+_Bandera:_ `oppMate`
 
-1. El rival da jaque mate con ${piece} en ${to}.
+1. El rival da jaque mate con ${c.piece} en ${c.to}.
 
-### Táctica que la jugada montó
+### Táctica del rival contra ti (o pieza tuya suelta)
 
-_Bandera:_ `playedMotifs`
+_Bandera:_ `oppTacticOrLoose`
 
-1. te hace un doble: ${piece} en ${to} ataca dos de tus piezas a la vez, y solo puedes salvar una
-2. te clava una pieza: ${piece} en ${to} la deja inmóvil contra tu rey
-3. te hace una enfilada: ${piece} en ${to} ataca dos de tus piezas en línea, y al mover la de delante cae la de atrás
+1. te hace un doble: ${c.piece} en ${c.to} ataca dos de tus piezas a la vez, y solo puedes salvar una
+2. te clava una pieza: ${c.piece} en ${c.to} la deja inmóvil contra tu rey
+3. te hace una enfilada: ${c.piece} en ${c.to} ataca dos de tus piezas en línea, y al mover la de delante cae la de atrás
 4. te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás
-5. El rival captura ${art(f.capturedPiece)} en ${to} y ${clause}.
+5. El rival captura ${art(f.capturedPiece)} en ${c.to} y ${clause}.
 6. ¡Cuidado! El rival ${clause}.
 7. Cuidado: tu ${loose.piece} de ${loose.square} se queda sin defensa.
 8. Ojo, nadie defiende tu ${loose.piece} de ${loose.square}.
 
-### isRecapture
+### El rival captura (recaptura / gana / parejo)
 
-_Bandera:_ `isRecapture`
+_Bandera:_ `oppCapture`
 
-1. El rival recupera en ${to}: el cambio queda saldado.${check}
-2. El rival retoma en ${to} y el material vuelve a estar igual.${check}
+1. El rival recupera en ${c.to}: el cambio queda saldado.${check}
+2. El rival retoma en ${c.to} y el material vuelve a estar igual.${check}
+3. El rival se lleva ${cp} de ${c.to} y gana material.${check}
+4. ${cap(cp)} de ${c.to} cae y el rival no lo paga: sale ganando.${check}
+5. El rival cambia ${cp} en ${c.to}: un cambio parejo.${check}
+6. Cambio parejo en ${c.to}: el rival se lleva ${cp} y tú recuperas.${check}
+7. El rival captura ${cp} en ${c.to}.${check}
+8. El rival se lleva ${cp} de ${c.to}.${check}
 
-### Veredicto del cambio (gana / parejo / pierde)
+### El rival da jaque
 
-_Bandera:_ `tradeVerdict`
+_Bandera:_ `oppCheck`
 
-1. El rival se lleva ${cp} de ${to} y gana material.${check}
-2. ${cap(cp)} de ${to} cae y el rival no lo paga: sale ganando.${check}
-3. El rival cambia ${cp} en ${to}: un cambio parejo.${check}
-4. Cambio parejo en ${to}: el rival se lleva ${cp} y tú recuperas.${check}
-5. El rival captura ${cp} en ${to}.${check}
-6. El rival se lleva ${cp} de ${to}.${check}
+1. El rival da jaque con ${c.piece} en ${c.to}.
+2. Jaque: ${c.piece} del rival entra en ${c.to}.
 
-### Jaque
+### Amenaza del rival contra ti
 
-_Bandera:_ `gaveCheck`
-
-1. El rival da jaque con ${piece} en ${to}.
-2. Jaque: ${piece} del rival entra en ${to}.
-
-### Amenaza propia creada (null-move)
-
-_Bandera:_ `ownThreat`
+_Bandera:_ `oppOwnThreat`
 
 1. ¡Cuidado! El rival amenaza mate en ${t.square}.
 2. Cuidado: el rival amenaza ${mine} de ${t.square}.
 3. Ojo, ahora va contra ${mine} de ${t.square}.
 
-### Coronación
+### El rival corona
 
-_Bandera:_ `isPromotion`
+_Bandera:_ `oppPromotion`
 
-1. El rival corona en ${to}.
+1. El rival corona en ${c.to}.
 
-### Enroque
+### El rival enroca
 
-_Bandera:_ `isCastle`
+_Bandera:_ `oppCastle`
 
 1. El rival enroca y pone su rey a salvo.
 
-### Jugada de libro (apertura)
+### El rival sigue la teoría
 
-_Bandera:_ `isBook`
+_Bandera:_ `oppBook`
 
-1. El rival sigue la teoría: ${piece} a ${to}.
+1. El rival sigue la teoría: ${c.piece} a ${c.to}.
 
-### Material tras los cambios (quiescence)
+### Los cambios pendientes (a favor de quien sea)
 
-_Bandera:_ `dustMaterial`
+_Bandera:_ `oppDust`
 
 1. Los cambios que vienen dejan al rival con material de más.
 2. Cuando se resuelvan las capturas, el rival sale ganando material.
 3. La secuencia de cambios te favorece: acabas con material de más.
 4. Cuando se resuelvan las capturas, sales ganando material.
 
-### Amenaza del rival ignorada (null-move)
+### El rival ignora TU amenaza (oportunidad)
 
-_Bandera:_ `ignoredThreat`
+_Bandera:_ `oppIgnoredThreat`
 
 1. El rival no para tu mate en ${it.square}. Ahí lo tienes.
 2. El rival no atiende tu amenaza: puedes llevarte ${art(it.piece)} de ${it.square}.
 3. Tu amenaza sigue en pie y él no la ve: ${art(it.piece)} de ${it.square} se puede caer.
 
-### Más atacantes que defensores
+### Pieza del rival corta de defensores (oportunidad)
 
-_Bandera:_ `underDefended`
+_Bandera:_ `oppUnderDefended`
 
 1. ${cap(art(ud.piece))} del rival en ${ud.square} tiene más atacantes que defensores: puedes apretar ahí.
 2. Al rival no le alcanzan los defensores en ${ud.square}. Vale la pena sumar presión.
 
-### Ataca una pieza mayor (gana tiempo)
+### El rival ataca una pieza mayor
 
-_Bandera:_ `attacksBigger`
+_Bandera:_ `oppAttacksBigger`
 
-1. El rival ataca ${art(f.attacksBigger)} con ${piece} en ${to}.
+1. El rival ataca ${art(f.attacksBigger)} con ${c.piece} en ${c.to}.
 
-### Presión sobre el rey rival
+### El rival presiona tu rey
 
-_Bandera:_ `theirKingWorse`
+_Bandera:_ `oppTheirKingWorse`
 
-1. El rival suma presión sobre tu rey con ${piece} en ${to}.
-2. ${cap(piece)} en ${to} aprieta el cerco sobre tu rey.
+1. El rival suma presión sobre tu rey con ${c.piece} en ${c.to}.
+2. ${cap(c.piece)} en ${c.to} aprieta el cerco sobre tu rey.
 
-### Torre a la séptima
+### Torre del rival en tu séptima
 
-_Bandera:_ `rookToSeventh`
+_Bandera:_ `oppRookToSeventh`
 
 1. El rival mete la torre en tu séptima fila, donde más muerde.
-2. Torre rival en tu séptima: desde ${to} muerde tus peones y encierra a tu rey.
+2. Torre rival en tu séptima: desde ${c.to} muerde tus peones y encierra a tu rey.
 
-### Estructura de peones
+### El rival crea un peón pasado
 
-_Bandera:_ `structure`
+_Bandera:_ `oppCreatedPassed`
 
 1. El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.
-2. Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.
-3. El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.
 
-### Oposición de reyes
+### Te deja peones doblados
 
-_Bandera:_ `opposition`
+_Bandera:_ `oppBrokeYourStructure`
+
+1. Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.
+
+### Te aísla un peón
+
+_Bandera:_ `oppIsolatesYours`
+
+1. El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.
+
+### El rival toma la oposición
+
+_Bandera:_ `oppOpposition`
 
 1. El rival toma la oposición: tu rey tiene que ceder terreno.
 
-### Regla del cuadrado (final de peones)
+### Regla del cuadrado, del lado del rival
 
-_Bandera:_ `squareRule`
+_Bandera:_ `oppSquareRule`
 
 1. Tu rey no entra en el cuadrado: el peón rival de ${sr.pawnSquare} corona solo.
 2. Cuenta el cuadrado: el peón rival de ${sr.pawnSquare} llega antes que tu rey.
 3. El peón rival de ${sr.pawnSquare} no corona solo: tu rey llega a tiempo para frenarlo.
 4. Tu rey entra en el cuadrado del peón de ${sr.pawnSquare} y lo detiene.
 
-### defendsAttacked
+### El rival defiende lo que tenías atacado
 
-_Bandera:_ `defendsAttacked`
+_Bandera:_ `oppDefendsAttacked`
 
 1. El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.
 
-### Torres dobladas
+### El rival dobla torres
 
-_Bandera:_ `doublesRooks`
+_Bandera:_ `oppDoublesRooks`
 
-1. El rival dobla las torres en la columna ${to[0]}.
+1. El rival dobla las torres en la columna ${c.to[0]}.
 
-### Batería / piezas mayores dobladas
+### Batería del rival
 
-_Bandera:_ `battery`
+_Bandera:_ `oppBattery`
 
 1. El rival dobla dos piezas mayores en la misma línea.
 2. El rival forma una batería con ${art(b.front)} y ${art(b.back)} en la misma línea.
 
-### Puesto avanzado
+### Puesto avanzado del rival
 
-_Bandera:_ `outpost`
+_Bandera:_ `oppOutpost`
 
-1. El rival instala ${piece} en ${to}: ningún peón tuyo puede echarlo.
+1. El rival instala ${c.piece} en ${c.to}: ningún peón tuyo puede echarlo.
 
-### Torre a columna abierta
+### El rival toma la columna abierta
 
-_Bandera:_ `rookToOpenFile`
+_Bandera:_ `oppRookToOpenFile`
 
-1. El rival toma la columna abierta ${to[0]} con la torre.
+1. El rival toma la columna abierta ${c.to[0]} con la torre.
 
-### Torre a columna semiabierta
+### El rival toma la columna semiabierta
 
-_Bandera:_ `rookToSemiOpen`
+_Bandera:_ `oppRookToSemiOpen`
 
-1. El rival pone la torre en la columna ${to[0]}, semiabierta.
+1. El rival pone la torre en la columna ${c.to[0]}, semiabierta.
 
-### Caballo centralizado
+### El rival centraliza el caballo
 
-_Bandera:_ `knightToCenter`
+_Bandera:_ `oppKnightToCenter`
 
-1. El rival centraliza el caballo en ${to}.
+1. El rival centraliza el caballo en ${c.to}.
 
-### Fianchetto
+### Fianchetto del rival
 
-_Bandera:_ `fianchetto`
+_Bandera:_ `oppFianchetto`
 
-1. Fianchetto del rival: el alfil a ${to}, sobre la diagonal larga.
+1. Fianchetto del rival: el alfil a ${c.to}, sobre la diagonal larga.
 
-### Ruptura de peones
+### Ruptura de peones del rival
 
-_Bandera:_ `pawnBreak`
+_Bandera:_ `oppPawnBreak`
 
-1. Ruptura del rival: el peón de ${to} golpea tu estructura.
+1. Ruptura del rival: el peón de ${c.to} golpea tu estructura.
 
-### Refuerza la cadena de peones
+### El rival apuntala su cadena
 
-_Bandera:_ `supportsPawnChain`
+_Bandera:_ `oppSupportsPawnChain`
 
-1. El rival apuntala su cadena con el peón de ${to}.
+1. El rival apuntala su cadena con el peón de ${c.to}.
 
-### Peón pasado avanzando
+### Peón pasado del rival avanzando
 
-_Bandera:_ `pawnRunsToPromote`
+_Bandera:_ `oppPawnRunsToPromote`
 
-1. El peón pasado del rival avanza a ${to}. Hay que frenarlo.
+1. El peón pasado del rival avanza a ${c.to}. Hay que frenarlo.
 
-### Rey activo en el final
+### El rival activa su rey
 
-_Bandera:_ `kingActivates`
+_Bandera:_ `oppKingActivates`
 
-1. El rival activa su rey hacia ${to}: en el final es una pieza más.
+1. El rival activa su rey hacia ${c.to}: en el final es una pieza más.
 
-### Torre detrás del peón pasado
+### Torre del rival tras su pasado
 
-_Bandera:_ `rookBehindPassed`
+_Bandera:_ `oppRookBehindPassed`
 
 1. El rival pone la torre detrás de su peón pasado: lo empuja según avanza.
 
-### Torres conectadas
+### El rival conecta torres
 
-_Bandera:_ `connectsRooks`
+_Bandera:_ `oppConnectsRooks`
 
 1. El rival conecta sus torres.
-2. El rival tiene dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): hay que frenarlos ya.
 
-### connectedPassed
+### Dos pasados conectados del rival
 
-_Bandera:_ `connectedPassed`
+_Bandera:_ `oppConnectedPassedPair`
+
+1. El rival tiene dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): hay que frenarlos ya.
+
+### Pasado del rival con compañero
+
+_Bandera:_ `oppConnectedPassedOne`
 
 1. El peón pasado del rival en ${f.connectedPassed[0]} va apoyado por otro peón. Vigílalo.
 2. Cuidado con el pasado del rival en ${f.connectedPassed[0]}: tiene compañero al lado.
 
-### Mayoría de peones en un flanco
+### Mayoría de peones del rival
 
-_Bandera:_ `majority`
+_Bandera:_ `oppMajority`
 
 1. El rival tiene mayoría de peones en el flanco de ${f.majority}: de ahí le va a salir un pasado.
 
-### Tipo de final (torres, alfiles del mismo color…)
+### Tipo de final (ply del rival)
 
-_Bandera:_ `endgameKind`
+_Bandera:_ `oppEndgameKind`
 
-1. Estamos en un ${f.endgameKind}. ${cap(piece)} del rival va a ${to}.
-2. ${cap(piece)} del rival a ${to}, en un ${f.endgameKind}.
+1. Estamos en un ${f.endgameKind}. ${cap(c.piece)} del rival va a ${c.to}.
+2. ${cap(c.piece)} del rival a ${c.to}, en un ${f.endgameKind}.
 
-### Da aire al rey
+### El rival da aire a su rey
 
-_Bandera:_ `givesKingLuft`
+_Bandera:_ `oppGivesKingLuft`
 
 1. El rival le da aire a su rey: gana casilla de escape.
 
-### Término de evaluación que cambió
+### Término de evaluación que el rival mejoró
 
-_Bandera:_ `dominantTerm`
+_Bandera:_ `oppDominantTermGain`
 
-1. El rival gana movilidad con ${piece} en ${to}.
+1. El rival gana movilidad con ${c.piece} en ${c.to}.
 2. El rival gana espacio en tu campo.
 3. El rival suma una pieza al juego: va por delante en desarrollo.
 4. El rival refuerza la cobertura de su rey.
 
-### Debilita el escudo del rey
+### El rival debilita su escudo de rey
 
-_Bandera:_ `weakensKingShield`
+_Bandera:_ `oppWeakensKingShield`
 
 1. El rival adelanta un peón de su escudo y abre líneas hacia su rey.
 
-### Caballo a la banda
+### Caballo del rival a la banda
 
-_Bandera:_ `knightToRim`
+_Bandera:_ `oppKnightToRim`
 
-1. El caballo del rival se va a la banda en ${to}: desde ahí controla poco.
+1. El caballo del rival se va a la banda en ${c.to}: desde ahí controla poco.
 
-### Mueve la misma pieza dos veces
+### El rival mueve dos veces la misma pieza
 
-_Bandera:_ `movesPieceTwice`
+_Bandera:_ `oppMovesPieceTwice`
 
-1. El rival mueve otra vez ${piece} en vez de desarrollar.
-2. ${cap(piece)} del rival vuelve a moverse; le quedan piezas sin sacar.
+1. El rival mueve otra vez ${c.piece} en vez de desarrollar.
+2. ${cap(c.piece)} del rival vuelve a moverse; le quedan piezas sin sacar.
 
-### Dama fuera demasiado pronto
+### El rival saca la dama pronto
 
-_Bandera:_ `queenOutEarly`
+_Bandera:_ `oppQueenOutEarly`
 
 1. El rival saca la dama pronto: puedes ganar tiempos atacándola.
 
-### Repliegue de pieza
+### El rival repliega una pieza
 
-_Bandera:_ `retreats`
+_Bandera:_ `oppRetreats`
 
-1. El rival repliega ${piece} a ${to}.
-2. El rival retira ${piece} a ${to} para reagrupar.
+1. El rival repliega ${c.piece} a ${c.to}.
+2. El rival retira ${c.piece} a ${c.to} para reagrupar.
 
-### Desarrolla una pieza
+### El rival desarrolla
 
-_Bandera:_ `developsPiece`
+_Bandera:_ `oppDevelopsPiece`
 
-1. El rival pone ${piece} en juego desde ${to}.
-2. El rival desarrolla ${piece} a ${to}.
-3. ${cap(piece)} del rival entra en juego en ${to}.
+1. El rival pone ${c.piece} en juego desde ${c.to}.
+2. El rival desarrolla ${c.piece} a ${c.to}.
+3. ${cap(c.piece)} del rival entra en juego en ${c.to}.
 
-### Ocupa el centro
+### El rival ocupa el centro
 
-_Bandera:_ `toCenter`
+_Bandera:_ `oppToCenter`
 
-1. El rival ocupa el centro con ${piece} en ${to}.
-2. El rival planta ${piece} en ${to} y reclama el centro.
+1. El rival ocupa el centro con ${c.piece} en ${c.to}.
+2. El rival planta ${c.piece} en ${c.to} y reclama el centro.
 
-### Pieza olvidada / pasiva
+### Pieza del rival sin desarrollar (oportunidad)
 
-_Bandera:_ `passivePiece`
+_Bandera:_ `oppPassivePiece`
 
 1. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} sigue sin entrar en juego.
 2. ${aside} El rival todavía no desarrolla ${art(pp.piece)} de ${pp.square}: ahí no hace nada.
 3. ${aside} Aparte, ${art(pp.piece)} rival de ${pp.square} está en mal sitio y controla poco.
 4. ${aside} Mientras tanto, ${art(pp.piece)} rival de ${pp.square} no está haciendo nada ahí.
 
-### isEndgame
+### Genérico de final (ply del rival)
 
-_Bandera:_ `isEndgame`
+_Bandera:_ `oppEndgameFallback`
 
-1. ${cap(piece)} del rival va a ${to}. Seguimos en el final.
-2. Jugada de final del rival: ${piece} a ${to}.
-3. El rival juega ${piece} a ${to}.
-4. ${cap(piece)} del rival va a ${to}.
-5. Jugada tranquila del rival: ${piece} a ${to}.
-6. El rival mueve ${piece} a ${to}, sin cambios en la posición.
+1. ${cap(c.piece)} del rival va a ${c.to}. Seguimos en el final.
+2. Jugada de final del rival: ${c.piece} a ${c.to}.
+
+### Genérico (ply del rival)
+
+_Bandera:_ `oppFallback`
+
+1. El rival juega ${c.piece} a ${c.to}.
+2. ${cap(c.piece)} del rival va a ${c.to}.
+3. Jugada tranquila del rival: ${c.piece} a ${c.to}.
+4. El rival mueve ${c.piece} a ${c.to}, sin cambios en la posición.
 
 ---
 

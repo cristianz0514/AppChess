@@ -111,6 +111,60 @@ const NAMES = {
   underDefendedAside: "Aviso: más atacantes que defensores",
   endgameFallback: "Genérico de final",
   fallback: "Genérico (nada más que decir)",
+
+  // ── Rule ids from OPPONENT_RULES ────────────────────────────────────────────
+  // Same facts, read from the player's side: on the rival's ply the mover is the rival,
+  // so several of these invert in meaning — their under-defended piece is YOUR
+  // opportunity, their ignored threat is YOUR chance.
+  oppMate: "El rival da mate",
+  oppTacticOrLoose: "Táctica del rival contra ti (o pieza tuya suelta)",
+  oppCapture: "El rival captura (recaptura / gana / parejo)",
+  oppCheck: "El rival da jaque",
+  oppOwnThreat: "Amenaza del rival contra ti",
+  oppPromotion: "El rival corona",
+  oppCastle: "El rival enroca",
+  oppBook: "El rival sigue la teoría",
+  oppDust: "Los cambios pendientes (a favor de quien sea)",
+  oppIgnoredThreat: "El rival ignora TU amenaza (oportunidad)",
+  oppUnderDefended: "Pieza del rival corta de defensores (oportunidad)",
+  oppAttacksBigger: "El rival ataca una pieza mayor",
+  oppTheirKingWorse: "El rival presiona tu rey",
+  oppRookToSeventh: "Torre del rival en tu séptima",
+  oppCreatedPassed: "El rival crea un peón pasado",
+  oppBrokeYourStructure: "Te deja peones doblados",
+  oppIsolatesYours: "Te aísla un peón",
+  oppOpposition: "El rival toma la oposición",
+  oppSquareRule: "Regla del cuadrado, del lado del rival",
+  oppDefendsAttacked: "El rival defiende lo que tenías atacado",
+  oppDoublesRooks: "El rival dobla torres",
+  oppBattery: "Batería del rival",
+  oppOutpost: "Puesto avanzado del rival",
+  oppRookToOpenFile: "El rival toma la columna abierta",
+  oppRookToSemiOpen: "El rival toma la columna semiabierta",
+  oppKnightToCenter: "El rival centraliza el caballo",
+  oppFianchetto: "Fianchetto del rival",
+  oppPawnBreak: "Ruptura de peones del rival",
+  oppSupportsPawnChain: "El rival apuntala su cadena",
+  oppPawnRunsToPromote: "Peón pasado del rival avanzando",
+  oppKingActivates: "El rival activa su rey",
+  oppRookBehindPassed: "Torre del rival tras su pasado",
+  oppConnectsRooks: "El rival conecta torres",
+  oppConnectedPassedPair: "Dos pasados conectados del rival",
+  oppConnectedPassedOne: "Pasado del rival con compañero",
+  oppMajority: "Mayoría de peones del rival",
+  oppEndgameKind: "Tipo de final (ply del rival)",
+  oppGivesKingLuft: "El rival da aire a su rey",
+  oppDominantTermGain: "Término de evaluación que el rival mejoró",
+  oppWeakensKingShield: "El rival debilita su escudo de rey",
+  oppKnightToRim: "Caballo del rival a la banda",
+  oppMovesPieceTwice: "El rival mueve dos veces la misma pieza",
+  oppQueenOutEarly: "El rival saca la dama pronto",
+  oppRetreats: "El rival repliega una pieza",
+  oppDevelopsPiece: "El rival desarrolla",
+  oppToCenter: "El rival ocupa el centro",
+  oppPassivePiece: "Pieza del rival sin desarrollar (oportunidad)",
+  oppEndgameFallback: "Genérico de final (ply del rival)",
+  oppFallback: "Genérico (ply del rival)",
 };
 
 const src = fs.readFileSync(SRC, "utf8");
@@ -125,6 +179,7 @@ const lines = src.split(/\r?\n/);
 // a template to whatever fact happened to be mentioned nearest above it.
 const REGISTRY_TIERS = {
   QUIET_RULES: "Tus jugadas — descriptivo",
+  OPPONENT_RULES: "Jugadas del rival — descriptivo",
 };
 const TIERS = {
   slotA: "Tus jugadas — ranura A: qué pasó",
@@ -133,11 +188,11 @@ const TIERS = {
   // The opponent's plies go through their own functions, in the third person and
   // from the player's side. Without these entries they all landed under
   // "(auxiliar)", which described the file's structure incorrectly.
-  opponentQuietComment: "Jugadas del rival — descriptivo",
   opponentSlip: "Jugadas del rival — su fallo",
-  // Not a tier the reader cares about, but it must be recognised so its templates stop
-  // being attributed to whatever ran before it.
+  // Wrappers over the registries. Recognised so nothing after them is attributed to
+  // whatever ran before.
   quietComment: "Tus jugadas — descriptivo",
+  opponentQuietComment: "Jugadas del rival — descriptivo",
   opportunityClause: "Jugadas del rival — tu oportunidad",
   opportunityOutcome: "Tus jugadas — ¿aprovechaste la oportunidad?",
 };
@@ -151,7 +206,7 @@ for (const raw of lines) {
   const line = raw.trim();
 
   // Entering a rule registry: its tier holds until the next function declaration.
-  const reg = line.match(/^const (QUIET_RULES)\b/);
+  const reg = line.match(/^const (QUIET_RULES|OPPONENT_RULES)\b/);
   if (reg) { tier = REGISTRY_TIERS[reg[1]]; category = ""; inRegistry = true; continue; }
 
   const fn = line.match(
