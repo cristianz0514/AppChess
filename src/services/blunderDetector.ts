@@ -42,7 +42,23 @@ const MAX_EXPLAIN = 30;
 const EXPLAIN_DEPTH = 16;
 const EXPLAIN_CLASSES = new Set(["blunder", "mistake", "inaccuracy", "brilliant", "great"]);
 
-const PIECE_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
+// ── Exported for the fixture capture harness ─────────────────────────────────
+//
+// PIECE_ES and the fact builders below (tradeVerdictFor, materialAfterDust,
+// trappedPieceAfter, backRankBoxedIn, positionalFlags, endgameFlags,
+// boardReadingFacts) are PURE: a FEN and a move in, plain data out. No engine, no
+// database, no clock.
+//
+// They are exported so scripts/captureFixtures.mts can rebuild a real game's
+// MoveFacts offline and freeze them as JSON. That matters because
+// composeCoachComment is a pure function of MoveFacts, so "replay eight real games"
+// reduces to "replay captured facts" — no browser, no Stockfish, no Supabase in the
+// verification loop.
+//
+// Formalised deliberately: this file was patched with `sed` to add these exports and
+// again to remove them, six times over one session, to run measurements. An export
+// on a pure function is cheaper than remembering to undo a hack.
+export const PIECE_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
 const PIECE_VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
 // ── Concrete, verifiable context for the coach (chess.com-style) ─────────────
@@ -121,7 +137,7 @@ function seeAfterCapture(fenAfter: string, square: string, capturedValue: number
   return gains[0];
 }
 
-function tradeVerdictFor(fenAfter: string, h: { to: string; piece: string; captured?: string }):
+export function tradeVerdictFor(fenAfter: string, h: { to: string; piece: string; captured?: string }):
   "gana" | "pareja" | "pierde" | null {
   if (!h.captured) return null;
   try {
@@ -180,7 +196,7 @@ function quiesce(fen: string, me: "w" | "b", depth = 4): number {
  * compared with what's on the board right now. Positive = the tactics are
  * going to win them material; negative = they're going to lose some.
  */
-function materialAfterDust(fenAfter: string, me: "w" | "b"): number {
+export function materialAfterDust(fenAfter: string, me: "w" | "b"): number {
   try {
     const board = new Chess(fenAfter);
     let now = 0;
@@ -193,7 +209,7 @@ function materialAfterDust(fenAfter: string, me: "w" | "b"): number {
 
 // The piece just moved is attacked and every square it can reach is attacked
 // too — it's still on the board, but it has nowhere safe to go.
-function trappedPieceAfter(fenAfter: string, h: { to: string; piece: string }):
+export function trappedPieceAfter(fenAfter: string, h: { to: string; piece: string }):
   { piece: string; square: string } | null {
   if ((PIECE_VAL[h.piece] ?? 0) < 3) return null;
   try {
@@ -212,7 +228,7 @@ function trappedPieceAfter(fenAfter: string, h: { to: string; piece: string }):
 
 // Classic back-rank shape: king still on its home rank, the three squares in
 // front of it filled by its own pawns, and no legal king move.
-function backRankBoxedIn(fenAfter: string, playerColor: "w" | "b"): boolean {
+export function backRankBoxedIn(fenAfter: string, playerColor: "w" | "b"): boolean {
   try {
     const board = new Chess(fenAfter.replace(/ (w|b) /, () => ` ${playerColor} `));
     const homeRank = playerColor === "w" ? "1" : "8";
@@ -242,7 +258,7 @@ function backRankBoxedIn(fenAfter: string, playerColor: "w" | "b"): boolean {
 // in front of the castled king, retreats, and knights to the rim. Note this is
 // piece-specific on purpose — a rook on the h-file is normal play, a knight
 // there is not.
-function positionalFlags(
+export function positionalFlags(
   h: { piece: string; from: string; to: string; captured?: string },
   moverWhite: boolean,
   fenAfter: string,
@@ -411,7 +427,7 @@ function positionalFlags(
 // rules invert. Centralising the king is an ERROR in the middlegame and the
 // single most important idea in a king-and-pawn ending, so the same move needs
 // opposite comments depending on how much material is left.
-function endgameFlags(
+export function endgameFlags(
   h: { piece: string; from: string; to: string },
   moverWhite: boolean,
   fenAfter: string,
@@ -523,7 +539,7 @@ function endgameFlags(
 // the eval-term decomposition. Grouped in one helper because both comment tiers
 // need exactly the same set, and last time they drifted apart the deep tier —
 // the one covering the WORST moves — silently lost its positional vocabulary.
-function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: boolean, movedTo: string) {
+export function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: boolean, movedTo: string) {
   const me = moverWhite ? "w" : "b";
   try {
     const ud = underDefended(fenAfter, me)
