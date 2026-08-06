@@ -569,11 +569,40 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
 }
 
 // Two-pass analysis:
-//  Pass 1 — a fast shallow sweep over EVERY position to find where the errors are.
-//  Pass 2 — a DEEP re-evaluation of only those few error positions (and the move
-//           before), so the important moments get strong analysis without paying
-//           the deep cost on all ~70 positions. Concentrates CPU where it matters.
-const SHALLOW_DEPTH = 12;
+//  Pass 1 — a sweep over EVERY position, to find where the errors are AND to give
+//           every ply a recommended move.
+//  Pass 2 — a re-evaluation of the error positions (and the move before).
+//  Pass 3 — MultiPV on the moves that get an engine-grounded comment.
+//
+// ── Why the sweep is 16 and no longer 12 ──────────────────────────────────────
+//
+// centipawn_loss feeds the Elo estimate through the published relationship
+// Elo = 3100*e^(-0.01*ACPL) (see lib/eloEstimate.ts). That formula implies a ~1040
+// player shows ACPL ~109; measured over this database's own games, players of exactly
+// that rating showed 50-57 — in blitz, which should run HIGHER than classical. The
+// app was under-reporting loss by roughly half, and every other candidate cause was
+// ruled out (the 2000 cap matches python-chess-annotator, the plain mean matches it
+// too, and `prev - cur` from the mover's side already IS "best minus played").
+//
+// Depth was what was left. A shallow search cannot see the refutation that makes a
+// move bad, so it records a smaller loss. 12 -> 16 is the correction.
+//
+// Cost, measured on real games with the single-threaded build:
+//     43 plies:  4.8s at 12,  29.3s at 16,  126.4s at 20
+//     68 plies:  5.7s at 12,  54.8s at 16,  335.8s at 20
+// So 16 costs ~7-10x, and 20 costs 25-60x — the latter is not viable on a phone.
+//
+// Partly self-funding, which is the part I had not seen: DEEP_DEPTH is also 16, and
+// engineCache is keyed by fen|depth, so pass 2's re-evaluations all become cache HITS
+// instead of fresh searches. One depth for the whole run means one search per
+// position for everything except pass 3's MultiPV widening.
+//
+// NOT YET VERIFIED: that ACPL actually lands near ~109 at depth 16. The measurement
+// run crashed the WASM engine (memory access out of bounds) before it could report,
+// so the direction is reasoned and the magnitude is not confirmed. Re-measure ACPL
+// against real ratings after the next batch of analyses, and if it overshoots, the
+// honest move is to adjust the DEPTH, never the published formula.
+const SHALLOW_DEPTH = 16;
 const DEEP_DEPTH = 16;
 // How many error positions get the deep re-evaluation that fixes a shallow
 // misjudgement.
