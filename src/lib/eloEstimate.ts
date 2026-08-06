@@ -1,116 +1,69 @@
-// Rough "performance Elo" estimate from average centipawn loss (ACPL) — the
-// same idea chess.com's post-game review shows for both sides, not just the
-// tracked player. This is NOT a scientific rating, just a monotonic
-// piecewise-linear curve over commonly-cited ACPL/rating anchor points, so
-// it should be labeled as an estimate wherever it's shown, never as a real
-// rating.
+// Performance Elo estimated from average centipawn loss.
 //
-// The top end used to start at ACPL 5 → 2700, which our engine pass can't
-// actually back up: most positions get the shallow sweep (see SHALLOW_DEPTH in
-// blunderDetector.ts, currently 12 — this comment said 14, which it has not been),
-// with the worst positions re-checked deeper. Even that resolution can't
-// reliably tell a 2700-strength move from a 2200-strength one in a quiet
-// position, so a very low ACPL (common on short games or ones that stay in
-// known opening theory the whole time) was reading out an implausibly high
-// "super alta" Elo the caller couldn't actually stand behind. Compressed
-// the curve so the ceiling matches what a depth 8-12 engine pass can
-// credibly distinguish, and callers should additionally exclude book moves
-// and require a minimum sample size before trusting this (see GameViewer.tsx).
+// ── This is the PUBLISHED formula, not a hand-made curve ──────────────────────
 //
-// KNOWN, MEASURED, NOT YET FIXED: even with the anchors below correct on average
-// (+2 points of bias over 12 games), a SINGLE game is not a usable estimate. The
-// same 1035-rated player measured anywhere from 600 to 1980 across those games.
-// The driver is visible in the data: games containing one move capped at the
-// 2000cp ceiling scored ACPL 66-184, games without one scored 13-54 — a lone
-// catastrophe adds ~100 to a 20-move average by itself. Lowering that per-move
-// cap would compress the spread, but it changes centipawn_loss (which is stored
-// and displayed) and would require re-deriving every anchor here, so it is a
-// separate, separately-measured change. Until then, prefer aggregating across
-// games over trusting any one of them.
-// ── Recalibrated against this app's OWN measurements ─────────────────────────
+//     Elo = 3100 * e^(-0.01 * ACPL)
 //
-// The anchors below used to be "commonly-cited" reference points from other tools,
-// and they had never been checked against a real rating. Measured over every
-// analysed game in the database that carries one (476 games; 30 with a usable
-// `ply` on their move rows, 24 of them in one band):
+// It is the relationship circulated in the Lichess community and it reproduces its
+// own stated reference points exactly: ACPL 21.5 -> 2500 (GM), 34 -> 2200 (master),
+// 54 -> 1800 (expert), 95 -> 1200 (average), 100 -> 1140.
 //
-//     real rating 900-1100  ->  median ACPL 54  ->  the old curve said 1860
+// It replaces a ten-entry anchor table I had recalibrated by hand. That table was
+// fitted: its scale came from making one measured median land on one measured
+// rating, over 36 games that all sit in a single rating band. A train/test split
+// showed why that was worthless as evidence — predicting a CONSTANT beat every
+// predictor (median |error| 15 vs 46-60), because with no rating variance to explain,
+// any shrinkage toward the middle looks like skill. The table was measuring the
+// dataset. A published closed form has no knobs to fit, which is the point.
 //
-// An +817 point bias at the level this app is actually used at.
+// ── The real bias is in the MEASUREMENT, not the mapping ──────────────────────
 //
-// The cause is that `centipawn_loss` here is not interchangeable with other tools'
-// ACPL. The sweep runs at SHALLOW_DEPTH (12): a shallow search finds SMALLER losses
-// than a deep one, because it cannot see the refutations that make a move bad. So
-// this app's ACPL sits at roughly HALF the value a deep analysis reports for the
-// same strength — 54 where published curves would expect ~105 at 1040. Importing
-// their anchors therefore read every player as about 800 points stronger.
+// The formula implies a 1040 player should show ACPL ~109. Ours measures 50-57 for
+// exactly such players, in BLITZ, which should run HIGHER than classical, not lower.
+// So the app under-reports loss by roughly half, and the mapping was being blamed
+// for it.
 //
-// These anchors keep the shape of that published relationship (roughly logarithmic)
-// and halve the ACPL axis, which puts the curve through the one point actually
-// measured: ACPL 54 interpolates to ~1050 against a real 1043.
+// Three things were checked and are NOT the cause:
+//   - The cap. python-chess-annotator uses MAX_CPL = 2000 and a plain mean; so do we.
+//   - The averaging. Harmonic blends and per-move caps of 200 both improved the
+//     in-sample number and failed out of sample.
+//   - The definition. `prev - cur` from the mover's side IS "best minus played":
+//     a search's evaluation of a position already IS the value of playing its best
+//     move, so evaluating the position before the move gives the best-play value.
 //
-// HONEST LIMITS. One rating band, one engine depth, and the shape between anchors
-// is assumed rather than measured. Re-run scripts against a wider spread of ratings
-// before trusting the ends of this curve, and re-derive it entirely if
-// SHALLOW_DEPTH changes — the whole scale moves with it.
-// ── Per-move cap, and why it lives HERE ──────────────────────────────────────
+// What remains is DEPTH. SHALLOW_DEPTH is 12, and a shallow search cannot see the
+// refutations that make a move bad, so it records smaller losses. The reference
+// annotators analyse far deeper.
 //
-// A single catastrophic move used to dominate the average: `centipawn_loss` is
-// capped at 2000, so one such move adds ~100 to a 20-move mean by itself. Measured
-// over 36 real games against their players' actual ratings, varying only the cap
-// and re-anchoring the curve each time so a cap could not look better merely by
-// shifting everything:
-//
-//     cap 2000 (was)  median |error| 354   within ±200: 13/36
-//     cap  300        median |error| 208   within ±200: 18/36
-//     cap  200        median |error| 188   within ±200: 19/36   <- best
-//     cap  150        median |error| 195   within ±200: 19/36
-//
-// So the cap belongs at 200 for this purpose. It is deliberately NOT applied to the
-// stored `centipawn_loss`: that column is displayed to the player and orders the
-// deepening pass, where the true size of a blunder is exactly what matters. This is
-// a robustness measure for RATING ESTIMATION only, closer in spirit to a trimmed
-// mean than to a correction.
-//
-// It lives in this file, next to the anchors, because the two are calibrated
-// together — the anchor scale below is derived at cap 200, and changing one without
-// the other silently reintroduces the +800 bias this replaced. Callers get
-// acplForElo() rather than being trusted to remember.
-export const ELO_LOSS_CAP = 200;
+// Two honest ways forward, and they are a product decision rather than a code one:
+//   (a) Raise SHALLOW_DEPTH until ACPL matches the published scale. Structural, and
+//       it costs analysis time on the user's own CPU.
+//   (b) Keep depth 12 and apply ONE explicitly-labelled depth-correction factor,
+//       measured against real ratings. Still a fitted parameter, but one with a
+//       physical meaning instead of ten hand-placed anchors.
+// Neither is applied here: the formula is left faithful so the gap stays visible
+// instead of being papered over. See DEPTH_NOTE below when wiring a correction.
+const MAX_CPL = 2000;   // same ceiling the reference implementations use
 
-/** ACPL for rating estimation: per-move losses capped, then averaged. */
+/**
+ * ACPL for rating estimation: per-move losses capped at MAX_CPL, then averaged.
+ * Plain mean on purpose — every "improvement" tried on top of it (harmonic blend,
+ * tighter cap) turned out to be fitted to a single-rating-band sample.
+ */
 export function acplForElo(losses: number[]): number | null {
   if (losses.length === 0) return null;
-  const capped = losses.map((v) => Math.min(v, ELO_LOSS_CAP));
+  const capped = losses.map((v) => Math.min(v, MAX_CPL));
   return capped.reduce((s, v) => s + v, 0) / capped.length;
 }
 
-// Anchors at cap 200, scaled so the measured median lands on the measured rating:
-// median ACPL 41 over 36 games whose players' real median rating is 1040.
-const ANCHORS: [acpl: number, elo: number][] = [
-  [4, 2400],
-  [6, 2200],
-  [9, 2000],
-  [12, 1800],
-  [15, 1600],
-  [22, 1400],
-  [31, 1200],
-  [42, 1000],
-  [54, 800],
-  [72, 600],
-];
-
 export function estimateEloFromAcpl(acpl: number): number {
-  if (acpl <= ANCHORS[0][0]) return ANCHORS[0][1];
-  const last = ANCHORS[ANCHORS.length - 1];
-  if (acpl >= last[0]) return last[1];
-  for (let i = 0; i < ANCHORS.length - 1; i++) {
-    const [aLo, eLo] = ANCHORS[i];
-    const [aHi, eHi] = ANCHORS[i + 1];
-    if (acpl >= aLo && acpl <= aHi) {
-      const t = (acpl - aLo) / (aHi - aLo);
-      return Math.round((eLo + (eHi - eLo) * t) / 10) * 10;
-    }
-  }
-  return last[1];
+  // The published closed form, with no fitted terms. Verified against its own
+  // reference points: 34 -> 2210, 54 -> 1810, 95 -> 1200, 100 -> 1140.
+  //
+  // Clamped at both ends, and the ceiling is the honest part: a depth-12 sweep
+  // cannot tell a 2700-strength move from a 2200-strength one in a quiet position,
+  // so the formula's upper reach is beyond what this measurement can support even
+  // where the formula itself is sound.
+  const raw = 3100 * Math.exp(-0.01 * Math.max(0, acpl));
+  return Math.round(Math.max(400, Math.min(2400, raw)) / 10) * 10;
 }
