@@ -263,7 +263,7 @@ function band(e: number): Band {
   return "ganando";
 }
 
-const QUIET_RULES: ReadonlyArray<CoachRule> = [
+export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   {
     id: "tactic", group: "tactics",
     applies: (f, c) => {
@@ -998,7 +998,7 @@ const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
 ];
 
-const QUIET_PRIORITY: readonly string[] = [
+export const QUIET_PRIORITY: readonly string[] = [
   "tactic", "book", "promotion", "castle",
   "capture", "check", "dustGain", "ownThreat",
   "looseEnemy", "defendsAttacked", "squareRule", "pawnRunsToPromote",
@@ -1082,7 +1082,7 @@ export interface ArbiterTrace<R = RuleResult> { winnerId: string; candidates: Ru
  * validatePriority() so the reason survives the next reshuffle — comments have already
  * failed to protect these once.
  */
-const QUIET_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
+export const QUIET_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
   ["tactic", "book", "84/84 plies with a tactic were being called theory"],
   ["ownThreat", "looseEnemy", "the null-move search outranks the heuristic on the same question"],
   ["capture", "defendsAttacked", "the capture is the headline, the cover is the footnote"],
@@ -1816,14 +1816,14 @@ export function composeCoachComment(f: MoveFacts): string | null {
 export interface OpponentCtx { s: number; piece: string; to: string; dust: number }
 
 /** Same reasoning as QUIET_CONSTRAINTS: every pair was learned from a real defect. */
-const OPPONENT_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
+export const OPPONENT_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
   ["oppTacticOrLoose", "oppCapture", "a fork against you matters more than the pawn that changed hands"],
   ["oppCapture", "oppOwnThreat", "a capture must never be swallowed by a threat report — the d8 queen bug"],
   ["oppDoublesRooks", "oppBattery", "battery also matches rook-behind-rook: 'una batería con la torre y la torre'"],
   ["oppEndgameFallback", "oppFallback", "phase-aware beats generic"],
 ];
 
-const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
+export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   {
     id: "oppMate", group: "tactics",
     applies: (f, c) => {
@@ -2397,7 +2397,7 @@ const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
 ];
 
-const OPPONENT_PRIORITY: readonly string[] = [
+export const OPPONENT_PRIORITY: readonly string[] = [
   "oppMate", "oppTacticOrLoose", "oppCapture",
   "oppCheck", "oppOwnThreat", "oppPromotion",
   "oppCastle", "oppBook", "oppDust",
