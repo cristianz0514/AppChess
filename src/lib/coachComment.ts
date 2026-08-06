@@ -375,8 +375,12 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
     // that made a routine retake read as winning a free piece (seen on cxd4
     // completing an even knight trade). Being a recapture outranks what SEE says
     // about the square.
+    // Names WHAT was retaken. "Recuperas la pieza en f4" was appearing on Qxf4 and
+    // Qxf8+ — the queen coming off is the most consequential event on the board and
+    // it was being called "la pieza", which is also wrong for a pawn, since a pawn
+    // is not a pieza in Spanish chess usage.
     if (f.isRecapture) return { text: pick([
-      `Recuperas la pieza en ${f.playedTo}: el cambio queda saldado.`,
+      `Recuperas ${cp} en ${f.playedTo}: el cambio queda saldado.`,
       `Retomas en ${f.playedTo} y el material vuelve a estar igual.`,
     ], s), namesMaterial: true };
     if (f.tradeVerdict === "gana") return { text: pick([
@@ -817,7 +821,25 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
       namesMaterial: true };
   }
 
-  if (f.materialLostPiece && f.materialSettled && f.materialNet >= 2) {
+  // Cross-checked against the EVAL before it is allowed to name a piece.
+  //
+  // Verified false in a real game at depth 20: ply 17 Qe7 read "Tras los cambios
+  // pierdes la torre", and the engine's actual line is `Nxc7 Bxc7 Bxc7` — the cost is
+  // about a pawn (eval 0.03 -> 1.40), and no rook falls in any variation. The claim
+  // came from materialOverLine walking a line that was not the engine's.
+  //
+  // Two independent measurements have to agree before making a claim this strong:
+  // the material walk says WHAT is lost, the evaluation says HOW MUCH the position
+  // actually cost. Requiring the eval to corroborate at least half the claimed value
+  // suppresses exactly the case where the walk over-counts — a rook (5) needs 2.5
+  // pawns of real damage, and Qe7's 1.26 does not qualify. This is the authority
+  // table's rule applied here: a material-over-line claim is only as good as the line
+  // it came from, so it gets validated rather than trusted.
+  const evalDrop = f.evalBefore - f.evalAfter;
+  const evalBacksIt = Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG
+    ? evalDrop >= f.materialNet * 0.5
+    : true;   // in a mate line the eval is not a material scale, so don't gate on it
+  if (f.materialLostPiece && f.materialSettled && f.materialNet >= 2 && evalBacksIt) {
     const p = art(f.materialLostPiece);
     return { text: f.materialTrades
       ? pick([

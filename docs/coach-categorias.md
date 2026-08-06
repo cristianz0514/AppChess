@@ -482,7 +482,7 @@ _Bandera:_ `isPromotion`
 
 _Bandera:_ `isRecapture`
 
-1. Recuperas la pieza en ${f.playedTo}: el cambio queda saldado.
+1. Recuperas ${cp} en ${f.playedTo}: el cambio queda saldado.
 2. Retomas en ${f.playedTo} y el material vuelve a estar igual.
 
 ### Veredicto del cambio (gana / parejo / pierde)

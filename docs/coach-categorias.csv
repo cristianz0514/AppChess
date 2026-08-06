@@ -26,7 +26,7 @@
 "Tus jugadas — descriptivo";"Coronación";"isPromotion";25;"Coronas en ${f.playedTo} y quedas ${standing}.";""
 "Tus jugadas — descriptivo";"Enroque";"isCastle";26;"Enrocas y pones el rey a salvo.";""
 "Tus jugadas — descriptivo";"Enroque";"isCastle";27;"Enrocas: el rey queda protegido y la torre entra en juego.";""
-"Tus jugadas — descriptivo";"isRecapture";"isRecapture";28;"Recuperas la pieza en ${f.playedTo}: el cambio queda saldado.";""
+"Tus jugadas — descriptivo";"isRecapture";"isRecapture";28;"Recuperas ${cp} en ${f.playedTo}: el cambio queda saldado.";""
 "Tus jugadas — descriptivo";"isRecapture";"isRecapture";29;"Retomas en ${f.playedTo} y el material vuelve a estar igual.";""
 "Tus jugadas — descriptivo";"Veredicto del cambio (gana / parejo / pierde)";"tradeVerdict";30;"Capturas ${cp} en ${f.playedTo} y ganas material.";""
 "Tus jugadas — descriptivo";"Veredicto del cambio (gana / parejo / pierde)";"tradeVerdict";31;"Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.";""
