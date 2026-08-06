@@ -263,16 +263,902 @@ function band(e: number): Band {
   return "ganando";
 }
 
-// Descriptive tier for moves the engine did NOT flag as errors. Needs no engine
-// search — just the move's own shape plus the shallow eval — which is why every
-// move can afford a comment now. Book moves get chess.com's "jugada de libro"
-// treatment instead of a fourth repeat of "sacas la pieza y ganas actividad".
-// `soft` is set when this is reached from the ERROR chain rather than because the
-// move was fine — a light inaccuracy the engine tier never looked at. Everything
-// here still applies (the board is the board), except the fallbacks that APPROVE
-// of the move: "Jugada sólida" would contradict the imprecisión badge next to it.
-function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial: boolean } {
-  const s = f.variantSeed;
+const QUIET_RULES: ReadonlyArray<CoachRule> = [
+  {
+    id: "tactic", group: "tactics",
+    applies: (f, c) => {
+      // ── Tactics, above everything including the opening book ────────────────────
+      // Measured over eight real games: 84 of 84 plies where tacticalMotifs found a
+      // fork, pin, skewer or discovered check got a comment that never mentioned it.
+      // The detector has run since the beginning and only slotA's `if (f.good)` branch
+      // ever read it — and `good` is set only in the engine tier, so every tactic on
+      // the other ~40 moves of a game was detected and thrown away. A real example:
+      // Nxf7 forking, described as "Teoría de la apertura, el caballo a f7".
+      //
+      // Above the book check on purpose: a concrete tactic on the board is worth more
+      // to a club player than being told the move is theory. The capture is folded in
+      // rather than displaced, so nothing that used to be said is lost.
+      const tactic = f.playedMotifs.find((m) => !isHanging(m));
+      if (tactic) {
+        const p = art(f.playedPiece);
+        // Every clause NAMES the tactic and then explains the geometry, in that order.
+        // A coach that says "ensartas dos piezas" to someone who has never met the word
+        // has taught nothing — and worse, the reader can't tell whether the claim is
+        // even true. The explanation is what makes the term learnable and checkable, so
+        // it is not optional decoration.
+        const clause =
+          tactic.key === "fork" ? `haces un doble: ${p} en ${f.playedTo} ataca dos piezas a la vez, y solo puedes salvar una`
+          // detectPinOrSkewer calls it a pin only when the piece BEHIND is the king,
+          // so "no se puede mover" is literal here: moving it would be illegal.
+          // "el rey rival", not "su rey": with two kings on the board a possessive
+          // leaves the reader working out whose king is behind the pinned piece.
+          : tactic.key === "pin" ? `clavas una pieza: ${p} en ${f.playedTo} la deja inmóvil, porque detrás está el rey rival`
+          // And a skewer only when the piece behind is worth LESS than the one in
+          // front — that ordering is the whole idea, so the sentence says it.
+          : tactic.key === "skewer" ? `haces una enfilada: ${p} en ${f.playedTo} ataca dos piezas en la misma línea, y al mover la de delante cae la de atrás`
+          // This motif only fires when the position IS in check and the check does NOT
+          // come from the piece that moved, so "jaque a la descubierta" is exact.
+          : `das jaque a la descubierta: al mover ${p}, el jaque lo da la pieza que estaba detrás`;
+        return {
+          text: f.capturedPiece
+            ? `Capturas ${art(f.capturedPiece)} en ${f.playedTo} y ${clause}.`
+            : `${cap(clause)}.`,
+          namesMaterial: f.capturedPiece != null,
+        };
+      }
+      return null;
+    },
+  },
+  {
+    id: "book", group: "phase",
+    applies: (f, c) => {
+
+      if (f.isBook) {
+        // Said once per game, on the move where theory runs out — not on all
+        // fourteen book moves, which would be noise.
+        if (f.isLastBookMove) {
+          const named = f.openingName ? ` Vienes de la ${f.openingName}.` : "";
+          return { text: pick([
+            `Última jugada de teoría.${named} A partir de aquí decides tú.`,
+            `Aquí se acaba el libro.${named} Lo que siga ya es tu propio plan.`,
+          ], c.s), namesMaterial: false };
+        }
+        if (f.isCastle) return { text: `Jugada de libro: enrocas y pones el rey a salvo.`, namesMaterial: false };
+        if (f.developsPiece) return { text: pick([
+          `Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.`,
+          `Teoría: ${art(f.playedPiece)} va a ${f.playedTo} para entrar en juego.`,
+          `Desarrollo de libro. ${cap(art(f.playedPiece))} a ${f.playedTo} es la jugada principal aquí.`,
+          `Sigues la teoría: ${art(f.playedPiece)} a ${f.playedTo}.`,
+        ], c.s), namesMaterial: false };
+        if (f.toCenter) return { text: pick([
+          `Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`,
+          `Teoría. ${cap(art(f.playedPiece))} a ${f.playedTo} reclama su parte del centro.`,
+          `De libro: plantas ${art(f.playedPiece)} en ${f.playedTo}, en plena disputa del centro.`,
+        ], c.s), namesMaterial: false };
+        return { text: pick([
+          `Jugada de libro: ${art(f.playedPiece)} a ${f.playedTo} sigue la teoría.`,
+          `Teoría de la apertura, ${art(f.playedPiece)} a ${f.playedTo}.`,
+        ], c.s), namesMaterial: false };
+      }
+      return null;
+    },
+  },
+  {
+    id: "promotion", group: "material",
+    applies: (f, c) => {
+
+      if (f.isPromotion) return { text: `Coronas en ${f.playedTo} y quedas ${c.standing}.`, namesMaterial: true };
+      return null;
+    },
+  },
+  {
+    id: "castle", group: "shape",
+    applies: (f, c) => {
+      if (f.isCastle) return { text: pick([`Enrocas y pones el rey a salvo.`, `Enrocas: el rey queda protegido y la torre entra en juego.`], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "capture", group: "material",
+    applies: (f, c) => {
+      if (f.capturedPiece) {
+        const cp = art(f.capturedPiece);
+        // A recapture is a different event from a capture: nothing new is won, the
+        // balance is restored. Saying "el caballo cae gratis" about a recapture is
+        // simply false — that piece was paid for on the previous move.
+        //
+        // No longer gated on the trade verdict. SEE looks at the square AFTER the
+        // recapture and often reports "gana", because by then nothing can take back;
+        // that made a routine retake read as winning a free piece (seen on cxd4
+        // completing an even knight trade). Being a recapture outranks what SEE says
+        // about the square.
+        // Names WHAT was retaken. "Recuperas la pieza en f4" was appearing on Qxf4 and
+        // Qxf8+ — the queen coming off is the most consequential event on the board and
+        // it was being called "la pieza", which is also wrong for a pawn, since a pawn
+        // is not a pieza in Spanish chess usage.
+        if (f.isRecapture) return { text: pick([
+          `Recuperas ${cp} en ${f.playedTo}: el cambio queda saldado.`,
+          `Retomas en ${f.playedTo} y el material vuelve a estar igual.`,
+        ], c.s), namesMaterial: true };
+        if (f.tradeVerdict === "gana") return { text: pick([
+          `Capturas ${cp} en ${f.playedTo} y ganas material.`,
+          // No clitic pronoun here: "…recuperarlo" disagreed with feminine pieces
+          // ("la dama … recuperarlo").
+          `Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.`,
+          `${cap(cp)} de ${f.playedTo} cae gratis: el rival no lo recupera.`,
+          `Ganas material en ${f.playedTo}: la captura sale a tu favor.`,
+        ], c.s), namesMaterial: true };
+        if (f.tradeVerdict === "pareja") return { text: pick([
+          `Cambias ${cp} en ${f.playedTo}: un cambio parejo.`,
+          // `c.standing` can itself be "en una posición equilibrada", which read as
+          // "Cambio equilibrado … posición equilibrada".
+          `Cambio parejo en ${f.playedTo}.`,
+          `Te llevas ${cp} y el rival recupera: quedan iguales.`,
+          `Cambio de piezas en ${f.playedTo}, sin ventaja para ninguno.`,
+        ], c.s), namesMaterial: true };
+        return { text: pick([
+          `Capturas ${cp} en ${f.playedTo}.`,
+          `Te llevas ${cp} y quedas ${c.standing}.`,
+        ], c.s), namesMaterial: true };
+      }
+      return null;
+    },
+  },
+  {
+    id: "check", group: "tactics",
+    applies: (f, c) => {
+      if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${c.standing}.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "dustGain", group: "material",
+    applies: (f, c) => {
+
+      // The positive side of the same reading: the tactics on the board are going
+      // to win material even though this move didn't capture anything.
+      if ((f.dustMaterial ?? 0) >= 3) return { text: pick([
+        `Los cambios que vienen te dejan material de más.`,
+        `Cuando se resuelvan las capturas, sales ganando material.`,
+      ], c.s), namesMaterial: true };
+      return null;
+    },
+  },
+  {
+    id: "ownThreat", group: "threats",
+    applies: (f, c) => {
+
+      // A threat the opponent must answer outranks any description of the move: it
+      // was landing below "Desarrollas el alfil a d3" and so never appeared once in
+      // six games, even though it's the most useful thing the coach can say about a
+      // quiet move.
+      if (f.ownThreat) {
+        const ot = f.ownThreat;
+        if (ot.kind === "mate") return { text: `Amenazas mate en ${ot.square}: el rival está obligado a defenderse.`, namesMaterial: false };
+        return { text: pick([
+          `Ahora amenazas ${art(ot.piece)} de ${ot.square}.`,
+          `La jugada arma una amenaza: ${art(ot.piece)} de ${ot.square} está en el aire.`,
+          `Con esto pones ${art(ot.piece)} de ${ot.square} en el punto de mira.`,
+        ], c.s), namesMaterial: false };
+      }
+      return null;
+    },
+  },
+  {
+    id: "looseEnemy", group: "threats",
+    applies: (f, c) => {
+
+      // A loose enemy piece your move now attacks. Ranked BELOW ownThreat on purpose:
+      // ownThreat asks the same question with a null-move search and a gain filter, so
+      // when both are true the rigorous one should speak. This catches the rest.
+      {
+        const loose = f.playedMotifs.find((m) => m.key === "hanging");
+        if (loose?.piece && loose.square) {
+          return { text: pick([
+            `${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.`,
+            `Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.`,
+          ], c.s), namesMaterial: true };
+        }
+      }
+      return null;
+    },
+  },
+  {
+    id: "defendsAttacked", group: "threats",
+    applies: (f, c) => {
+
+      // Defending a piece that was genuinely hanging is the POINT of the move, so it
+      // sits up here with the threats rather than below the shape-describing branches.
+      // Placed lower first, it fired once in 199 moves — "repliegas el alfil" and
+      // "torre a la columna abierta" kept winning, which describe how the move looks
+      // instead of what it achieved. Same priority mistake ownThreat had.
+      //
+      // Measured afterwards, and worth recording: over a real 42-move game the
+      // DETECTOR is true exactly twice, and both times the move is also a capture, so
+      // the capture branch above still wins and this doesn't render. That is correct —
+      // "Ganas el peón" is the headline and "also covered the knight" is a footnote.
+      // Do not promote this above captures because it appears never to fire; it is
+      // waiting for a genuinely defensive non-capturing move, which is its whole point.
+      if (f.defendsAttacked) {
+        const d = f.defendsAttacked;
+        return { text: pick([
+          `Defiendes ${art(d.piece)} de ${d.square}, que estaba atacado.`,
+          `Cubres ${art(d.piece)} de ${d.square} justo a tiempo.`,
+        ], c.s), namesMaterial: true };
+      }
+      return null;
+    },
+  },
+  {
+    id: "squareRule", group: "endgame",
+    applies: (f, c) => {
+
+      // ── Endgame ────────────────────────────────────────────────────────────────
+      // The square rule outranks every other endgame remark because it's the only
+      // one with a provable answer: the pawn either gets through or it doesn't.
+      if (f.squareRule) {
+        const sr = f.squareRule;
+        if (sr.promotes) return { text: pick([
+          `El rey rival ya no entra en el cuadrado: el peón de ${sr.pawnSquare} corona solo.`,
+          `Cuenta el cuadrado: el peón de ${sr.pawnSquare} llega antes que el rey rival.`,
+        ], c.s), namesMaterial: false };
+        return { text: pick([
+          `El rey rival está dentro del cuadrado y detiene el peón de ${sr.pawnSquare}: hace falta acercar tu rey.`,
+          `Así el peón de ${sr.pawnSquare} no corona solo; el rey rival llega. Tienes que apoyarlo con el tuyo.`,
+        ], c.s), namesMaterial: false };
+      }
+      return null;
+    },
+  },
+  {
+    id: "pawnRunsToPromote", group: "endgame",
+    applies: (f, c) => {
+      if (f.pawnRunsToPromote) return { text: pick([
+        `El peón pasado avanza a ${f.playedTo}: cada casilla lo acerca a coronar.`,
+        `Empujas el peón pasado hasta ${f.playedTo}. El rival tendrá que gastar una pieza en frenarlo.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "opposition", group: "endgame",
+    applies: (f, c) => {
+      if (f.opposition) return { text: `Tomas la oposición: el rey rival tiene que ceder terreno.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "kingActivates", group: "endgame",
+    applies: (f, c) => {
+      if (f.kingActivates) return { text: pick([
+        `En el final el rey es una pieza más, y lo llevas al centro.`,
+        `Activas el rey hacia ${f.playedTo}: en el final es donde más pesa.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "rookBehindPassed", group: "endgame",
+    applies: (f, c) => {
+      if (f.rookBehindPassed) return { text: `Torre detrás del peón pasado, que es su sitio: lo empuja según avanza.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "connectsRooks", group: "endgame",
+    applies: (f, c) => {
+      if (f.connectsRooks) return { text: `Conectas las torres: ya se defienden entre ellas.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "connectedPassedPair", group: "endgame",
+    applies: (f, c) => {
+      // ── Standing endgame features ───────────────────────────────────────────────
+      // Ordered by how much a club player can DO with them: two connected passed
+      // pawns win on their own, a wing majority is the plan for the next ten moves,
+      // naming the endgame type points at a body of theory, and the structural
+      // defects are what to avoid trading into. All of these used to fall through to
+      // "Jugada de final tranquila".
+      if ((f.connectedPassed?.length ?? 0) >= 2) return { text: pick([
+        `Tienes dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): avanzan apoyándose y son muy difíciles de parar.`,
+        `Peones pasados conectados en ${f.connectedPassed!.slice(0, 2).join(" y ")}. Empújalos juntos: se defienden solos.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "connectedPassedOne", group: "endgame",
+    applies: (f, c) => {
+      // A single supported passer, not just two of them: one passed pawn with a pawn
+      // neighbour is already the feature that decides most endgames, and requiring two
+      // left every one of the remaining wildcard plies unexplained.
+      if (f.connectedPassed?.length === 1) return { text: pick([
+        `Tu peón pasado de ${f.connectedPassed[0]} tiene un compañero al lado que lo apoya: eso es lo que lo hace peligroso.`,
+        `El pasado de ${f.connectedPassed[0]} va acompañado. Avanza con los dos, no solo con uno.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "majority", group: "endgame",
+    applies: (f, c) => {
+      if (f.majority) return { text: pick([
+        `Tienes mayoría de peones en el flanco de ${f.majority}: ahí está tu peón pasado, empuja por ese lado.`,
+        `Mayoría en el flanco de ${f.majority}. El plan es crear un pasado con ella.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "endgameKind", group: "endgame",
+    applies: (f, c) => {
+      if (f.endgameKind) return { text: pick([
+        `Estamos en un ${f.endgameKind}. ${cap(art(f.playedPiece))} a ${f.playedTo}.`,
+        `${cap(art(f.playedPiece))} a ${f.playedTo}, en un ${f.endgameKind}.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "backwardPawn", group: "structure",
+    applies: (f, c) => {
+      if (f.backwardPawn) return { text: `El peón de ${f.backwardPawn} está retrasado: no puede avanzar ni recibir apoyo, y en el final eso pesa.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "islands", group: "structure",
+    applies: (f, c) => {
+      if (f.islands && f.islands.mine > f.islands.theirs) return { text: `Tienes ${f.islands.mine} islas de peones contra ${f.islands.theirs}: tu estructura está más partida y es más difícil de defender.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "attacksBigger", group: "threats",
+    applies: (f, c) => {
+      // Attacking something bigger than what you moved wins a tempo — the opponent
+      // has to answer. Ranked high because it's the concrete point of the move.
+      if (f.attacksBigger) return { text: pick([
+        `${cap(art(f.playedPiece))} a ${f.playedTo} ataca ${art(f.attacksBigger)}: el rival tiene que responder.`,
+        `Ganas un tiempo: desde ${f.playedTo} amenazas ${art(f.attacksBigger)}.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "pawnBreak", group: "structure",
+    applies: (f, c) => {
+      // A pawn break is how you open the position — nameable, and it was landing
+      // on "Jugada sólida" before.
+      if (f.pawnBreak) return { text: pick([
+        `Ruptura de peones: el peón de ${f.playedTo} golpea la cadena rival.`,
+        `Atacas la estructura del rival con el peón a ${f.playedTo}.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "outpost", group: "shape",
+    applies: (f, c) => {
+      // An outpost is the best square a minor can get, and naming it teaches the
+      // idea: it's not just "a good square", it's one no pawn can ever kick.
+      if (f.outpost) return { text: pick([
+        `${cap(art(f.playedPiece))} se instala en ${f.playedTo}: apoyado por tu peón y sin peones rivales que lo echen.`,
+        `Puesto avanzado en ${f.playedTo}. Ningún peón rival puede desalojar ${art(f.playedPiece)} de ahí.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "knightToCenter", group: "shape",
+    applies: (f, c) => {
+      if (f.knightToCenter) return { text: pick([
+        `Centralizas el caballo en ${f.playedTo}, desde donde controla más casillas.`,
+        `El caballo en ${f.playedTo} está en su mejor sitio: el centro.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "givesKingLuft", group: "shape",
+    applies: (f, c) => {
+      // King sidestep that opens an escape square — a real, nameable idea that was
+      // landing on "Jugada sólida" before.
+      if (f.givesKingLuft) return { text: pick([
+        `Le das aire a tu rey: ahora tiene casilla de escape.`,
+        `Mueves el rey a ${f.playedTo} y evitas sustos en la última fila.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "retreats", group: "shape",
+    applies: (f, c) => {
+      if (f.retreats) return { text: pick([
+        `Repliegas ${art(f.playedPiece)} a ${f.playedTo} para reagrupar.`,
+        `Retiras ${art(f.playedPiece)} a ${f.playedTo}.`,
+        `${cap(art(f.playedPiece))} vuelve a ${f.playedTo} y espera mejor momento.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "rookToSeventh", group: "shape",
+    applies: (f, c) => {
+      if (f.rookToSeventh) return { text: pick([
+        `Metes la torre en la séptima: desde ${f.playedTo} muerde los peones y encierra al rey.`,
+        `Torre a la séptima. Es la fila donde más daño hace.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "doublesRooks", group: "shape",
+    applies: (f, c) => {
+      if (f.doublesRooks) return { text: `Doblas las torres en la columna ${f.playedTo[0]}: juntas pesan mucho más.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "rookToOpenFile", group: "shape",
+    applies: (f, c) => {
+      if (f.rookToOpenFile) return { text: pick([
+        `Colocas la torre en la columna ${f.playedTo[0]}, que está abierta.`,
+        `La torre toma la columna abierta ${f.playedTo[0]}.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "rookToSemiOpen", group: "shape",
+    applies: (f, c) => {
+      if (f.rookToSemiOpen) return { text: pick([
+        `La torre toma la columna ${f.playedTo[0]}, semiabierta: presiona el peón rival.`,
+        `Torre a la columna ${f.playedTo[0]}, donde no tienes peones que te estorben.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "fianchetto", group: "shape",
+    applies: (f, c) => {
+      if (f.fianchetto) return { text: `Fianchetto: el alfil a ${f.playedTo} apunta a la diagonal larga.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "queenOutEarly", group: "shape",
+    applies: (f, c) => {
+      if (f.queenOutEarly) return { text: `Sacas la dama pronto: cuidado, el rival puede ganar tiempos atacándola.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "movesPieceTwice", group: "shape",
+    applies: (f, c) => {
+      if (f.movesPieceTwice) return { text: pick([
+        `Vuelves a mover ${art(f.playedPiece)} en vez de sacar una pieza nueva.`,
+        `${cap(art(f.playedPiece))} se mueve otra vez; quedan piezas por desarrollar.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "developsPiece", group: "shape",
+    applies: (f, c) => {
+      // Four variants, not two: measured over six games, "Sacas … y ganas actividad"
+      // and "Desarrollas …" were the two most repeated sentences in the whole engine
+      // (19 and 15 uses). "Y ganas actividad" is also filler by our own rule — it
+      // asserts something we haven't measured — so it's gone.
+      if (f.developsPiece) return { text: pick([
+        `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
+        `${cap(art(f.playedPiece))} entra en juego desde ${f.playedTo}.`,
+        `Pones ${art(f.playedPiece)} en ${f.playedTo}, fuera de su casilla inicial.`,
+        `Sumas ${art(f.playedPiece)} al juego: sale a ${f.playedTo}.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "toCenter", group: "shape",
+    applies: (f, c) => {
+      if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "createdPassed", group: "structure",
+    applies: (f, c) => {
+      // Structural gains — a passed pawn or a wrecked enemy structure outlives any
+      // tactic on the board and is worth naming even on an ordinary move.
+      if (f.structure?.createdPassed) return { text: pick([
+        `Creas un peón pasado en ${f.structure.createdPassed}: nada lo frena camino a coronar.`,
+        `El peón de ${f.structure.createdPassed} queda pasado, y eso pesa en el final.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "brokeTheirStructure", group: "structure",
+    applies: (f, c) => {
+      if (f.structure?.brokeTheirStructure) return { text: `Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "isolatedTheirs", group: "structure",
+    applies: (f, c) => {
+      if (f.structure?.isolatedTheirs) return { text: `Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`, namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "gaveSelfDoubled", group: "structure",
+    applies: (f, c) => {
+      // Your OWN structural damage. StructureChange has computed these two since it
+      // was written and no template read either — the three gains above were wired up
+      // and the two costs were not, so the coach only ever reported good structural
+      // news. auditCoverage misses it because they're nested inside `structure`.
+      if (f.structure?.gaveSelfDoubled) return { text: pick([
+        `Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: es un defecto permanente, pesa sobre todo en el final.`,
+        `Ojo: peones doblados en ${f.structure.gaveSelfDoubled}. Ya no se arregla.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "gaveSelfIsolated", group: "structure",
+    applies: (f, c) => {
+      if (f.structure?.gaveSelfIsolated) return { text: pick([
+        `El peón de ${f.structure.gaveSelfIsolated} queda aislado: nadie lo puede defender con otro peón.`,
+        `Dejas aislado tu peón de ${f.structure.gaveSelfIsolated}; tendrás que defenderlo con piezas.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "theirKingWorse", group: "threats",
+    applies: (f, c) => {
+      if (f.theirKingWorse) return { text: pick([
+        `Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.`,
+        `${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "battery", group: "shape",
+    applies: (f, c) => {
+      if (f.battery) {
+        const b = f.battery;
+        // Same guard as the opponent's side: two of the same piece is a doubling, and
+        // naming it as a pairing produces "la torre con la torre detrás".
+        if (b.front === b.back) return { text: `Doblas dos piezas mayores en la misma línea: juntas pesan mucho más.`, namesMaterial: false };
+        return { text: pick([
+          `Formas una batería: ${art(b.front)} con ${art(b.back)} detrás, apuntando a la misma línea.`,
+          `${cap(art(b.front))} se apoya en ${art(b.back)}: dos piezas presionando la misma línea.`,
+        ], c.s), namesMaterial: false };
+      }
+      return null;
+    },
+  },
+  {
+    id: "supportsPawnChain", group: "structure",
+    applies: (f, c) => {
+      if (f.supportsPawnChain) return { text: pick([
+        `Refuerzas la cadena: el peón de ${f.playedTo} sostiene a su compañero.`,
+        `El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.`,
+        `Cadena de peones: ${f.playedTo} respalda al peón de delante.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "dominantTermGain", group: "structure",
+    applies: (f, c) => {
+      // Last stop before the wildcard: name whichever part of the position the move
+      // actually improved. "Jugada sólida" says nothing; "ganas movilidad" is true,
+      // measured, and teaches the player what the move was for.
+      const dq = f.dominantTerm;
+      if (dq && dq.delta > 0) {
+        if (dq.term === "mobility") return { text: pick([
+          `Ganas movilidad: tus piezas cubren más casillas desde aquí.`,
+          `${cap(art(f.playedPiece))} a ${f.playedTo} le da aire a tus piezas.`,
+        ], c.s), namesMaterial: false };
+        if (dq.term === "space") return { text: pick([
+          `Ganas espacio en el campo rival.`,
+          `Avanzas tu frente y le quitas terreno al rival.`,
+        ], c.s), namesMaterial: false };
+        if (dq.term === "development") return { text: `Sumas una pieza al juego: vas por delante en desarrollo.`, namesMaterial: false };
+        // kingSafety is one of the five terms dominantChange can return, and it was
+        // the only improving one with no branch here — so a move whose main effect was
+        // covering the king fell to the wildcard. Live on 3 of 44 measured wildcards.
+        if (dq.term === "kingSafety") return { text: pick([
+          `Tu rey queda mejor cubierto tras esta jugada.`,
+          `Mejoras la seguridad de tu rey: menos líneas abiertas hacia él.`,
+        ], c.s), namesMaterial: false };
+      }
+      return null;
+    },
+  },
+  {
+    id: "trappedAside", group: "warnings",
+    applies: (f, c) => {
+      if (f.trappedPiece) return { text: pick([
+        `${c.lead} Ojo: ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square} se queda sin casillas seguras.`,
+        `${c.lead} Cuidado con ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square}: no tiene por dónde salir.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "backRankAside", group: "warnings",
+    applies: (f, c) => {
+      if (f.backRankRisk) return { text: pick([
+        `${c.lead} Ojo a la última fila: tu rey no tiene casilla de escape.`,
+        `${c.lead} Tu rey sigue encerrado en la última fila; conviene darle aire.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "overloadedAside", group: "warnings",
+    applies: (f, c) => {
+      if (f.overloaded) return { text: pick([
+        `${c.lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.`,
+        `${c.lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "underDefendedAside", group: "warnings",
+    applies: (f, c) => {
+      if (f.underDefended) return { text: pick([
+        `${c.lead} Ojo: ${art(f.underDefended.piece)} de ${f.underDefended.square} tiene más atacantes que defensores.`,
+        `${c.lead} No te alcanzan los defensores en ${f.underDefended.square}.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "passivePiece", group: "warnings",
+    applies: (f, c) => {
+
+      // Last resort before the wildcard: the piece the player has forgotten. It
+      // isn't about the move that was played, which is exactly why it belongs here —
+      // when there's nothing to say about the move, there's still something worth
+      // saying about the position.
+      if (f.passivePiece) {
+        const pp = f.passivePiece;
+        // This observation is about a DIFFERENT piece than the one that moved, so it
+        // has to announce itself as an aside. Without the c.lead-in it read as a
+        // non-sequitur: you move a knight and the coach talks about your bishop.
+        // Naming the move first is what makes the remark land instead of confuse.
+        const aside = `${cap(art(f.playedPiece))} a ${f.playedTo}.`;
+        if (pp.stillHome) return { text: pick([
+          `${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} sigue sin entrar en juego.`,
+          `${aside} Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
+        ], c.s), namesMaterial: false };
+        if (pp.reason === "entombed") {
+          return { text: pick([
+            `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} está encerrado por tus propias piezas.`,
+            `${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} casi no tiene casillas.`,
+          ], c.s), namesMaterial: false };
+        }
+        return { text: pick([
+          `${aside} Aparte, ${art(pp.piece)} de ${pp.square} está en mal sitio: desde la banda controla muy poco.`,
+          `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} no está haciendo nada ahí; su lugar está más al centro.`,
+        ], c.s), namesMaterial: false };
+      }
+      return null;
+    },
+  },
+  {
+    id: "endgameFallback", group: "fallback",
+    applies: (f, c) => {
+      // Phase modifier: in an endgame the same c.standing means something different to
+      // the player, and naming the phase costs nothing since we already know it.
+      // Four variants, not two. This is the single most repeated sentence in the whole
+      // engine on a real game: "Jugada de final tranquila: quedas en una posición
+      // equilibrada" printed FIVE times in one endgame (plies 47, 61, 63, 71, 73). Long
+      // endgames pile up quiet moves, so this fallback needs more room than any other,
+      // and naming the move at least distinguishes consecutive ones.
+      if (f.isEndgame) return { text: pick(c.soft ? [
+        `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${c.stays} ${c.standing}.`,
+        `${cap(art(f.playedPiece))} a ${f.playedTo} en el final; la posición ${c.shifted ? "queda" : "sigue"} ${c.state}.`,
+      ] : [
+        `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${c.stays} ${c.standing}.`,
+        `Jugada de final tranquila: quedas ${c.standing}.`,
+        // NOT "el final sigue ${c.state}": `c.state` is feminine because it was written to
+        // follow "la posición", so that reads "el final sigue equilibrada". Any new
+        // variant has to pick ONE of the two carriers — `c.standing` after a verb, or
+        // `c.state` after "la posición" — and never graft one onto the other noun.
+        `${cap(art(f.playedPiece))} a ${f.playedTo} en el final, y ${c.stays} ${c.standing}.`,
+        `Maniobra de final con ${art(f.playedPiece)} a ${f.playedTo}; nada cambia de fondo.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+  {
+    id: "fallback", group: "fallback",
+    applies: (f, c) => {
+      return { text: pick(c.soft ? [
+        `${cap(art(f.playedPiece))} a ${f.playedTo}: ${c.stays} ${c.standing}.`,
+        `${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${c.shifted ? "queda" : "sigue"} ${c.state}.`,
+      ] : [
+        `${cap(art(f.playedPiece))} a ${f.playedTo}: ${c.stays} ${c.standing}.`,
+        `Jugada sólida, quedas ${c.standing}.`,
+        `Jugada tranquila. La posición ${c.shifted ? "queda" : "sigue"} ${c.state}.`,
+        `${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${c.shifted ? "queda" : "sigue"} ${c.state}.`,
+      ], c.s), namesMaterial: false };
+      return null;
+    },
+  },
+];
+
+const QUIET_PRIORITY: readonly string[] = [
+  "tactic", "book", "promotion", "castle",
+  "capture", "check", "dustGain", "ownThreat",
+  "looseEnemy", "defendsAttacked", "squareRule", "pawnRunsToPromote",
+  "opposition", "kingActivates", "rookBehindPassed", "connectsRooks",
+  "connectedPassedPair", "connectedPassedOne", "majority", "endgameKind",
+  "backwardPawn", "islands", "attacksBigger", "pawnBreak",
+  "outpost", "knightToCenter", "givesKingLuft", "retreats",
+  "rookToSeventh", "doublesRooks", "rookToOpenFile", "rookToSemiOpen",
+  "fianchetto", "queenOutEarly", "movesPieceTwice", "developsPiece",
+  "toCenter", "createdPassed", "brokeTheirStructure", "isolatedTheirs",
+  "gaveSelfDoubled", "gaveSelfIsolated", "theirKingWorse", "battery",
+  "supportsPawnChain", "dominantTermGain", "trappedAside", "backRankAside",
+  "overloadedAside", "underDefendedAside", "passivePiece", "endgameFallback",
+  "fallback",
+];
+
+// ── Arbitration ──────────────────────────────────────────────────────────────
+//
+// The descriptive tier used to be one first-match-wins chain of ~50 `if`s, which made
+// CODE POSITION the only arbiter of which comment a move gets. That had two costs, both
+// measured rather than suspected:
+//
+//   • Categories placed low almost never spoke. `ownThreat` fired 0 times in 337 moves
+//     while sitting below "Desarrollas el alfil"; `defendsAttacked` fired 1 in 199.
+//   • There was nowhere to READ why one category outranks another, and no way to count
+//     how often a true category was suppressed by a different one. Every reordering was
+//     a manual reaction to a reported bug.
+//
+// So priority becomes DATA (QUIET_PRIORITY below) and an arbiter applies it. Same idea
+// as the authority table in scripts/auditClaims.cjs: the criterion lives in the
+// project, checkable, instead of in the shape of the code.
+//
+// Every rule is evaluated, not just up to the first match — that is what lets
+// scripts/auditFirings.cjs report "applied but lost, and to whom", which is the
+// difference between a detector that is never true and one that is always outranked.
+
+/** What a rule produces when it applies. */
+export interface RuleResult {
+  text: string;
+  namesMaterial: boolean;
+  // Unused by the descriptive tier, declared now so the slotA migration extends this
+  // interface rather than changing it.
+  usedBestMotif?: boolean;
+}
+
+/**
+ * The locals the old chain computed once at the top. Built once per call and handed to
+ * every rule, so `standing` and `state` cannot drift apart between branches — the
+ * doubled-noun seam ("La posición sigue en una posición equilibrada") came from exactly
+ * that kind of drift.
+ */
+export interface QuietCtx {
+  s: number;                        // f.variantSeed, straight into pick()
+  soft: boolean;                    // suppress the fallbacks that APPROVE of the move
+  standing: string;                 // reads after a verb: "quedas …"
+  state: string;                    // adjectival, reads after "la posición …"
+  shifted: boolean;
+  stays: "quedas" | "sigues";
+  lead: string;                     // "El caballo a f3." — prefix for position asides
+}
+
+export interface CoachRule<C = QuietCtx> {
+  /** Unique within its registry, and the category key the catalogue is generated from. */
+  id: string;
+  group: string;
+  /** The guard is the first statement. Returns null when the rule has nothing to say. */
+  applies(f: MoveFacts, ctx: C): RuleResult | null;
+}
+
+export interface RuleCandidate { id: string; group: string; result: RuleResult }
+export interface ArbiterTrace { winnerId: string; candidates: RuleCandidate[] }
+
+/**
+ * Orderings that are SEMANTIC rather than stylistic: each was learned from a real
+ * defect, and a reorder that breaks one reintroduces that defect. Checked by
+ * validatePriority() so the reason survives the next reshuffle — comments have already
+ * failed to protect these once.
+ */
+const QUIET_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
+  ["tactic", "book", "84/84 plies with a tactic were being called theory"],
+  ["ownThreat", "looseEnemy", "the null-move search outranks the heuristic on the same question"],
+  ["capture", "defendsAttacked", "the capture is the headline, the cover is the footnote"],
+  ["doublesRooks", "battery", "battery also matches rook-behind-rook: 'la torre con la torre'"],
+  ["doublesRooks", "rookToOpenFile", "the doubling is the right name for that shape"],
+  ["rookToSeventh", "rookToOpenFile", "specific beats generic about the same rook"],
+  ["passivePiece", "endgameFallback", "an observation beats a shrug"],
+  ["endgameFallback", "fallback", "phase-aware beats generic"],
+];
+
+/** Throws on a priority table that is not a bijection over its registry, or that
+ *  violates a declared constraint. Called by the audit scripts and at module load in
+ *  development, so a bad table cannot ship quietly. */
+export function validatePriority(
+  rules: ReadonlyArray<CoachRule<unknown>>,
+  priority: readonly string[],
+  constraints: ReadonlyArray<readonly [string, string, string]>,
+  label: string,
+): string[] {
+  const problems: string[] = [];
+  const ids = new Set(rules.map((r) => r.id));
+  if (ids.size !== rules.length) problems.push(`${label}: hay ids de regla duplicados`);
+  const rank = new Map<string, number>();
+  priority.forEach((id, i) => {
+    if (rank.has(id)) problems.push(`${label}: "${id}" aparece dos veces en la tabla`);
+    rank.set(id, i);
+  });
+  for (const id of ids) if (!rank.has(id)) problems.push(`${label}: la regla "${id}" no está en la tabla`);
+  for (const id of rank.keys()) if (!ids.has(id)) problems.push(`${label}: la tabla nombra "${id}", que no existe`);
+  for (const [before, after, why] of constraints) {
+    const a = rank.get(before), b = rank.get(after);
+    if (a == null || b == null) { problems.push(`${label}: restricción sobre id inexistente ${before}>${after}`); continue; }
+    if (a >= b) problems.push(`${label}: "${before}" debe ir antes de "${after}" — ${why}`);
+  }
+  return problems;
+}
+
+function runRules<C>(
+  rules: ReadonlyArray<CoachRule<C>>,
+  rank: Map<string, number>,
+  f: MoveFacts,
+  ctx: C,
+  trace?: ArbiterTrace[],
+): RuleResult {
+  const candidates: RuleCandidate[] = [];
+  for (const rule of rules) {
+    let result: RuleResult | null = null;
+    try {
+      result = rule.applies(f, ctx);
+    } catch {
+      // In the old chain, code below the winning branch never ran at all. Evaluating
+      // every rule exposes each one to every position, so a malformed fact must cost
+      // its own rule and nothing else — the same principle the fact builders already
+      // follow: a bad FEN never costs the move its comment.
+      result = null;
+    }
+    if (result) candidates.push({ id: rule.id, group: rule.group, result });
+  }
+  candidates.sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9));
+  if (candidates.length === 0) {
+    // Unreachable: the `fallback` rule is unconditional. Loud rather than silent,
+    // because a move with no comment at all is worse than any comment.
+    throw new Error("ninguna regla aplicó — la regla `fallback` dejó de ser incondicional");
+  }
+  if (trace) trace.push({ winnerId: candidates[0].id, candidates });
+  return candidates[0].result;
+}
+
+const QUIET_RANK = new Map(QUIET_PRIORITY.map((id, i) => [id, i]));
+
+// Checked at module load outside production. A priority table that has drifted from its
+// registry — a rule renamed, a rule added and forgotten, a constraint broken by a
+// reshuffle — is exactly the kind of defect that produces a silently missing category,
+// which is what this whole refactor exists to make impossible.
+if (process.env.NODE_ENV !== "production") {
+  const problems = validatePriority(QUIET_RULES, QUIET_PRIORITY, QUIET_CONSTRAINTS, "QUIET_RULES");
+  if (problems.length) throw new Error("tabla de prioridad inválida:\n  " + problems.join("\n  "));
+}
+
+/** The locals the chain used to compute inline, now built once per call. */
+function quietCtx(f: MoveFacts, soft: boolean): QuietCtx {
   const where = band(f.evalAfter);
   const standing =
     where === "ganando" ? "con ventaja decisiva" : where === "mejor" ? "con ventaja" :
@@ -293,434 +1179,30 @@ function quietComment(f: MoveFacts, soft = false): { text: string; namesMaterial
   // the only way this kind of seam between two independent slots shows up.
   const shifted = band(f.evalBefore) !== where;
   const stays = shifted ? "quedas" : "sigues";
+  return {
+    s: f.variantSeed, soft, standing, state, shifted, stays,
+    lead: `${cap(art(f.playedPiece))} a ${f.playedTo}.`,
+  };
+}
 
-  // ── Tactics, above everything including the opening book ────────────────────
-  // Measured over eight real games: 84 of 84 plies where tacticalMotifs found a
-  // fork, pin, skewer or discovered check got a comment that never mentioned it.
-  // The detector has run since the beginning and only slotA's `if (f.good)` branch
-  // ever read it — and `good` is set only in the engine tier, so every tactic on
-  // the other ~40 moves of a game was detected and thrown away. A real example:
-  // Nxf7 forking, described as "Teoría de la apertura, el caballo a f7".
-  //
-  // Above the book check on purpose: a concrete tactic on the board is worth more
-  // to a club player than being told the move is theory. The capture is folded in
-  // rather than displaced, so nothing that used to be said is lost.
-  const tactic = f.playedMotifs.find((m) => !isHanging(m));
-  if (tactic) {
-    const p = art(f.playedPiece);
-    // Every clause NAMES the tactic and then explains the geometry, in that order.
-    // A coach that says "ensartas dos piezas" to someone who has never met the word
-    // has taught nothing — and worse, the reader can't tell whether the claim is
-    // even true. The explanation is what makes the term learnable and checkable, so
-    // it is not optional decoration.
-    const clause =
-      tactic.key === "fork" ? `haces un doble: ${p} en ${f.playedTo} ataca dos piezas a la vez, y solo puedes salvar una`
-      // detectPinOrSkewer calls it a pin only when the piece BEHIND is the king,
-      // so "no se puede mover" is literal here: moving it would be illegal.
-      // "el rey rival", not "su rey": with two kings on the board a possessive
-      // leaves the reader working out whose king is behind the pinned piece.
-      : tactic.key === "pin" ? `clavas una pieza: ${p} en ${f.playedTo} la deja inmóvil, porque detrás está el rey rival`
-      // And a skewer only when the piece behind is worth LESS than the one in
-      // front — that ordering is the whole idea, so the sentence says it.
-      : tactic.key === "skewer" ? `haces una enfilada: ${p} en ${f.playedTo} ataca dos piezas en la misma línea, y al mover la de delante cae la de atrás`
-      // This motif only fires when the position IS in check and the check does NOT
-      // come from the piece that moved, so "jaque a la descubierta" is exact.
-      : `das jaque a la descubierta: al mover ${p}, el jaque lo da la pieza que estaba detrás`;
-    return {
-      text: f.capturedPiece
-        ? `Capturas ${art(f.capturedPiece)} en ${f.playedTo} y ${clause}.`
-        : `${cap(clause)}.`,
-      namesMaterial: f.capturedPiece != null,
-    };
-  }
+// Descriptive tier for moves the engine did NOT flag as errors. Needs no engine
+// search — just the move's own shape plus the shallow eval — which is why every
+// move can afford a comment now. Book moves get chess.com's "jugada de libro"
+// treatment instead of a fourth repeat of "sacas la pieza y ganas actividad".
+// `soft` is set when this is reached from the ERROR chain rather than because the
+// move was fine — a light inaccuracy the engine tier never looked at. Everything
+// here still applies (the board is the board), except the fallbacks that APPROVE
+// of the move: "Jugada sólida" would contradict the imprecisión badge next to it.
+function quietComment(f: MoveFacts, soft = false): RuleResult {
+  return runRules(QUIET_RULES, QUIET_RANK, f, quietCtx(f, soft));
+}
 
-  if (f.isBook) {
-    // Said once per game, on the move where theory runs out — not on all
-    // fourteen book moves, which would be noise.
-    if (f.isLastBookMove) {
-      const named = f.openingName ? ` Vienes de la ${f.openingName}.` : "";
-      return { text: pick([
-        `Última jugada de teoría.${named} A partir de aquí decides tú.`,
-        `Aquí se acaba el libro.${named} Lo que siga ya es tu propio plan.`,
-      ], s), namesMaterial: false };
-    }
-    if (f.isCastle) return { text: `Jugada de libro: enrocas y pones el rey a salvo.`, namesMaterial: false };
-    if (f.developsPiece) return { text: pick([
-      `Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.`,
-      `Teoría: ${art(f.playedPiece)} va a ${f.playedTo} para entrar en juego.`,
-      `Desarrollo de libro. ${cap(art(f.playedPiece))} a ${f.playedTo} es la jugada principal aquí.`,
-      `Sigues la teoría: ${art(f.playedPiece)} a ${f.playedTo}.`,
-    ], s), namesMaterial: false };
-    if (f.toCenter) return { text: pick([
-      `Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`,
-      `Teoría. ${cap(art(f.playedPiece))} a ${f.playedTo} reclama su parte del centro.`,
-      `De libro: plantas ${art(f.playedPiece)} en ${f.playedTo}, en plena disputa del centro.`,
-    ], s), namesMaterial: false };
-    return { text: pick([
-      `Jugada de libro: ${art(f.playedPiece)} a ${f.playedTo} sigue la teoría.`,
-      `Teoría de la apertura, ${art(f.playedPiece)} a ${f.playedTo}.`,
-    ], s), namesMaterial: false };
-  }
-
-  if (f.isPromotion) return { text: `Coronas en ${f.playedTo} y quedas ${standing}.`, namesMaterial: true };
-  if (f.isCastle) return { text: pick([`Enrocas y pones el rey a salvo.`, `Enrocas: el rey queda protegido y la torre entra en juego.`], s), namesMaterial: false };
-  if (f.capturedPiece) {
-    const cp = art(f.capturedPiece);
-    // A recapture is a different event from a capture: nothing new is won, the
-    // balance is restored. Saying "el caballo cae gratis" about a recapture is
-    // simply false — that piece was paid for on the previous move.
-    //
-    // No longer gated on the trade verdict. SEE looks at the square AFTER the
-    // recapture and often reports "gana", because by then nothing can take back;
-    // that made a routine retake read as winning a free piece (seen on cxd4
-    // completing an even knight trade). Being a recapture outranks what SEE says
-    // about the square.
-    // Names WHAT was retaken. "Recuperas la pieza en f4" was appearing on Qxf4 and
-    // Qxf8+ — the queen coming off is the most consequential event on the board and
-    // it was being called "la pieza", which is also wrong for a pawn, since a pawn
-    // is not a pieza in Spanish chess usage.
-    if (f.isRecapture) return { text: pick([
-      `Recuperas ${cp} en ${f.playedTo}: el cambio queda saldado.`,
-      `Retomas en ${f.playedTo} y el material vuelve a estar igual.`,
-    ], s), namesMaterial: true };
-    if (f.tradeVerdict === "gana") return { text: pick([
-      `Capturas ${cp} en ${f.playedTo} y ganas material.`,
-      // No clitic pronoun here: "…recuperarlo" disagreed with feminine pieces
-      // ("la dama … recuperarlo").
-      `Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.`,
-      `${cap(cp)} de ${f.playedTo} cae gratis: el rival no lo recupera.`,
-      `Ganas material en ${f.playedTo}: la captura sale a tu favor.`,
-    ], s), namesMaterial: true };
-    if (f.tradeVerdict === "pareja") return { text: pick([
-      `Cambias ${cp} en ${f.playedTo}: un cambio parejo.`,
-      // `standing` can itself be "en una posición equilibrada", which read as
-      // "Cambio equilibrado … posición equilibrada".
-      `Cambio parejo en ${f.playedTo}.`,
-      `Te llevas ${cp} y el rival recupera: quedan iguales.`,
-      `Cambio de piezas en ${f.playedTo}, sin ventaja para ninguno.`,
-    ], s), namesMaterial: true };
-    return { text: pick([
-      `Capturas ${cp} en ${f.playedTo}.`,
-      `Te llevas ${cp} y quedas ${standing}.`,
-    ], s), namesMaterial: true };
-  }
-  if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${standing}.`, namesMaterial: false };
-
-  // The positive side of the same reading: the tactics on the board are going
-  // to win material even though this move didn't capture anything.
-  if ((f.dustMaterial ?? 0) >= 3) return { text: pick([
-    `Los cambios que vienen te dejan material de más.`,
-    `Cuando se resuelvan las capturas, sales ganando material.`,
-  ], s), namesMaterial: true };
-
-  // A threat the opponent must answer outranks any description of the move: it
-  // was landing below "Desarrollas el alfil a d3" and so never appeared once in
-  // six games, even though it's the most useful thing the coach can say about a
-  // quiet move.
-  if (f.ownThreat) {
-    const ot = f.ownThreat;
-    if (ot.kind === "mate") return { text: `Amenazas mate en ${ot.square}: el rival está obligado a defenderse.`, namesMaterial: false };
-    return { text: pick([
-      `Ahora amenazas ${art(ot.piece)} de ${ot.square}.`,
-      `La jugada arma una amenaza: ${art(ot.piece)} de ${ot.square} está en el aire.`,
-      `Con esto pones ${art(ot.piece)} de ${ot.square} en el punto de mira.`,
-    ], s), namesMaterial: false };
-  }
-
-  // A loose enemy piece your move now attacks. Ranked BELOW ownThreat on purpose:
-  // ownThreat asks the same question with a null-move search and a gain filter, so
-  // when both are true the rigorous one should speak. This catches the rest.
-  {
-    const loose = f.playedMotifs.find((m) => m.key === "hanging");
-    if (loose?.piece && loose.square) {
-      return { text: pick([
-        `${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.`,
-        `Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.`,
-      ], s), namesMaterial: true };
-    }
-  }
-
-  // Defending a piece that was genuinely hanging is the POINT of the move, so it
-  // sits up here with the threats rather than below the shape-describing branches.
-  // Placed lower first, it fired once in 199 moves — "repliegas el alfil" and
-  // "torre a la columna abierta" kept winning, which describe how the move looks
-  // instead of what it achieved. Same priority mistake ownThreat had.
-  //
-  // Measured afterwards, and worth recording: over a real 42-move game the
-  // DETECTOR is true exactly twice, and both times the move is also a capture, so
-  // the capture branch above still wins and this doesn't render. That is correct —
-  // "Ganas el peón" is the headline and "also covered the knight" is a footnote.
-  // Do not promote this above captures because it appears never to fire; it is
-  // waiting for a genuinely defensive non-capturing move, which is its whole point.
-  if (f.defendsAttacked) {
-    const d = f.defendsAttacked;
-    return { text: pick([
-      `Defiendes ${art(d.piece)} de ${d.square}, que estaba atacado.`,
-      `Cubres ${art(d.piece)} de ${d.square} justo a tiempo.`,
-    ], s), namesMaterial: true };
-  }
-
-  // ── Endgame ────────────────────────────────────────────────────────────────
-  // The square rule outranks every other endgame remark because it's the only
-  // one with a provable answer: the pawn either gets through or it doesn't.
-  if (f.squareRule) {
-    const sr = f.squareRule;
-    if (sr.promotes) return { text: pick([
-      `El rey rival ya no entra en el cuadrado: el peón de ${sr.pawnSquare} corona solo.`,
-      `Cuenta el cuadrado: el peón de ${sr.pawnSquare} llega antes que el rey rival.`,
-    ], s), namesMaterial: false };
-    return { text: pick([
-      `El rey rival está dentro del cuadrado y detiene el peón de ${sr.pawnSquare}: hace falta acercar tu rey.`,
-      `Así el peón de ${sr.pawnSquare} no corona solo; el rey rival llega. Tienes que apoyarlo con el tuyo.`,
-    ], s), namesMaterial: false };
-  }
-  if (f.pawnRunsToPromote) return { text: pick([
-    `El peón pasado avanza a ${f.playedTo}: cada casilla lo acerca a coronar.`,
-    `Empujas el peón pasado hasta ${f.playedTo}. El rival tendrá que gastar una pieza en frenarlo.`,
-  ], s), namesMaterial: false };
-  if (f.opposition) return { text: `Tomas la oposición: el rey rival tiene que ceder terreno.`, namesMaterial: false };
-  if (f.kingActivates) return { text: pick([
-    `En el final el rey es una pieza más, y lo llevas al centro.`,
-    `Activas el rey hacia ${f.playedTo}: en el final es donde más pesa.`,
-  ], s), namesMaterial: false };
-  if (f.rookBehindPassed) return { text: `Torre detrás del peón pasado, que es su sitio: lo empuja según avanza.`, namesMaterial: false };
-  if (f.connectsRooks) return { text: `Conectas las torres: ya se defienden entre ellas.`, namesMaterial: false };
-  // ── Standing endgame features ───────────────────────────────────────────────
-  // Ordered by how much a club player can DO with them: two connected passed
-  // pawns win on their own, a wing majority is the plan for the next ten moves,
-  // naming the endgame type points at a body of theory, and the structural
-  // defects are what to avoid trading into. All of these used to fall through to
-  // "Jugada de final tranquila".
-  if ((f.connectedPassed?.length ?? 0) >= 2) return { text: pick([
-    `Tienes dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): avanzan apoyándose y son muy difíciles de parar.`,
-    `Peones pasados conectados en ${f.connectedPassed!.slice(0, 2).join(" y ")}. Empújalos juntos: se defienden solos.`,
-  ], s), namesMaterial: false };
-  // A single supported passer, not just two of them: one passed pawn with a pawn
-  // neighbour is already the feature that decides most endgames, and requiring two
-  // left every one of the remaining wildcard plies unexplained.
-  if (f.connectedPassed?.length === 1) return { text: pick([
-    `Tu peón pasado de ${f.connectedPassed[0]} tiene un compañero al lado que lo apoya: eso es lo que lo hace peligroso.`,
-    `El pasado de ${f.connectedPassed[0]} va acompañado. Avanza con los dos, no solo con uno.`,
-  ], s), namesMaterial: false };
-  if (f.majority) return { text: pick([
-    `Tienes mayoría de peones en el flanco de ${f.majority}: ahí está tu peón pasado, empuja por ese lado.`,
-    `Mayoría en el flanco de ${f.majority}. El plan es crear un pasado con ella.`,
-  ], s), namesMaterial: false };
-  if (f.endgameKind) return { text: pick([
-    `Estamos en un ${f.endgameKind}. ${cap(art(f.playedPiece))} a ${f.playedTo}.`,
-    `${cap(art(f.playedPiece))} a ${f.playedTo}, en un ${f.endgameKind}.`,
-  ], s), namesMaterial: false };
-  if (f.backwardPawn) return { text: `El peón de ${f.backwardPawn} está retrasado: no puede avanzar ni recibir apoyo, y en el final eso pesa.`, namesMaterial: false };
-  if (f.islands && f.islands.mine > f.islands.theirs) return { text: `Tienes ${f.islands.mine} islas de peones contra ${f.islands.theirs}: tu estructura está más partida y es más difícil de defender.`, namesMaterial: false };
-  // Attacking something bigger than what you moved wins a tempo — the opponent
-  // has to answer. Ranked high because it's the concrete point of the move.
-  if (f.attacksBigger) return { text: pick([
-    `${cap(art(f.playedPiece))} a ${f.playedTo} ataca ${art(f.attacksBigger)}: el rival tiene que responder.`,
-    `Ganas un tiempo: desde ${f.playedTo} amenazas ${art(f.attacksBigger)}.`,
-  ], s), namesMaterial: false };
-  // A pawn break is how you open the position — nameable, and it was landing
-  // on "Jugada sólida" before.
-  if (f.pawnBreak) return { text: pick([
-    `Ruptura de peones: el peón de ${f.playedTo} golpea la cadena rival.`,
-    `Atacas la estructura del rival con el peón a ${f.playedTo}.`,
-  ], s), namesMaterial: false };
-  // An outpost is the best square a minor can get, and naming it teaches the
-  // idea: it's not just "a good square", it's one no pawn can ever kick.
-  if (f.outpost) return { text: pick([
-    `${cap(art(f.playedPiece))} se instala en ${f.playedTo}: apoyado por tu peón y sin peones rivales que lo echen.`,
-    `Puesto avanzado en ${f.playedTo}. Ningún peón rival puede desalojar ${art(f.playedPiece)} de ahí.`,
-  ], s), namesMaterial: false };
-  if (f.knightToCenter) return { text: pick([
-    `Centralizas el caballo en ${f.playedTo}, desde donde controla más casillas.`,
-    `El caballo en ${f.playedTo} está en su mejor sitio: el centro.`,
-  ], s), namesMaterial: false };
-  // King sidestep that opens an escape square — a real, nameable idea that was
-  // landing on "Jugada sólida" before.
-  if (f.givesKingLuft) return { text: pick([
-    `Le das aire a tu rey: ahora tiene casilla de escape.`,
-    `Mueves el rey a ${f.playedTo} y evitas sustos en la última fila.`,
-  ], s), namesMaterial: false };
-  if (f.retreats) return { text: pick([
-    `Repliegas ${art(f.playedPiece)} a ${f.playedTo} para reagrupar.`,
-    `Retiras ${art(f.playedPiece)} a ${f.playedTo}.`,
-    `${cap(art(f.playedPiece))} vuelve a ${f.playedTo} y espera mejor momento.`,
-  ], s), namesMaterial: false };
-  if (f.rookToSeventh) return { text: pick([
-    `Metes la torre en la séptima: desde ${f.playedTo} muerde los peones y encierra al rey.`,
-    `Torre a la séptima. Es la fila donde más daño hace.`,
-  ], s), namesMaterial: false };
-  if (f.doublesRooks) return { text: `Doblas las torres en la columna ${f.playedTo[0]}: juntas pesan mucho más.`, namesMaterial: false };
-  if (f.rookToOpenFile) return { text: pick([
-    `Colocas la torre en la columna ${f.playedTo[0]}, que está abierta.`,
-    `La torre toma la columna abierta ${f.playedTo[0]}.`,
-  ], s), namesMaterial: false };
-  if (f.rookToSemiOpen) return { text: pick([
-    `La torre toma la columna ${f.playedTo[0]}, semiabierta: presiona el peón rival.`,
-    `Torre a la columna ${f.playedTo[0]}, donde no tienes peones que te estorben.`,
-  ], s), namesMaterial: false };
-  if (f.fianchetto) return { text: `Fianchetto: el alfil a ${f.playedTo} apunta a la diagonal larga.`, namesMaterial: false };
-  if (f.queenOutEarly) return { text: `Sacas la dama pronto: cuidado, el rival puede ganar tiempos atacándola.`, namesMaterial: false };
-  if (f.movesPieceTwice) return { text: pick([
-    `Vuelves a mover ${art(f.playedPiece)} en vez de sacar una pieza nueva.`,
-    `${cap(art(f.playedPiece))} se mueve otra vez; quedan piezas por desarrollar.`,
-  ], s), namesMaterial: false };
-  // Four variants, not two: measured over six games, "Sacas … y ganas actividad"
-  // and "Desarrollas …" were the two most repeated sentences in the whole engine
-  // (19 and 15 uses). "Y ganas actividad" is also filler by our own rule — it
-  // asserts something we haven't measured — so it's gone.
-  if (f.developsPiece) return { text: pick([
-    `Desarrollas ${art(f.playedPiece)} a ${f.playedTo}.`,
-    `${cap(art(f.playedPiece))} entra en juego desde ${f.playedTo}.`,
-    `Pones ${art(f.playedPiece)} en ${f.playedTo}, fuera de su casilla inicial.`,
-    `Sumas ${art(f.playedPiece)} al juego: sale a ${f.playedTo}.`,
-  ], s), namesMaterial: false };
-  if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
-  // Structural gains — a passed pawn or a wrecked enemy structure outlives any
-  // tactic on the board and is worth naming even on an ordinary move.
-  if (f.structure?.createdPassed) return { text: pick([
-    `Creas un peón pasado en ${f.structure.createdPassed}: nada lo frena camino a coronar.`,
-    `El peón de ${f.structure.createdPassed} queda pasado, y eso pesa en el final.`,
-  ], s), namesMaterial: false };
-  if (f.structure?.brokeTheirStructure) return { text: `Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.`, namesMaterial: false };
-  if (f.structure?.isolatedTheirs) return { text: `Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`, namesMaterial: false };
-  // Your OWN structural damage. StructureChange has computed these two since it
-  // was written and no template read either — the three gains above were wired up
-  // and the two costs were not, so the coach only ever reported good structural
-  // news. auditCoverage misses it because they're nested inside `structure`.
-  if (f.structure?.gaveSelfDoubled) return { text: pick([
-    `Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: es un defecto permanente, pesa sobre todo en el final.`,
-    `Ojo: peones doblados en ${f.structure.gaveSelfDoubled}. Ya no se arregla.`,
-  ], s), namesMaterial: false };
-  if (f.structure?.gaveSelfIsolated) return { text: pick([
-    `El peón de ${f.structure.gaveSelfIsolated} queda aislado: nadie lo puede defender con otro peón.`,
-    `Dejas aislado tu peón de ${f.structure.gaveSelfIsolated}; tendrás que defenderlo con piezas.`,
-  ], s), namesMaterial: false };
-  if (f.theirKingWorse) return { text: pick([
-    `Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.`,
-    `${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.`,
-  ], s), namesMaterial: false };
-  if (f.battery) {
-    const b = f.battery;
-    // Same guard as the opponent's side: two of the same piece is a doubling, and
-    // naming it as a pairing produces "la torre con la torre detrás".
-    if (b.front === b.back) return { text: `Doblas dos piezas mayores en la misma línea: juntas pesan mucho más.`, namesMaterial: false };
-    return { text: pick([
-      `Formas una batería: ${art(b.front)} con ${art(b.back)} detrás, apuntando a la misma línea.`,
-      `${cap(art(b.front))} se apoya en ${art(b.back)}: dos piezas presionando la misma línea.`,
-    ], s), namesMaterial: false };
-  }
-  if (f.supportsPawnChain) return { text: pick([
-    `Refuerzas la cadena: el peón de ${f.playedTo} sostiene a su compañero.`,
-    `El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.`,
-    `Cadena de peones: ${f.playedTo} respalda al peón de delante.`,
-  ], s), namesMaterial: false };
-  // Last stop before the wildcard: name whichever part of the position the move
-  // actually improved. "Jugada sólida" says nothing; "ganas movilidad" is true,
-  // measured, and teaches the player what the move was for.
-  const dq = f.dominantTerm;
-  if (dq && dq.delta > 0) {
-    if (dq.term === "mobility") return { text: pick([
-      `Ganas movilidad: tus piezas cubren más casillas desde aquí.`,
-      `${cap(art(f.playedPiece))} a ${f.playedTo} le da aire a tus piezas.`,
-    ], s), namesMaterial: false };
-    if (dq.term === "space") return { text: pick([
-      `Ganas espacio en el campo rival.`,
-      `Avanzas tu frente y le quitas terreno al rival.`,
-    ], s), namesMaterial: false };
-    if (dq.term === "development") return { text: `Sumas una pieza al juego: vas por delante en desarrollo.`, namesMaterial: false };
-    // kingSafety is one of the five terms dominantChange can return, and it was
-    // the only improving one with no branch here — so a move whose main effect was
-    // covering the king fell to the wildcard. Live on 3 of 44 measured wildcards.
-    if (dq.term === "kingSafety") return { text: pick([
-      `Tu rey queda mejor cubierto tras esta jugada.`,
-      `Mejoras la seguridad de tu rey: menos líneas abiertas hacia él.`,
-    ], s), namesMaterial: false };
-  }
-  // ── Warnings the error tier had a monopoly on ───────────────────────────────
-  // These four facts are computed on EVERY move but were read only by slotA, so a
-  // move the engine did NOT flag could leave a rook loose, a defender doing two
-  // jobs, or a back rank ready to collapse, and the coach said nothing about it —
-  // which is exactly the warning a club player most needs. Measured: `overloaded`
-  // was live on one of six wildcard plies in a real game.
-  //
-  // Placed here, below everything the move ACHIEVED and above the generic
-  // fallback, so they never displace a better sentence. Each names the move first
-  // so the remark reads as an aside about the POSITION rather than as a claim that
-  // this move caused it — the move was fine, or it would have been classified as
-  // an error and never reached this function.
-  const lead = `${cap(art(f.playedPiece))} a ${f.playedTo}.`;
-  if (f.trappedPiece) return { text: pick([
-    `${lead} Ojo: ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square} se queda sin casillas seguras.`,
-    `${lead} Cuidado con ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square}: no tiene por dónde salir.`,
-  ], s), namesMaterial: false };
-  if (f.backRankRisk) return { text: pick([
-    `${lead} Ojo a la última fila: tu rey no tiene casilla de escape.`,
-    `${lead} Tu rey sigue encerrado en la última fila; conviene darle aire.`,
-  ], s), namesMaterial: false };
-  if (f.overloaded) return { text: pick([
-    `${lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.`,
-    `${lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.`,
-  ], s), namesMaterial: false };
-  if (f.underDefended) return { text: pick([
-    `${lead} Ojo: ${art(f.underDefended.piece)} de ${f.underDefended.square} tiene más atacantes que defensores.`,
-    `${lead} No te alcanzan los defensores en ${f.underDefended.square}.`,
-  ], s), namesMaterial: false };
-
-  // Last resort before the wildcard: the piece the player has forgotten. It
-  // isn't about the move that was played, which is exactly why it belongs here —
-  // when there's nothing to say about the move, there's still something worth
-  // saying about the position.
-  if (f.passivePiece) {
-    const pp = f.passivePiece;
-    // This observation is about a DIFFERENT piece than the one that moved, so it
-    // has to announce itself as an aside. Without the lead-in it read as a
-    // non-sequitur: you move a knight and the coach talks about your bishop.
-    // Naming the move first is what makes the remark land instead of confuse.
-    const aside = `${cap(art(f.playedPiece))} a ${f.playedTo}.`;
-    if (pp.stillHome) return { text: pick([
-      `${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} sigue sin entrar en juego.`,
-      `${aside} Te falta desarrollar ${art(pp.piece)} de ${pp.square}: ahí no hace nada.`,
-    ], s), namesMaterial: false };
-    if (pp.reason === "entombed") {
-      return { text: pick([
-        `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} está encerrado por tus propias piezas.`,
-        `${aside} Ojo aparte: ${art(pp.piece)} de ${pp.square} casi no tiene casillas.`,
-      ], s), namesMaterial: false };
-    }
-    return { text: pick([
-      `${aside} Aparte, ${art(pp.piece)} de ${pp.square} está en mal sitio: desde la banda controla muy poco.`,
-      `${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} no está haciendo nada ahí; su lugar está más al centro.`,
-    ], s), namesMaterial: false };
-  }
-  // Phase modifier: in an endgame the same standing means something different to
-  // the player, and naming the phase costs nothing since we already know it.
-  // Four variants, not two. This is the single most repeated sentence in the whole
-  // engine on a real game: "Jugada de final tranquila: quedas en una posición
-  // equilibrada" printed FIVE times in one endgame (plies 47, 61, 63, 71, 73). Long
-  // endgames pile up quiet moves, so this fallback needs more room than any other,
-  // and naming the move at least distinguishes consecutive ones.
-  if (f.isEndgame) return { text: pick(soft ? [
-    `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.`,
-    `${cap(art(f.playedPiece))} a ${f.playedTo} en el final; la posición ${shifted ? "queda" : "sigue"} ${state}.`,
-  ] : [
-    `${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.`,
-    `Jugada de final tranquila: quedas ${standing}.`,
-    // NOT "el final sigue ${state}": `state` is feminine because it was written to
-    // follow "la posición", so that reads "el final sigue equilibrada". Any new
-    // variant has to pick ONE of the two carriers — `standing` after a verb, or
-    // `state` after "la posición" — and never graft one onto the other noun.
-    `${cap(art(f.playedPiece))} a ${f.playedTo} en el final, y ${stays} ${standing}.`,
-    `Maniobra de final con ${art(f.playedPiece)} a ${f.playedTo}; nada cambia de fondo.`,
-  ], s), namesMaterial: false };
-  return { text: pick(soft ? [
-    `${cap(art(f.playedPiece))} a ${f.playedTo}: ${stays} ${standing}.`,
-    `${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.`,
-  ] : [
-    `${cap(art(f.playedPiece))} a ${f.playedTo}: ${stays} ${standing}.`,
-    `Jugada sólida, quedas ${standing}.`,
-    `Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.`,
-    `${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.`,
-  ], s), namesMaterial: false };
+/** Same evaluation, plus which rules applied and which one won — the raw material for
+ *  scripts/auditFirings.cjs. Kept beside quietComment so they cannot diverge. */
+export function quietCommentTraced(f: MoveFacts, soft = false): { result: RuleResult; trace: ArbiterTrace } {
+  const trace: ArbiterTrace[] = [];
+  const result = runRules(QUIET_RULES, QUIET_RANK, f, quietCtx(f, soft), trace);
+  return { result, trace: trace[0] };
 }
 
 // ── Slot A — what happened ───────────────────────────────────────────────────

@@ -78,6 +78,39 @@ const NAMES = {
   bestGivesCheck: "La mejor jugada daba jaque",
   bestIsCastle: "La mejor jugada era enrocar",
   bestIsCenterPawn: "La mejor jugada era un peón al centro",
+
+  // ── Rule ids from QUIET_RULES ───────────────────────────────────────────────
+  // The descriptive tier's categories are now DECLARED by each rule's id rather than
+  // inferred from a condition, so these are the names of decision units. Several
+  // deliberately differ from a fact name because one rule folds in several sub-cases:
+  // `capture` covers recapture / winning / even, `book` covers all four theory cases.
+  tactic: "Táctica ejecutada (doble, clavada, enfilada, descubierta)",
+  book: "Jugada de libro (apertura)",
+  promotion: "Coronación",
+  castle: "Enroque",
+  capture: "Captura (recaptura / gana / cambio parejo)",
+  check: "Jaque",
+  dustGain: "Los cambios pendientes te dejan material de más",
+  looseEnemy: "Pieza rival suelta que tu jugada ataca",
+  connectedPassedPair: "Dos peones pasados conectados",
+  connectedPassedOne: "Peón pasado con compañero al lado",
+  majority: "Mayoría de peones en un flanco",
+  endgameKind: "Tipo de final (torres, alfiles del mismo color…)",
+  backwardPawn: "Peón retrasado",
+  islands: "Más islas de peones que el rival",
+  createdPassed: "Creas un peón pasado",
+  brokeTheirStructure: "Le dejas peones doblados",
+  isolatedTheirs: "Aíslas un peón rival",
+  gaveSelfDoubled: "Te quedan peones doblados (coste propio)",
+  gaveSelfIsolated: "Dejas un peón propio aislado (coste propio)",
+  battery: "Batería / piezas mayores dobladas",
+  dominantTermGain: "Término de evaluación que mejoró",
+  trappedAside: "Aviso: pieza propia sin casillas seguras",
+  backRankAside: "Aviso: riesgo en la última fila",
+  overloadedAside: "Aviso: defensor sobrecargado",
+  underDefendedAside: "Aviso: más atacantes que defensores",
+  endgameFallback: "Genérico de final",
+  fallback: "Genérico (nada más que decir)",
 };
 
 const src = fs.readFileSync(SRC, "utf8");
@@ -85,8 +118,15 @@ const lines = src.split(/\r?\n/);
 
 // Which function we're inside tells us the tier, which is what the reader needs
 // to know: an error-tier line only ever appears on a bad move.
+// The descriptive tier is a RULE REGISTRY now, not a function with an if-chain, so its
+// tier is set by the registry declaration and its categories come from each rule's
+// `id` — declared, not guessed from the shape of a condition. That is strictly better
+// than the regex below: the old detection missed negated guards entirely and attributed
+// a template to whatever fact happened to be mentioned nearest above it.
+const REGISTRY_TIERS = {
+  QUIET_RULES: "Tus jugadas — descriptivo",
+};
 const TIERS = {
-  quietComment: "Tus jugadas — descriptivo",
   slotA: "Tus jugadas — ranura A: qué pasó",
   slotB: "Tus jugadas — ranura B: cómo cambió la partida",
   slotC: "Tus jugadas — ranura C: qué era mejor",
@@ -95,6 +135,9 @@ const TIERS = {
   // "(auxiliar)", which described the file's structure incorrectly.
   opponentQuietComment: "Jugadas del rival — descriptivo",
   opponentSlip: "Jugadas del rival — su fallo",
+  // Not a tier the reader cares about, but it must be recognised so its templates stop
+  // being attributed to whatever ran before it.
+  quietComment: "Tus jugadas — descriptivo",
   opportunityClause: "Jugadas del rival — tu oportunidad",
   opportunityOutcome: "Tus jugadas — ¿aprovechaste la oportunidad?",
 };
@@ -102,18 +145,31 @@ const TIERS = {
 const rows = [];
 let tier = "";
 let category = "";
+let inRegistry = false;
 
 for (const raw of lines) {
   const line = raw.trim();
 
+  // Entering a rule registry: its tier holds until the next function declaration.
+  const reg = line.match(/^const (QUIET_RULES)\b/);
+  if (reg) { tier = REGISTRY_TIERS[reg[1]]; category = ""; inRegistry = true; continue; }
+
   const fn = line.match(
     /^function (quietComment|slotA|slotB|slotC|opponentQuietComment|opponentSlip|opportunityClause|opportunityOutcome)\b/,
   );
-  if (fn) { tier = TIERS[fn[1]]; category = ""; continue; }
+  if (fn) { tier = TIERS[fn[1]]; category = ""; inRegistry = false; continue; }
 
-  // `if (f.foo)` / `if (f.foo?.bar)` / `const x = f.foo` all mark a new category.
-  const cond = line.match(/^(?:if \(|.*\b(?:const|let) \w+ = )f\.(\w+)/);
-  if (cond) category = cond[1];
+  // Inside a registry the category is DECLARED by the rule's id, so there is nothing
+  // to infer. Outside one, fall back to the old inference for the functions that are
+  // still if-chains.
+  const ruleId = inRegistry && line.match(/^id: "(\w+)"/);
+  if (ruleId) { category = ruleId[1]; continue; }
+
+  if (!inRegistry) {
+    // `if (f.foo)` / `if (f.foo?.bar)` / `const x = f.foo` all mark a new category.
+    const cond = line.match(/^(?:if \(|.*\b(?:const|let) \w+ = )f\.(\w+)/);
+    if (cond) category = cond[1];
+  }
 
   // Comment lines hold EXAMPLES of templates, not templates. That's how "Capturas
   // la torre en d4" and "pierdes el hilo" — both quoted inside explanatory

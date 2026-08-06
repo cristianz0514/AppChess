@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 137
-- **Variantes de texto:** 369
-- **Sin nombre humano todavía:** 29
+- **Categorías:** 143
+- **Variantes de texto:** 375
+- **Sin nombre humano todavía:** 16
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -191,7 +191,7 @@ _Bandera:_ `doublesRooks`
 
 1. El rival dobla las torres en la columna ${to[0]}.
 
-### battery
+### Batería / piezas mayores dobladas
 
 _Bandera:_ `battery`
 
@@ -272,13 +272,13 @@ _Bandera:_ `connectedPassed`
 1. El peón pasado del rival en ${f.connectedPassed[0]} va apoyado por otro peón. Vigílalo.
 2. Cuidado con el pasado del rival en ${f.connectedPassed[0]}: tiene compañero al lado.
 
-### majority
+### Mayoría de peones en un flanco
 
 _Bandera:_ `majority`
 
 1. El rival tiene mayoría de peones en el flanco de ${f.majority}: de ahí le va a salir un pasado.
 
-### endgameKind
+### Tipo de final (torres, alfiles del mismo color…)
 
 _Bandera:_ `endgameKind`
 
@@ -416,96 +416,74 @@ _Bandera:_ `tookOpportunity`
 
 ## Tus jugadas — descriptivo
 
-### variantSeed
+### Táctica ejecutada (doble, clavada, enfilada, descubierta)
 
-_Bandera:_ `variantSeed`
-
-1. en una posición muy difícil
-
-### Táctica que la jugada montó
-
-_Bandera:_ `playedMotifs`
+_Bandera:_ `tactic`
 
 1. haces un doble: ${p} en ${f.playedTo} ataca dos piezas a la vez, y solo puedes salvar una
 2. clavas una pieza: ${p} en ${f.playedTo} la deja inmóvil, porque detrás está el rey rival
 3. haces una enfilada: ${p} en ${f.playedTo} ataca dos piezas en la misma línea, y al mover la de delante cae la de atrás
 4. das jaque a la descubierta: al mover ${p}, el jaque lo da la pieza que estaba detrás
-5. ${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.
-6. Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.
 
-### openingName
+### Jugada de libro (apertura)
 
-_Bandera:_ `openingName`
+_Bandera:_ `book`
 
 1.  Vienes de la ${f.openingName}.
 2. Última jugada de teoría.${named} A partir de aquí decides tú.
 3. Aquí se acaba el libro.${named} Lo que siga ya es tu propio plan.
-
-### Enroque
-
-_Bandera:_ `isCastle`
-
-1. Jugada de libro: enrocas y pones el rey a salvo.
-2. Enrocas y pones el rey a salvo.
-3. Enrocas: el rey queda protegido y la torre entra en juego.
-
-### Desarrolla una pieza
-
-_Bandera:_ `developsPiece`
-
-1. Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.
-2. Teoría: ${art(f.playedPiece)} va a ${f.playedTo} para entrar en juego.
-3. Desarrollo de libro. ${cap(art(f.playedPiece))} a ${f.playedTo} es la jugada principal aquí.
-4. Sigues la teoría: ${art(f.playedPiece)} a ${f.playedTo}.
-5. ${cap(art(f.playedPiece))} entra en juego desde ${f.playedTo}.
-6. Pones ${art(f.playedPiece)} en ${f.playedTo}, fuera de su casilla inicial.
-7. Sumas ${art(f.playedPiece)} al juego: sale a ${f.playedTo}.
-
-### Ocupa el centro
-
-_Bandera:_ `toCenter`
-
-1. Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.
-2. Teoría. ${cap(art(f.playedPiece))} a ${f.playedTo} reclama su parte del centro.
-3. De libro: plantas ${art(f.playedPiece)} en ${f.playedTo}, en plena disputa del centro.
-4. Jugada de libro: ${art(f.playedPiece)} a ${f.playedTo} sigue la teoría.
-5. Teoría de la apertura, ${art(f.playedPiece)} a ${f.playedTo}.
-6. Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.
+4. Jugada de libro: enrocas y pones el rey a salvo.
+5. Jugada de libro: sacas ${art(f.playedPiece)} a ${f.playedTo}, desarrollo normal de la apertura.
+6. Teoría: ${art(f.playedPiece)} va a ${f.playedTo} para entrar en juego.
+7. Desarrollo de libro. ${cap(art(f.playedPiece))} a ${f.playedTo} es la jugada principal aquí.
+8. Sigues la teoría: ${art(f.playedPiece)} a ${f.playedTo}.
+9. Jugada de libro: disputas el centro con ${art(f.playedPiece)} en ${f.playedTo}.
+10. Teoría. ${cap(art(f.playedPiece))} a ${f.playedTo} reclama su parte del centro.
+11. De libro: plantas ${art(f.playedPiece)} en ${f.playedTo}, en plena disputa del centro.
+12. Jugada de libro: ${art(f.playedPiece)} a ${f.playedTo} sigue la teoría.
+13. Teoría de la apertura, ${art(f.playedPiece)} a ${f.playedTo}.
 
 ### Coronación
 
-_Bandera:_ `isPromotion`
+_Bandera:_ `promotion`
 
-1. Coronas en ${f.playedTo} y quedas ${standing}.
+1. Coronas en ${f.playedTo} y quedas ${c.standing}.
 
-### isRecapture
+### Enroque
 
-_Bandera:_ `isRecapture`
+_Bandera:_ `castle`
+
+1. Enrocas y pones el rey a salvo.
+2. Enrocas: el rey queda protegido y la torre entra en juego.
+
+### Captura (recaptura / gana / cambio parejo)
+
+_Bandera:_ `capture`
 
 1. Recuperas ${cp} en ${f.playedTo}: el cambio queda saldado.
 2. Retomas en ${f.playedTo} y el material vuelve a estar igual.
-
-### Veredicto del cambio (gana / parejo / pierde)
-
-_Bandera:_ `tradeVerdict`
-
-1. Capturas ${cp} en ${f.playedTo} y ganas material.
-2. Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.
-3. ${cap(cp)} de ${f.playedTo} cae gratis: el rival no lo recupera.
-4. Ganas material en ${f.playedTo}: la captura sale a tu favor.
-5. Cambias ${cp} en ${f.playedTo}: un cambio parejo.
-6. Cambio parejo en ${f.playedTo}.
-7. Te llevas ${cp} y el rival recupera: quedan iguales.
-8. Cambio de piezas en ${f.playedTo}, sin ventaja para ninguno.
-9. Te llevas ${cp} y quedas ${standing}.
+3. Capturas ${cp} en ${f.playedTo} y ganas material.
+4. Te llevas ${cp} de ${f.playedTo} sin compensación para el rival.
+5. ${cap(cp)} de ${f.playedTo} cae gratis: el rival no lo recupera.
+6. Ganas material en ${f.playedTo}: la captura sale a tu favor.
+7. Cambias ${cp} en ${f.playedTo}: un cambio parejo.
+8. Cambio parejo en ${f.playedTo}.
+9. Te llevas ${cp} y el rival recupera: quedan iguales.
+10. Cambio de piezas en ${f.playedTo}, sin ventaja para ninguno.
+11. Te llevas ${cp} y quedas ${c.standing}.
 
 ### Jaque
 
-_Bandera:_ `gaveCheck`
+_Bandera:_ `check`
 
-1. Das jaque con ${art(f.playedPiece)} y quedas ${standing}.
-2. Los cambios que vienen te dejan material de más.
-3. Cuando se resuelvan las capturas, sales ganando material.
+1. Das jaque con ${art(f.playedPiece)} y quedas ${c.standing}.
+
+### Los cambios pendientes te dejan material de más
+
+_Bandera:_ `dustGain`
+
+1. Los cambios que vienen te dejan material de más.
+2. Cuando se resuelvan las capturas, sales ganando material.
 
 ### Amenaza propia creada (null-move)
 
@@ -515,6 +493,13 @@ _Bandera:_ `ownThreat`
 2. Ahora amenazas ${art(ot.piece)} de ${ot.square}.
 3. La jugada arma una amenaza: ${art(ot.piece)} de ${ot.square} está en el aire.
 4. Con esto pones ${art(ot.piece)} de ${ot.square} en el punto de mira.
+
+### Pieza rival suelta que tu jugada ataca
+
+_Bandera:_ `looseEnemy`
+
+1. ${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.
+2. Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.
 
 ### defendsAttacked
 
@@ -563,37 +548,42 @@ _Bandera:_ `rookBehindPassed`
 _Bandera:_ `connectsRooks`
 
 1. Conectas las torres: ya se defienden entre ellas.
-2. Tienes dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): avanzan apoyándose y son muy difíciles de parar.
-3. Peones pasados conectados en ${f.connectedPassed!.slice(0, 2).join(" y ")}. Empújalos juntos: se defienden solos.
 
-### connectedPassed
+### Dos peones pasados conectados
 
-_Bandera:_ `connectedPassed`
+_Bandera:_ `connectedPassedPair`
+
+1. Tienes dos peones pasados conectados (${f.connectedPassed!.slice(0, 2).join(" y ")}): avanzan apoyándose y son muy difíciles de parar.
+2. Peones pasados conectados en ${f.connectedPassed!.slice(0, 2).join(" y ")}. Empújalos juntos: se defienden solos.
+
+### Peón pasado con compañero al lado
+
+_Bandera:_ `connectedPassedOne`
 
 1. Tu peón pasado de ${f.connectedPassed[0]} tiene un compañero al lado que lo apoya: eso es lo que lo hace peligroso.
 2. El pasado de ${f.connectedPassed[0]} va acompañado. Avanza con los dos, no solo con uno.
 
-### majority
+### Mayoría de peones en un flanco
 
 _Bandera:_ `majority`
 
 1. Tienes mayoría de peones en el flanco de ${f.majority}: ahí está tu peón pasado, empuja por ese lado.
 2. Mayoría en el flanco de ${f.majority}. El plan es crear un pasado con ella.
 
-### endgameKind
+### Tipo de final (torres, alfiles del mismo color…)
 
 _Bandera:_ `endgameKind`
 
 1. Estamos en un ${f.endgameKind}. ${cap(art(f.playedPiece))} a ${f.playedTo}.
 2. ${cap(art(f.playedPiece))} a ${f.playedTo}, en un ${f.endgameKind}.
 
-### backwardPawn
+### Peón retrasado
 
 _Bandera:_ `backwardPawn`
 
 1. El peón de ${f.backwardPawn} está retrasado: no puede avanzar ni recibir apoyo, y en el final eso pesa.
 
-### islands
+### Más islas de peones que el rival
 
 _Bandera:_ `islands`
 
@@ -687,18 +677,52 @@ _Bandera:_ `movesPieceTwice`
 1. Vuelves a mover ${art(f.playedPiece)} en vez de sacar una pieza nueva.
 2. ${cap(art(f.playedPiece))} se mueve otra vez; quedan piezas por desarrollar.
 
-### Estructura de peones
+### Desarrolla una pieza
 
-_Bandera:_ `structure`
+_Bandera:_ `developsPiece`
+
+1. ${cap(art(f.playedPiece))} entra en juego desde ${f.playedTo}.
+2. Pones ${art(f.playedPiece)} en ${f.playedTo}, fuera de su casilla inicial.
+3. Sumas ${art(f.playedPiece)} al juego: sale a ${f.playedTo}.
+
+### Ocupa el centro
+
+_Bandera:_ `toCenter`
+
+1. Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.
+
+### Creas un peón pasado
+
+_Bandera:_ `createdPassed`
 
 1. Creas un peón pasado en ${f.structure.createdPassed}: nada lo frena camino a coronar.
 2. El peón de ${f.structure.createdPassed} queda pasado, y eso pesa en el final.
-3. Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.
-4. Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.
-5. Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: es un defecto permanente, pesa sobre todo en el final.
-6. Ojo: peones doblados en ${f.structure.gaveSelfDoubled}. Ya no se arregla.
-7. El peón de ${f.structure.gaveSelfIsolated} queda aislado: nadie lo puede defender con otro peón.
-8. Dejas aislado tu peón de ${f.structure.gaveSelfIsolated}; tendrás que defenderlo con piezas.
+
+### Le dejas peones doblados
+
+_Bandera:_ `brokeTheirStructure`
+
+1. Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.
+
+### Aíslas un peón rival
+
+_Bandera:_ `isolatedTheirs`
+
+1. Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.
+
+### Te quedan peones doblados (coste propio)
+
+_Bandera:_ `gaveSelfDoubled`
+
+1. Te quedan peones doblados en la columna ${f.structure.gaveSelfDoubled}: es un defecto permanente, pesa sobre todo en el final.
+2. Ojo: peones doblados en ${f.structure.gaveSelfDoubled}. Ya no se arregla.
+
+### Dejas un peón propio aislado (coste propio)
+
+_Bandera:_ `gaveSelfIsolated`
+
+1. El peón de ${f.structure.gaveSelfIsolated} queda aislado: nadie lo puede defender con otro peón.
+2. Dejas aislado tu peón de ${f.structure.gaveSelfIsolated}; tendrás que defenderlo con piezas.
 
 ### Presión sobre el rey rival
 
@@ -707,7 +731,7 @@ _Bandera:_ `theirKingWorse`
 1. Sumas presión sobre el rey rival: ${art(f.playedPiece)} apunta a su posición.
 2. ${cap(art(f.playedPiece))} en ${f.playedTo} aprieta el cerco al rey rival.
 
-### battery
+### Batería / piezas mayores dobladas
 
 _Bandera:_ `battery`
 
@@ -723,9 +747,9 @@ _Bandera:_ `supportsPawnChain`
 2. El peón a ${f.playedTo} apuntala tu estructura y le quita casillas al rival.
 3. Cadena de peones: ${f.playedTo} respalda al peón de delante.
 
-### Término de evaluación que cambió
+### Término de evaluación que mejoró
 
-_Bandera:_ `dominantTerm`
+_Bandera:_ `dominantTermGain`
 
 1. Ganas movilidad: tus piezas cubren más casillas desde aquí.
 2. ${cap(art(f.playedPiece))} a ${f.playedTo} le da aire a tus piezas.
@@ -735,33 +759,33 @@ _Bandera:_ `dominantTerm`
 6. Tu rey queda mejor cubierto tras esta jugada.
 7. Mejoras la seguridad de tu rey: menos líneas abiertas hacia él.
 
-### Pieza propia atrapada
+### Aviso: pieza propia sin casillas seguras
 
-_Bandera:_ `trappedPiece`
+_Bandera:_ `trappedAside`
 
-1. ${lead} Ojo: ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square} se queda sin casillas seguras.
-2. ${lead} Cuidado con ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square}: no tiene por dónde salir.
+1. ${c.lead} Ojo: ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square} se queda sin casillas seguras.
+2. ${c.lead} Cuidado con ${art(f.trappedPiece.piece)} de ${f.trappedPiece.square}: no tiene por dónde salir.
 
-### Riesgo de mate en la última fila
+### Aviso: riesgo en la última fila
 
-_Bandera:_ `backRankRisk`
+_Bandera:_ `backRankAside`
 
-1. ${lead} Ojo a la última fila: tu rey no tiene casilla de escape.
-2. ${lead} Tu rey sigue encerrado en la última fila; conviene darle aire.
+1. ${c.lead} Ojo a la última fila: tu rey no tiene casilla de escape.
+2. ${c.lead} Tu rey sigue encerrado en la última fila; conviene darle aire.
 
-### Defensor sobrecargado
+### Aviso: defensor sobrecargado
 
-_Bandera:_ `overloaded`
+_Bandera:_ `overloadedAside`
 
-1. ${lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.
-2. ${lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.
+1. ${c.lead} Ojo: ${art(f.overloaded.piece)} defiende dos cosas a la vez y no puede con ambas.
+2. ${c.lead} Le pides demasiado a ${art(f.overloaded.piece)}: es el único defensor de dos piezas.
 
-### Más atacantes que defensores
+### Aviso: más atacantes que defensores
 
-_Bandera:_ `underDefended`
+_Bandera:_ `underDefendedAside`
 
-1. ${lead} Ojo: ${art(f.underDefended.piece)} de ${f.underDefended.square} tiene más atacantes que defensores.
-2. ${lead} No te alcanzan los defensores en ${f.underDefended.square}.
+1. ${c.lead} Ojo: ${art(f.underDefended.piece)} de ${f.underDefended.square} tiene más atacantes que defensores.
+2. ${c.lead} No te alcanzan los defensores en ${f.underDefended.square}.
 
 ### Pieza olvidada / pasiva
 
@@ -774,20 +798,32 @@ _Bandera:_ `passivePiece`
 5. ${aside} Aparte, ${art(pp.piece)} de ${pp.square} está en mal sitio: desde la banda controla muy poco.
 6. ${aside} Mientras tanto, ${art(pp.piece)} de ${pp.square} no está haciendo nada ahí; su lugar está más al centro.
 
-### isEndgame
+### Genérico de final
 
-_Bandera:_ `isEndgame`
+_Bandera:_ `endgameFallback`
 
-1. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
-2. ${cap(art(f.playedPiece))} a ${f.playedTo} en el final; la posición ${shifted ? "queda" : "sigue"} ${state}.
-3. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${stays} ${standing}.
-4. Jugada de final tranquila: quedas ${standing}.
-5. ${cap(art(f.playedPiece))} a ${f.playedTo} en el final, y ${stays} ${standing}.
+1. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${c.stays} ${c.standing}.
+2. ${cap(art(f.playedPiece))} a ${f.playedTo} en el final; la posición ${c.shifted ? "queda" : "sigue"} ${c.state}.
+3. ${cap(art(f.playedPiece))} a ${f.playedTo}. En el final ${c.stays} ${c.standing}.
+4. Jugada de final tranquila: quedas ${c.standing}.
+5. ${cap(art(f.playedPiece))} a ${f.playedTo} en el final, y ${c.stays} ${c.standing}.
 6. Maniobra de final con ${art(f.playedPiece)} a ${f.playedTo}; nada cambia de fondo.
-7. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
-8. Jugada sólida, quedas ${standing}.
-9. Jugada tranquila. La posición ${shifted ? "queda" : "sigue"} ${state}.
-10. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${shifted ? "queda" : "sigue"} ${state}.
+
+### Genérico (nada más que decir)
+
+_Bandera:_ `fallback`
+
+1. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${c.shifted ? "queda" : "sigue"} ${c.state}.
+2. Jugada sólida, quedas ${c.standing}.
+3. Jugada tranquila. La posición ${c.shifted ? "queda" : "sigue"} ${c.state}.
+4. ${cap(art(f.playedPiece))} a ${f.playedTo}: la posición ${c.shifted ? "queda" : "sigue"} ${c.state}.
+5. ${label}: hay ids de regla duplicados
+6. ${label}: "${id}" aparece dos veces en la tabla
+7. ${label}: la regla "${id}" no está en la tabla
+8. ${label}: la tabla nombra "${id}", que no existe
+9. ${label}: restricción sobre id inexistente ${before}>${after}
+10. ${label}: "${before}" debe ir antes de "${after}" — ${why}
+11. en una posición muy difícil
 
 ---
 
