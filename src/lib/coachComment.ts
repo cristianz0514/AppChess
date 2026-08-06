@@ -1411,7 +1411,10 @@ function opponentQuietComment(f: MoveFacts): string {
   if (f.isCastle) return `El rival enroca y pone su rey a salvo.`;
   if (f.isBook) {
     return f.isLastBookMove
-      ? "Aquí se acaba la teoría también para el rival."
+      // Not "también": lastBookPly is a SINGLE marker for the whole game, so when
+      // it lands on the rival's ply the player never got their own version — and
+      // "también" asserts that they did. Seen on move 2 of a real game.
+      ? "Hasta aquí llega la teoría en esta partida."
       : `El rival sigue la teoría: ${piece} a ${to}.`;
   }
 

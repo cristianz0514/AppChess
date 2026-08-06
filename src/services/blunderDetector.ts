@@ -247,7 +247,7 @@ function positionalFlags(
   moverWhite: boolean,
   fenAfter: string,
   prevTo: string | null,
-  history: { piece: string; from: string; to: string }[],
+  history: { piece: string; from: string; to: string; captured?: string }[],
   idx: number,
 ): {
   weakensKingShield: boolean; retreats: boolean; knightToRim: boolean; givesKingLuft: boolean;
@@ -381,7 +381,12 @@ function positionalFlags(
     rookToSeventh: h.piece === "r" && toRank === (moverWhite ? 7 : 2),
     doublesRooks,
     fianchetto: h.piece === "b" && [`b${moverWhite ? 2 : 7}`, `g${moverWhite ? 2 : 7}`].includes(h.to),
-    isRecapture: prevTo != null && prevTo === h.to,
+    // A recapture requires the PREVIOUS move to have been a CAPTURE on this same
+    // square. Checking only the square made 1.e4 c5 2.Nf3 Nc6 3.Bc4 e6 4.O-O d5
+    // 5.exd5 read "Recuperas la pieza en d5: el cambio queda saldado" — but Black
+    // had PUSHED that pawn, so exd5 wins it outright and nothing was recovered.
+    // Every pawn advance met by a capture hit this, which is most openings.
+    isRecapture: prevTo != null && prevTo === h.to && history[idx - 1]?.captured != null,
     // Centralising the king is CORRECT in an endgame, so only flag it while
     // there's still real material on the board.
     kingToCenter: h.piece === "k" && heavyPieces >= 6 && ["c", "d", "e", "f"].includes(file)
@@ -544,7 +549,9 @@ function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhite: bool
         return t ? { kind: t.kind, piece: PIECE_ES[t.piece] ?? "pieza", square: t.square } : null;
       })(),
       ownThreat: (() => {
-        const t = ownThreat(fenAfter, me);
+        // fenBefore passed so the threat has to be NEW: otherwise a loose piece
+        // gets re-announced with "ahora" on every move until someone deals with it.
+        const t = ownThreat(fenAfter, me, fenBefore);
         // Only worth mentioning when it's a real prize. Every position has some
         // pawn hanging somewhere; announcing those as threats is noise.
         return t && t.gain >= 3 ? { kind: t.kind, piece: PIECE_ES[t.piece] ?? "pieza", square: t.square } : null;

@@ -70,14 +70,13 @@ export function opponentThreat(fenAfterMyMove: string, me: Color): Threat | null
  * from the other side, and this one does need the null move: it asks what would
  * happen if the player got to move again.
  */
-export function ownThreat(fenAfterMyMove: string, me: Color): Threat | null {
-  const passed = passTurn(fenAfterMyMove);
-  if (!passed) return null;
+/** Best thing `me` can win in a position where `me` is ALREADY to move. */
+function bestWinHere(fen: string, me: Color): Threat | null {
   let board: Chess;
-  try { board = new Chess(passed); } catch { return null; }
+  try { board = new Chess(fen); } catch { return null; }
   if (board.turn() !== me) return null;
 
-  const map = buildAttackMap(passed);
+  const map = buildAttackMap(fen);
   const enemy: Color = me === "w" ? "b" : "w";
   let best: Threat | null = null;
 
@@ -91,6 +90,27 @@ export function ownThreat(fenAfterMyMove: string, me: Color): Threat | null {
     if (!best || gain > best.gain) best = { kind: "material", piece: mv.captured, square: mv.to, gain };
   }
   return best;
+}
+
+export function ownThreat(fenAfterMyMove: string, me: Color, fenBefore?: string): Threat | null {
+  const passed = passTurn(fenAfterMyMove);
+  if (!passed) return null;
+  const after = bestWinHere(passed, me);
+  if (!after) return null;
+
+  // Was this ALREADY available before the move? Without asking, a threat that has
+  // been sitting on the board for several moves gets re-attributed to whatever was
+  // played, and every template here opens with "ahora" — asserting a novelty
+  // nothing checked. Seen in a real game: an undefended bishop on c4 produced
+  // "Ojo, ahora va contra tu alfil de c4" on 6...Be7, a move that does not touch
+  // c4, after the same bishop had already been announced two moves earlier.
+  //
+  // `ignoredThreat` below has always done this comparison; ownThreat simply never
+  // did. No null move is needed on the BEFORE side: it is already `me`'s turn there.
+  if (!fenBefore) return after;
+  const before = bestWinHere(fenBefore, me);
+  if (before && before.square === after.square && before.gain >= after.gain) return null;
+  return after;
 }
 
 /**
