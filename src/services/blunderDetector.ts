@@ -736,7 +736,14 @@ export async function analyzeGame(
   // `capturedVal` is carried alongside the Spanish `captures` name purely so the
   // taken/missed rule below can COMPARE what the opportunity was worth against
   // what the player actually won. The name alone can't be compared.
-  interface Opportunity { san: string; piece: string; to: string; captures: string | null; capturedVal: number; isMate: boolean }
+  // `plan` is the SECOND move of the same line, in the player's voice — the point of
+  // the first one. It costs nothing: the line is already read for this ply, and it was
+  // being read from the player's side already. Measured over 25 real games: 94 comments
+  // handed the player an opportunity and NOT ONE of them said what it was for.
+  interface Opportunity {
+    san: string; piece: string; to: string; captures: string | null;
+    capturedVal: number; isMate: boolean; plan: string | null;
+  }
   const opportunityAt = new Map<number, Opportunity>();
 
   // The player's viewpoint facts for one ply. Shared by both comment tiers so the
@@ -1141,10 +1148,9 @@ export async function analyzeGame(
           // "pierdes el hilo de la posición" into "permites una horquilla".
           const om = detectMotifs(fens[i], oppSans[0]).find((m) => m.key !== "hangs_own" && m.key !== "hanging");
           if (om) allowsMotif = { key: om.key, label: om.label, piece: om.pieceName, square: om.square };
-          // Read the whole punishment line, not just its opening move. The
-          // OPPONENT is the one being described here, so the line is read from
-          // their side — "y después te llevas X" then correctly means the rival
-          // taking from the player.
+          // Read the whole punishment line, not just its opening move. The line always
+          // belongs to whoever did NOT just move, so `punish` is read from the
+          // responder's side — and who the responder IS decides the voice below.
           const oppColor: "w" | "b" = playerColor === "w" ? "b" : "w";
           const punish = readLine(fens[i], oppSans, oppColor);
 
@@ -1163,13 +1169,20 @@ export async function analyzeGame(
                   captures: mv.captured ? (PIECE_ES[mv.captured] ?? null) : null,
                   capturedVal: mv.captured ? (PIECE_VAL[mv.captured] ?? 0) : 0,
                   isMate: mv.san.includes("#"),
+                  // `punish` is already read from the player's side on these plies, so
+                  // the player's voice is the correct one and the clause is free.
+                  plan: followUpClause(punish, "player"),
                 });
               }
             } catch { /* an unreplayable line simply yields no opportunity */ }
           }
-          // "opponent" voice: this line is the RIVAL's, so the clause must say
-          // "se lleva", not "te llevas".
-          punishFollowUp = followUpClause(punish, "opponent");
+          // Voice follows the responder, not a constant. On the PLAYER's plies the
+          // responder is the rival, so "se lleva" is right — that is what this field
+          // has always been read for. On the OPPONENT's plies the responder is the
+          // player, and the clause was still being built as "se lleva": nothing read it
+          // there, so it was latent rather than visible, but the opportunity's `plan`
+          // above is exactly that read, so the field had to stop lying first.
+          punishFollowUp = followUpClause(punish, isOpponentPly(i) ? "player" : "opponent");
           punishFocusSquare = punish.focusSquare;
         }
       } catch { /* ignore */ }

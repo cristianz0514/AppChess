@@ -37,6 +37,10 @@ export interface LinePlan {
   focusSquare: string | null;
   /** The advised side's SECOND move in the line — the point of the first one. */
   followUp: LineStep | null;
+  /** True when `followUp` is the THIRD move because the second was just a recapture.
+   *  The wording has to change with it: "y después te llevas X" claims the very next
+   *  move, and by then a whole exchange has happened. */
+  followUpIsThird: boolean;
   /** The biggest thing the advised side wins in the line. */
   wins: { piece: string; square: string } | null;
   /** The biggest thing the advised side loses in the line. */
@@ -55,7 +59,7 @@ const VAL: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
  */
 export function readLine(fromFen: string, sans: string[], moverColor: "w" | "b"): LinePlan {
   const empty: LinePlan = {
-    steps: [], forced: false, focusSquare: null, followUp: null,
+    steps: [], forced: false, focusSquare: null, followUp: null, followUpIsThird: false,
     wins: null, loses: null, promotes: false, mateFor: null,
   };
   if (sans.length === 0) return empty;
@@ -109,13 +113,30 @@ export function readLine(fromFen: string, sans: string[], moverColor: "w" | "b")
   let focusSquare: string | null = null;
   for (const [sq, n] of capturesPerSquare) if (n >= 2) focusSquare = sq;
 
-  // The advised side's second move: the first one's actual purpose. Skipped when
-  // it's a recapture, which explains nothing ("take, they take, you take back").
+  // The advised side's second move: the first one's actual purpose. A recapture is
+  // skipped, because "take, they take, you take back" explains nothing — but skipping it
+  // used to ANNUL the clause, and that turns out to be one of the two reasons the coach
+  // names a move without saying what it is for. Measured over 25 real games: 151
+  // comments recommended a move and 3 said why. A line that opens with a capture is
+  // most of the interesting ones, and those are exactly the lines whose second move is
+  // the recapture. So when the second move is a retake, the point is one move further
+  // down: look at the THIRD instead of giving up.
+  //
+  // It stops at the third, deliberately. Past that the line is the engine's rather than
+  // the opponent's — a 1050 will not follow the PV to ply 8, so claiming it would be
+  // claiming something the game is not going to back. Same discipline as `settled`.
   const mine = steps.filter((s) => s.byMover);
-  const second = mine[1] ?? null;
-  const followUp = second && !(second.captured && second.to === mine[0]?.to) ? second : null;
+  const isRetake = (k: number) => !!(mine[k].captured && mine[k].to === mine[k - 1]?.to);
+  let followUp: LineStep | null = null;
+  let followUpIsThird = false;
+  for (let k = 1; k <= 2 && k < mine.length; k++) {
+    if (isRetake(k)) continue;
+    followUp = mine[k];
+    followUpIsThird = k === 2;
+    break;
+  }
 
-  return { steps, forced, focusSquare, followUp, wins, loses, promotes, mateFor };
+  return { steps, forced, focusSquare, followUp, followUpIsThird, wins, loses, promotes, mateFor };
 }
 
 /**
@@ -131,18 +152,24 @@ export function followUpClause(plan: LinePlan, voice: "player" | "opponent" = "p
   const f = plan.followUp;
   if (!f) return null;
   const mine = voice === "player";
-  if (f.isMate) return mine ? `y remata con ${art(f.piece)} en ${f.to}` : `y remata con ${art(f.piece)} en ${f.to}`;
-  if (f.captured) {
-    return mine
-      ? `y después te llevas ${art(f.captured)} de ${f.to}`
-      : `y luego se lleva ${art(f.captured)} de ${f.to}`;
-  }
+  // "después" claims the very NEXT move. When the follow-up is the third — because the
+  // second was the recapture — a whole exchange has happened first, so the connector has
+  // to admit it. Getting this wrong would make the clause a false claim about WHEN,
+  // which is the same class of error as getting the voice backwards.
+  const then = plan.followUpIsThird
+    ? (mine ? "y acabas llevándote" : "y acaba llevándose")
+    : (mine ? "y después te llevas" : "y luego se lleva");
+  if (f.isMate) return `y remata con ${art(f.piece)} en ${f.to}`;
+  if (f.captured) return `${then} ${art(f.captured)} de ${f.to}`;
   if (f.isCheck) {
     return mine
       ? `y sigues con jaque de ${art(f.piece)} en ${f.to}`
       : `y sigue con jaque de ${art(f.piece)} en ${f.to}`;
   }
-  return mine ? `y después ${art(f.piece)} a ${f.to}` : `y luego ${art(f.piece)} a ${f.to}`;
+  const move = plan.followUpIsThird
+    ? (mine ? "y acabas jugando" : "y acaba jugando")
+    : (mine ? "y después" : "y luego");
+  return `${move} ${art(f.piece)} a ${f.to}`;
 }
 
 const ART: Record<string, string> = {

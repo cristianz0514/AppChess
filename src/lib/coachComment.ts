@@ -179,7 +179,10 @@ export interface MoveFacts {
   // her out too early".
   battery?: { front: string; back: string } | null;
   // What the player can do about the opponent's mistake, read off that line.
-  opportunity?: { piece: string; to: string; captures: string | null; isMate: boolean } | null;
+  // `plan` is the second move of the same line, in the player's voice: the POINT of the
+  // move being handed to them. Without it this clause named a move and stopped, which is
+  // where 94 of the 151 recommendations in 25 real games sat.
+  opportunity?: { piece: string; to: string; captures: string | null; isMate: boolean; plan?: string | null } | null;
   // Set on the PLAYER's move, about the opportunity the PREVIOUS ply created:
   // true if this move took it, false if it was there and went unplayed. Null when
   // there was no opportunity to speak of — so "missed" is never implied by silence.
@@ -274,6 +277,25 @@ const MATE_MAG = 90; // |eval| at/above this means mate, not a pawn count
 const MATE_SCORE = 10000; // must equal engineApi.ts MATE_SCORE
 const mateInMoves = (e: number) => Math.max(1, MATE_SCORE - Math.round(Math.abs(e)));
 
+// How far a mate has to be before the DISTANCE stops being worth claiming.
+//
+// A `mate N` score is an upper bound, not the shortest mate: a fixed-depth search reports
+// the mate it happened to find. Over one real endgame the sweep said 9, then 7, then 9
+// again on consecutive plies — each honest, together unreadable. A mate within 4 moves
+// sits well inside a depth-16 search, so there the bound IS the answer.
+//
+// One constant, not four literals. The first pass wrote `4` inline in three rules and
+// left the fourth (`oppMateAgainst`) with no limit at all, so a mate in 5 was still being
+// announced as "mate forzado en 5 jugadas" — the exact over-claim the limit exists to
+// stop. It was caught by reading the printed output of the synthetic fixtures, which is
+// what `node scripts/genSynthetic.cjs --show` is for.
+const MATE_DIST_RELIABLE = 4;
+/** " en 3 jugadas", or "" when the count is not worth asserting. */
+const mateDistance = (e: number) => {
+  const n = mateInMoves(e);
+  return n <= MATE_DIST_RELIABLE ? ` en ${n} ${n === 1 ? "jugada" : "jugadas"}` : "";
+};
+
 type Band = "mateado" | "perdida" | "peor" | "igualada" | "mejor" | "ganando" | "mate";
 function band(e: number): Band {
   // Mate is checked FIRST and is its own band, not the top of the pawn scale. Measured
@@ -322,15 +344,9 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
       // about the same fact. Caught by the A/B diff, which showed this rule displacing
       // two square-naming sentences with a vaguer one.
       if (f.ownThreat?.kind === "mate") return null;
-      // The DISTANCE is only claimed when the search can be trusted about it. A `mate N`
-      // score is an upper bound, not the shortest mate: a fixed-depth search reports the
-      // mate it happened to find. Over one real endgame the sweep reported 9, then 7,
-      // then 9 again on consecutive plies — each honest, together unreadable. A mate
-      // within 4 moves sits well inside a depth-16 search, so there the bound is the
-      // answer; past that the count is noise and only the verdict survives.
-      const RELIABLE = 4;
-      const n = mateInMoves(f.evalAfter);
-      const jug = n === 1 ? "jugada" : "jugadas";
+      // The distance is only claimed when the search can be trusted about it — see
+      // MATE_DIST_RELIABLE. Past that the count is noise and only the verdict survives.
+      const dist = mateDistance(f.evalAfter);
       // Both lists named before the return, rather than two inline pick() calls, so every
       // template sits within reading distance of the fact that authorises it — which is
       // literally how scripts/auditClaims.cjs approximates scope. THREE long variants,
@@ -338,8 +354,8 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
       // with two the text visibly alternated down the move list. That same repetition is
       // what got the `islands` promotion rejected last time.
       const SHORT = [
-        `Tienes mate forzado en ${n} ${jug}. Remátalo: ya no hace falta ganar material.`,
-        `Mate forzado en ${n} ${jug} a tu favor. Ve al mate, no a las capturas.`,
+        `Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.`,
+        `Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.`,
       ];
       const LONG = [
         `Tienes mate forzado: la partida está sentenciada. Busca el mate, no el material.`,
@@ -349,7 +365,9 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
       // namesMaterial suppresses slot B, which would add "sigues ganando" underneath a
       // mate. Slot B already bails out above MATE_MAG, so this is belt and braces — but
       // the flag is what the composer reads, and a mate is the strongest claim there is.
-      return { text: pick(n <= RELIABLE ? SHORT : LONG, c.s), namesMaterial: true };
+      // `dist` is empty exactly when the count was not worth asserting, which is also
+      // when the SHORT wording ("Remátalo") stops fitting — one condition, not two.
+      return { text: pick(dist ? SHORT : LONG, c.s), namesMaterial: true };
     },
   },
   {
@@ -362,17 +380,11 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
       // Same deference as mateNet: `ignoredThreat` naming the square the rival mates on
       // is more actionable than how many moves away it is.
       if (f.ignoredThreat?.kind === "mate") return null;
-      const n = mateInMoves(f.evalAfter);
-      const jug = n === 1 ? "jugada" : "jugadas";
-      return { text: n <= 4
-        ? pick([
-            `Ojo: el rival tiene mate forzado en ${n} ${jug}. Busca jaques o cambiar damas; el material ya no cuenta.`,
-            `Cuidado, hay mate forzado contra ti en ${n} ${jug}. Lo único que sirve ahora es dar jaque o tapar.`,
-          ], c.s)
-        : pick([
-            `Ojo: el rival tiene mate forzado. Busca jaques o cambiar damas; el material ya no cuenta.`,
-            `Cuidado, hay mate forzado contra ti. Lo único que sirve ahora es dar jaque o tapar.`,
-          ], c.s), namesMaterial: true };
+      const dist = mateDistance(f.evalAfter);
+      return { text: pick([
+        `Ojo: el rival tiene mate forzado${dist}. Busca jaques o cambiar damas; el material ya no cuenta.`,
+        `Cuidado, hay mate forzado contra ti${dist}. Lo único que sirve ahora es dar jaque o tapar.`,
+      ], c.s), namesMaterial: true };
     },
   },
   {
@@ -1818,6 +1830,12 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
   // mate — "te llevabas el peón" badly undersells it.
   if (f.missedForcedMate) return `Con ${bp} a ${sq} forzabas el mate.`;
   if (f.bestDefendsHung && f.selfHang) return `Con ${bp} a ${sq} lo defendías.`;
+  // The point of the move, when the line has one. Attached to the CAPTURE branches
+  // below rather than being displaced by them: the capture is what the move does, the
+  // follow-up is why it was the move, and the reader wants both. Before this, a
+  // recommended capture returned early and the plan clause never ran — one of the two
+  // reasons a measured 151 recommendations across 25 real games produced 3 explanations.
+  const plan = f.bestFollowUp ? `, ${f.bestFollowUp}` : "";
   if (f.bestCapturedPiece) {
     // "te llevabas" asserts a GAIN, and bestCapturedPiece only ever established
     // that a capture happens. Verified false in a real game: "Con el alfil a g3 te
@@ -1825,18 +1843,26 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
     // line is `Bxg3 hxg3` — bishops come off, nobody wins one. SEE answers this,
     // and until now it was asked about the played move but never the recommended
     // one. Found by scripts/auditClaims.cjs, not by another screenshot.
-    if (f.bestTradeVerdict === "pareja") return pick([
-      `Con ${bp} a ${sq} cambiabas ${art(f.bestCapturedPiece)}, un cambio parejo.`,
-      `${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad.`,
-    ], s);
-    // A recommended capture that LOSES material only makes sense as a sacrifice,
-    // and slot C has no room to justify one — better to name the move and stop
-    // than to sell it as winning something.
-    if (f.bestTradeVerdict === "pierde") return `${cap(bp)} a ${sq} era mejor.`;
-    return pick([
-      `Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.`,
-      `${cap(bp)} a ${sq} capturaba ${art(f.bestCapturedPiece)}.`,
-    ], s);
+    if (f.bestTradeVerdict === "pareja") return plan
+      ? `${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad${plan}.`
+      : pick([
+        `Con ${bp} a ${sq} cambiabas ${art(f.bestCapturedPiece)}, un cambio parejo.`,
+        `${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad.`,
+      ], s);
+    // A recommended capture that LOSES material only makes sense as a sacrifice. Slot C
+    // used to have no room to justify one and stopped at naming the move — but the
+    // follow-up IS the justification, so when the line provides one it goes in.
+    if (f.bestTradeVerdict === "pierde") return `${cap(bp)} a ${sq} era mejor${plan}.`;
+    // With a plan attached, "capturaba" is the only phrasing that works: the clause is
+    // usually a second capture, and "te llevabas el alfil, y después te llevas la torre"
+    // stutters on the verb. The plan picks the wording instead of being bolted onto
+    // whichever variant the seed happened to land on.
+    return plan
+      ? `${cap(bp)} a ${sq} capturaba ${art(f.bestCapturedPiece)}${plan}.`
+      : pick([
+        `Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.`,
+        `${cap(bp)} a ${sq} capturaba ${art(f.bestCapturedPiece)}.`,
+      ], s);
   }
 
   // Naming the FOLLOW-UP is what turns a move into an idea. "La dama a c7" is a
@@ -1879,11 +1905,26 @@ function opportunityClause(f: MoveFacts): string | null {
   const o = f.opportunity;
   if (!o) return null;
   const s = f.variantSeed;
+  // A mate needs no follow-up: the mate IS the follow-up.
   if (o.isMate) return `Tienes mate con ${art(o.piece)} en ${o.to}.`;
+  // The point of the move, when the line has one. `plan` already starts with "y…", so it
+  // attaches with a comma — never a colon, which is how "a a6: y después" got shipped
+  // once already.
+  const plan = o.plan ? `, ${o.plan}` : "";
   if (o.captures) {
     // When the capturing and captured pieces share a name ("el peón … el peón"),
     // naming both reads like a stutter. The square is what the player needs.
     const same = o.captures === o.piece;
+    // With a plan attached, the "Ahí tienes" phrasing is the only one that works: the
+    // plan clause is usually a second capture ("y después te llevas la torre de d5"),
+    // and "Puedes llevarte el peón …, y después te llevas la torre" stutters on the
+    // verb. So the plan picks the phrasing rather than being bolted onto whichever one
+    // the seed happened to choose.
+    if (plan) {
+      return same
+        ? `Ahí tienes ${art(o.captures)} de ${o.to}${plan}.`
+        : `Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}${plan}.`;
+    }
     return pick([
       same
         ? `Puedes capturar en ${o.to} con ${art(o.piece)}.`
@@ -1894,8 +1935,8 @@ function opportunityClause(f: MoveFacts): string | null {
     ], s);
   }
   return pick([
-    `Tu oportunidad: ${art(o.piece)} a ${o.to}.`,
-    `Aprovéchalo con ${art(o.piece)} a ${o.to}.`,
+    `Tu oportunidad: ${art(o.piece)} a ${o.to}${plan}.`,
+    `Aprovéchalo con ${art(o.piece)} a ${o.to}${plan}.`,
   ], s);
 }
 
@@ -2008,11 +2049,9 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
       // Defers to oppIgnoredThreat, which says "El rival no para tu mate en g3. Ahí lo
       // tienes." — the square, and the fact they failed to stop it. Strictly more useful.
       if (f.ignoredThreat?.kind === "mate") return null;
-      const n = mateInMoves(f.evalAfter);
-      const jug = n === 1 ? "jugada" : "jugadas";
       // Every ply of a mating sequence lands here, so this needs variants for the same
       // reason mateNet does — three plies in a row read identically otherwise.
-      const dist = n <= 4 ? ` en ${n} ${jug}` : "";
+      const dist = mateDistance(f.evalAfter);
       return pick([
         `El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo único que hay que buscar.`,
         `${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.`,
@@ -2024,9 +2063,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
     id: "oppMateAgainst", group: "tactics",
     applies: (f, c) => {
       if (band(f.evalAfter) !== "mate" || f.isMate) return null;
-      const n = mateInMoves(f.evalAfter);
-      const jug = n === 1 ? "jugada" : "jugadas";
-      return `¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado en ${n} ${jug}.`;
+      return `¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado${mateDistance(f.evalAfter)}.`;
     },
   },
   {

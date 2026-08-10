@@ -6,7 +6,7 @@ los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
 - **Categorías:** 150
-- **Variantes de texto:** 388
+- **Variantes de texto:** 389
 - **Sin nombre humano todavía:** 12
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -54,7 +54,7 @@ _Bandera:_ `oppMateNet`
 
 _Bandera:_ `oppMateAgainst`
 
-1. ¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado en ${n} ${jug}.
+1. ¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado${mateDistance(f.evalAfter)}.
 
 ### El rival da mate
 
@@ -420,12 +420,14 @@ _Bandera:_ `classification`
 _Bandera:_ `variantSeed`
 
 1. Tienes mate con ${art(o.piece)} en ${o.to}.
-2. Puedes capturar en ${o.to} con ${art(o.piece)}.
-3. Puedes llevarte ${art(o.captures)} con ${art(o.piece)} a ${o.to}.
-4. Ahí tienes ${art(o.captures)} de ${o.to}.
-5. Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}.
-6. Tu oportunidad: ${art(o.piece)} a ${o.to}.
-7. Aprovéchalo con ${art(o.piece)} a ${o.to}.
+2. Ahí tienes ${art(o.captures)} de ${o.to}${plan}.
+3. Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}${plan}.
+4. Puedes capturar en ${o.to} con ${art(o.piece)}.
+5. Puedes llevarte ${art(o.captures)} con ${art(o.piece)} a ${o.to}.
+6. Ahí tienes ${art(o.captures)} de ${o.to}.
+7. Ahí tienes ${art(o.captures)}: ${art(o.piece)} a ${o.to}.
+8. Tu oportunidad: ${art(o.piece)} a ${o.to}${plan}.
+9. Aprovéchalo con ${art(o.piece)} a ${o.to}${plan}.
 
 ---
 
@@ -449,8 +451,8 @@ _Bandera:_ `tookOpportunity`
 
 _Bandera:_ `mateNet`
 
-1. Tienes mate forzado en ${n} ${jug}. Remátalo: ya no hace falta ganar material.
-2. Mate forzado en ${n} ${jug} a tu favor. Ve al mate, no a las capturas.
+1. Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.
+2. Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.
 3. Tienes mate forzado: la partida está sentenciada. Busca el mate, no el material.
 4. Hay mate forzado a tu favor. A partir de aquí el material da igual.
 5. La red de mate ya está tejida. Calcula el remate en vez de contar piezas.
@@ -459,10 +461,8 @@ _Bandera:_ `mateNet`
 
 _Bandera:_ `mateAgainst`
 
-1. Ojo: el rival tiene mate forzado en ${n} ${jug}. Busca jaques o cambiar damas; el material ya no cuenta.
-2. Cuidado, hay mate forzado contra ti en ${n} ${jug}. Lo único que sirve ahora es dar jaque o tapar.
-3. Ojo: el rival tiene mate forzado. Busca jaques o cambiar damas; el material ya no cuenta.
-4. Cuidado, hay mate forzado contra ti. Lo único que sirve ahora es dar jaque o tapar.
+1. Ojo: el rival tiene mate forzado${dist}. Busca jaques o cambiar damas; el material ya no cuenta.
+2. Cuidado, hay mate forzado contra ti${dist}. Lo único que sirve ahora es dar jaque o tapar.
 
 ### Táctica ejecutada (doble, clavada, enfilada, descubierta)
 
@@ -1159,10 +1159,11 @@ _Bandera:_ `bestDefendsHung`
 
 _Bandera:_ `bestTradeVerdict`
 
-1. Con ${bp} a ${sq} cambiabas ${art(f.bestCapturedPiece)}, un cambio parejo.
-2. ${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad.
-3. ${cap(bp)} a ${sq} era mejor.
-4. Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.
+1. ${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad${plan}.
+2. Con ${bp} a ${sq} cambiabas ${art(f.bestCapturedPiece)}, un cambio parejo.
+3. ${cap(bp)} a ${sq} cambiaba ${art(f.bestCapturedPiece)} en igualdad.
+4. ${cap(bp)} a ${sq} era mejor${plan}.
+5. Con ${bp} a ${sq} te llevabas ${art(f.bestCapturedPiece)}.
 
 ### bestFollowUp
 

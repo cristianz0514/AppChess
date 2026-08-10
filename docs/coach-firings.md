@@ -3,18 +3,18 @@
 <!-- generado por scripts/auditFirings.cjs -->
 
 ```
-fixtures 8   plies medidos 399   (36 saltados: van por el tier de error)
+fixtures 9   plies medidos 411   (44 saltados: van por el tier de error)
 
 ── QUIET_RULES ─────────────────────────────────────────────────
   regla                        disparó  aplicó   suprimida por
-  mateNet                          3       3   
-  mateAgainst                      0       0     <- nunca aplicó
+  mateNet                          5       5   
+  mateAgainst                      1       1   
   tactic                          16      16   
   book                            16      16   
   promotion                        1       1   
   capture                         39      46   tactic×6, mateNet×1
   dustGain                         0       0     <- nunca aplicó
-  ownThreat                        5      17   capture×8, tactic×3, promotion×1
+  ownThreat                        6      18   capture×8, tactic×3, promotion×1
   looseEnemy                       0       7   capture×3, tactic×2, ownThreat×2
   check                            6      14   capture×5, mateNet×2, tactic×1
   attacksBigger                    5       8   ownThreat×3
@@ -59,14 +59,14 @@ fixtures 8   plies medidos 399   (36 saltados: van por el tier de error)
   developsPiece                   17      30   book×6, tactic×3, underDefendedAside×2
   toCenter                         2      25   book×8, capture×7, knightToCenter×2
   dominantTermGain                 0      13   book×7, capture×3, underDefendedAside×1
-  passivePiece                     1      16   capture×4, mateNet×3, tactic×2
+  passivePiece                     1      20   mateNet×5, capture×4, ownThreat×2
   endgameFallback                  0      20   majority×5, capture×3, connectedPassedPair×3
-  fallback                        16     182   capture×39, developsPiece×17, book×16
+  fallback                        16     186   capture×39, developsPiece×17, book×16
 
 ── OPPONENT_RULES ──────────────────────────────────────────────
   regla                        disparó  aplicó   suprimida por
-  oppMateNet                       6       6   
-  oppMateAgainst                   0       0     <- nunca aplicó
+  oppMateNet                       7       7   
+  oppMateAgainst                   1       1   
   oppMate                          0       0     <- nunca aplicó
   oppTacticOrLoose                37      37   
   oppCapture                      37      44   oppTacticOrLoose×7
@@ -113,13 +113,12 @@ fixtures 8   plies medidos 399   (36 saltados: van por el tier de error)
   oppRetreats                      6      15   oppTacticOrLoose×6, oppCapture×2, oppUnderDefended×1
   oppDevelopsPiece                16      32   oppBook×8, oppTacticOrLoose×3, oppOwnThreat×2
   oppToCenter                      4      31   oppCapture×7, oppTacticOrLoose×6, oppBook×5
-  oppPassivePiece                  0      12   oppTacticOrLoose×6, oppDust×2, oppRetreats×1
+  oppPassivePiece                  6      20   oppTacticOrLoose×6, oppDust×2, oppRetreats×1
   oppEndgameFallback               0      20   oppEndgameKind×5, oppRookToSemiOpen×4, oppUnderDefended×2
-  oppFallback                     16     217   oppTacticOrLoose×37, oppCapture×37, oppBook×18
+  oppFallback                     16     225   oppTacticOrLoose×37, oppCapture×37, oppBook×18
 
 ── resumen ────────────────────────────────────────────────────────
-reglas que nunca aplicaron        : 23
-  QUIET_RULES/mateAgainst
+reglas que nunca aplicaron        : 21
   QUIET_RULES/dustGain
   QUIET_RULES/defendsAttacked
   QUIET_RULES/brokeTheirStructure
@@ -131,7 +130,6 @@ reglas que nunca aplicaron        : 23
   QUIET_RULES/doublesRooks
   QUIET_RULES/trappedAside
   QUIET_RULES/backRankAside
-  OPPONENT_RULES/oppMateAgainst
   OPPONENT_RULES/oppMate
   OPPONENT_RULES/oppPromotion
   OPPONENT_RULES/oppRookToSeventh
@@ -142,7 +140,7 @@ reglas que nunca aplicaron        : 23
   OPPONENT_RULES/oppConnectsRooks
   OPPONENT_RULES/oppConnectedPassedPair
   OPPONENT_RULES/oppConnectedPassedOne
-reglas que aplicaron y NUNCA ganaron: 28
+reglas que aplicaron y NUNCA ganaron: 27
   QUIET_RULES/looseEnemy (aplicó 7×, nunca ganó)
   QUIET_RULES/pawnRunsToPromote (aplicó 1×, nunca ganó)
   QUIET_RULES/endgameKind (aplicó 20×, nunca ganó)
@@ -169,7 +167,6 @@ reglas que aplicaron y NUNCA ganaron: 28
   OPPONENT_RULES/oppWeakensKingShield (aplicó 2×, nunca ganó)
   OPPONENT_RULES/oppMovesPieceTwice (aplicó 2×, nunca ganó)
   OPPONENT_RULES/oppQueenOutEarly (aplicó 1×, nunca ganó)
-  OPPONENT_RULES/oppPassivePiece (aplicó 12×, nunca ganó)
   OPPONENT_RULES/oppEndgameFallback (aplicó 20×, nunca ganó)
 
 Leer así: `nunca aplicó` es un problema de DETECTOR o de cobertura de fixtures.
