@@ -37,45 +37,33 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   let moves: Array<Record<string, unknown>> | null = null;
   let explanationColumn = false;
   {
-    // Widest first: best_move is what keeps the viewer's green arrow and the
-    // written comment pointing at the SAME move. Each rung below drops one column
-    // that a not-yet-migrated database might be missing, rather than failing the
-    // whole page — same ladder the `ply` migration already established.
-    const withBest = await supabase
-      .from("moves")
-      .select("move_number, move, classification, centipawn_loss, evaluation, explanation, ply, best_move")
-      .eq("game_id", id)
-      .order("move_number", { ascending: true });
-    if (!withBest.error) {
-      moves = withBest.data;
-      explanationColumn = true;
-    } else {
-    const withPly = await supabase
-      .from("moves")
-      .select("move_number, move, classification, centipawn_loss, evaluation, explanation, ply")
-      .eq("game_id", id)
-      .order("move_number", { ascending: true });
-    if (!withPly.error) {
-      moves = withPly.data;
-      explanationColumn = true;
-    } else {
-      const withExpl = await supabase
-        .from("moves")
-        .select("move_number, move, classification, centipawn_loss, evaluation, explanation")
-        .eq("game_id", id)
-        .order("move_number", { ascending: true });
-      if (withExpl.error) {
-        const base = await supabase
-          .from("moves")
-          .select("move_number, move, classification, centipawn_loss, evaluation")
-          .eq("game_id", id)
-          .order("move_number", { ascending: true });
-        moves = base.data;
-      } else {
-        moves = withExpl.data;
-        explanationColumn = true;
-      }
-    }
+    // Widest first, dropping one optional column per rung: a database that has not run a
+    // migration yet loses that column instead of losing the whole page. Each migration adds
+    // a rung, and after `best_line` the nested if/else version was four levels deep with
+    // its braces off the indentation — so it becomes the list it always was.
+    //
+    // `best_line` is the evidence behind the comment's plan clause; `best_move` is what
+    // keeps the viewer's arrow and the written comment pointing at the SAME move; `ply` is
+    // the unambiguous row key; `explanation` is the comment itself. Newest and least
+    // essential first.
+    const BASE = "move_number, move, classification, centipawn_loss, evaluation";
+    const RUNGS = [
+      `${BASE}, explanation, ply, best_move, best_line`,
+      `${BASE}, explanation, ply, best_move`,
+      `${BASE}, explanation, ply`,
+      `${BASE}, explanation`,
+      BASE,
+    ];
+    for (const columns of RUNGS) {
+      const r = await supabase.from("moves").select(columns)
+        .eq("game_id", id).order("move_number", { ascending: true });
+      if (r.error) continue;
+      // A dynamic column list gives up supabase-js's inferred row type — it can no longer
+      // know which columns came back. The shape is asserted right below in `dbMoves`, with
+      // every optional column marked optional, which is what the rungs make it.
+      moves = r.data as unknown as Array<Record<string, unknown>>;
+      explanationColumn = columns.includes("explanation");
+      break;
     }
   }
 
@@ -88,6 +76,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
     explanation?: string | null;
     ply?: number | null;
     best_move?: string | null;
+    best_line?: string | null;
   }>;
 
   // A game analyzed before the coach existed: it has moves but no AI comments.

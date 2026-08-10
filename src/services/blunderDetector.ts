@@ -1283,6 +1283,13 @@ export async function analyzeGame(
       // Only when it differs from what was played; otherwise there is nothing to
       // suggest.
       const suggest = bestSan && bestSan !== moves[i].move ? bestSan : null;
+      // The whole line behind that recommendation, space-separated SAN from the position
+      // BEFORE the move. Already computed at depth 16 for the plan clause, and until now
+      // discarded — so the coach could assert "y después te llevas la torre de d5" and
+      // the player had no way to look at it. Capped at 6 plies: three moves each, which
+      // is the same limit the plan clause stops at, for the same reason (past that the
+      // line is the engine's, not the opponent's).
+      const lineSan = mainSans.length > 1 ? mainSans.slice(0, 6).join(" ") : null;
       try {
         // Match by `ply` (unambiguous) rather than move_number+SAN, which
         // collides whenever both colors play the same SAN at the same
@@ -1290,15 +1297,19 @@ export async function analyzeGame(
         // row's explanation. Falls back to the old match on databases that
         // haven't run the `ply` migration yet.
         //
-        // best_move is written in its own attempt so that a database without that
-        // column still gets the explanation — degrading the same way the `ply`
-        // migration does, rather than losing the comment entirely.
-        let { error } = await supabase.from("moves")
-          .update(suggest ? { explanation: text, best_move: suggest } : { explanation: text })
-          .eq("game_id", gameId).eq("ply", i);
-        if (error && suggest) {
-          ({ error } = await supabase.from("moves").update({ explanation: text })
-            .eq("game_id", gameId).eq("ply", i));
+        // The optional columns are dropped one rung at a time so that a database missing
+        // only the newest migration still gets everything below it, and a database with
+        // neither still gets the explanation. Losing the comment because a column is
+        // absent would be the worst possible trade.
+        const rungs: Record<string, unknown>[] = [
+          { explanation: text, ...(suggest ? { best_move: suggest } : {}), ...(lineSan ? { best_line: lineSan } : {}) },
+          { explanation: text, ...(suggest ? { best_move: suggest } : {}) },
+          { explanation: text },
+        ];
+        let error = null;
+        for (const patch of rungs) {
+          ({ error } = await supabase.from("moves").update(patch).eq("game_id", gameId).eq("ply", i));
+          if (!error) break;
         }
         if (error) {
           await supabase.from("moves").update({ explanation: text })

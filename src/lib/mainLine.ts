@@ -172,6 +172,36 @@ export function followUpClause(plan: LinePlan, voice: "player" | "opponent" = "p
   return `${move} ${art(f.piece)} a ${f.to}`;
 }
 
+/**
+ * The prefix of a STORED line that still replays from `fromFen`, or null.
+ *
+ * `moves.best_line` was written by an earlier run of the analysis, so by the time the
+ * viewer walks it nothing guarantees it still fits the position in front of it: a row could
+ * belong to a different ply, a game could have been re-imported, the column could hold
+ * something from a previous schema. Showing the player a sequence that cannot happen is
+ * worse than showing them nothing, so the line is VERIFIED here rather than trusted.
+ *
+ * `expectFirst` is the move the viewer's arrow points at (`moves.best_move`). A line whose
+ * first move is something else is not this move's line, and would put the arrow and the
+ * preview into exactly the disagreement that persisting best_move was meant to end.
+ *
+ * Lives here rather than inline in the component because this is the part that can be
+ * wrong. The stepping and the highlighting are React; this is chess.
+ */
+export function verifiedLine(fromFen: string, sans: readonly string[], expectFirst: string): string[] | null {
+  if (sans.length === 0 || sans[0] !== expectFirst) return null;
+  let board: Chess;
+  try { board = new Chess(fromFen); } catch { return null; }
+  const out: string[] = [];
+  for (const san of sans) {
+    let mv = null;
+    try { mv = board.move(san); } catch { mv = null; }
+    if (!mv) break;   // keep the prefix that works; drop the rest silently
+    out.push(mv.san);
+  }
+  return out.length > 1 ? out : null;
+}
+
 const ART: Record<string, string> = {
   "peón": "el peón", caballo: "el caballo", alfil: "el alfil",
   torre: "la torre", dama: "la dama", rey: "el rey",

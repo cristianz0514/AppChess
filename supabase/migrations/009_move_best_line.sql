@@ -1,0 +1,22 @@
+-- The engine's main line, so the coach can be checked instead of believed.
+--
+-- Migration 008 stored `best_move`: the ONE move the analysis recommended, which is what
+-- the viewer's green arrow points at. But the comment engine already reads further down
+-- that line to say WHY the move was the move ("y después te llevas la torre de d5"), and
+-- the line itself was computed at depth 16 and then thrown away. So the player was being
+-- told about a sequence they had no way to see.
+--
+-- That asymmetry is the problem. A coach that asserts a three-move plan and offers no way
+-- to look at it is asking to be taken on faith, and this project's whole discipline is the
+-- opposite — every claim in a comment is traceable to a fact (see scripts/auditClaims.cjs).
+-- The line is the evidence for the plan clause.
+--
+-- Stored as space-separated SAN from the position BEFORE the move ("Bxg3 hxg3 Qxd5"),
+-- which is exactly the form chess.js replays and the form the comment engine already read
+-- it in. Not UCI: SAN is what the viewer displays and what a person can read.
+--
+-- Nullable, like best_move: games analysed before this column exists keep working, and the
+-- analysis pass degrades one column at a time rather than losing the comment (see the
+-- insert ladder in src/services/blunderDetector.ts).
+
+alter table moves add column if not exists best_line text;

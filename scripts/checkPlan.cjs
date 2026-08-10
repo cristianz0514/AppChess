@@ -37,7 +37,7 @@ const js = ts.transpileModule(readFileSync(SRC, "utf8"), {
 }).outputText;
 const mod = { exports: {} };
 new Function("exports", "module", "require", js)(mod.exports, mod, require);
-const { readLine, followUpClause } = mod.exports;
+const { readLine, followUpClause, verifiedLine } = mod.exports;
 
 // Every case is replayed through chess.js first, so an illegal line fails loudly here
 // instead of silently producing an empty plan and a passing test.
@@ -113,5 +113,56 @@ for (const c of CASES) {
   if (!ok) console.log(`          esperaba: ${JSON.stringify(c.expect)}\n          obtuvo  : ${JSON.stringify(got)}`);
 }
 
-console.log(`\n${CASES.length - failed}/${CASES.length} casos del plan correctos`);
+// ── The stored line the viewer walks ─────────────────────────────────────────
+//
+// moves.best_line is written by one run of the analysis and read by another, so the viewer
+// cannot assume it still fits the board in front of it. These cases are the ones that would
+// otherwise show the player a sequence that cannot happen — which is worse than showing
+// nothing, and is exactly the class of bug that persisting best_move was meant to end.
+const LINE_FEN = "4k3/6r1/8/2p5/8/8/3R1B2/4K3 w - - 0 1";
+const LINE_CASES = [
+  {
+    name: "línea buena -> se acepta completa",
+    fen: LINE_FEN, sans: ["Rd4", "cxd4", "Bxd4", "Kf8", "Bxg7+"], first: "Rd4",
+    expect: ["Rd4", "cxd4", "Bxd4", "Kf8", "Bxg7+"],
+    why: "el caso normal: la línea guardada sigue siendo legal aquí",
+  },
+  {
+    name: "primera jugada distinta de best_move -> se rechaza entera",
+    fen: LINE_FEN, sans: ["Rd7", "Kf8", "Rxg7"], first: "Rd4", expect: null,
+    why: "una línea que no empieza por la jugada de la flecha no es la línea de esta jugada",
+  },
+  {
+    name: "se corta donde deja de ser legal -> se guarda el prefijo",
+    fen: LINE_FEN, sans: ["Rd4", "cxd4", "Qh8"], first: "Rd4", expect: ["Rd4", "cxd4"],
+    why: "no hay dama: el resto se descarta en silencio en vez de romper el visor",
+  },
+  {
+    name: "queda una sola jugada legal -> null, no un paso a paso de uno",
+    fen: LINE_FEN, sans: ["Rd4", "Qh8"], first: "Rd4", expect: null,
+    why: "con una jugada no hay línea que recorrer; el visor cae a la vista previa de siempre",
+  },
+  {
+    name: "línea vacía -> null",
+    fen: LINE_FEN, sans: [], first: "Rd4", expect: null,
+    why: "partidas analizadas antes de que existiera la columna",
+  },
+  {
+    name: "FEN ilegible -> null, sin lanzar",
+    fen: "no-es-un-fen", sans: ["Rd4", "cxd4"], first: "Rd4", expect: null,
+    why: "un FEN malo nunca debe costarle el visor a la partida",
+  },
+];
+
+for (const c of LINE_CASES) {
+  const got = verifiedLine(c.fen, c.sans, c.first);
+  const ok = JSON.stringify(got) === JSON.stringify(c.expect);
+  if (!ok) failed++;
+  console.log(`  ${ok ? "OK  " : "FALLA"}  ${c.name}`);
+  console.log(`          ${c.why}`);
+  if (!ok) console.log(`          esperaba: ${JSON.stringify(c.expect)}\n          obtuvo  : ${JSON.stringify(got)}`);
+}
+
+const total = CASES.length + LINE_CASES.length;
+console.log(`\n${total - failed}/${total} casos correctos (${CASES.length} de plan, ${LINE_CASES.length} de línea guardada)`);
 process.exit(failed ? 1 : 0);

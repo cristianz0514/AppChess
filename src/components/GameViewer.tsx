@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List
 import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
 import { estimateEloFromAcpl, acplForElo } from "@/lib/eloEstimate";
 import { isBookPosition } from "@/lib/openingBook";
+import { verifiedLine } from "@/lib/mainLine";
 import type { Game } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -23,6 +24,7 @@ interface DbMove {
   explanation?: string | null;
   ply?: number | null;    // 0-indexed absolute move index — the real unique key
   best_move?: string | null;  // SAN the analysis recommended instead, when it did
+  best_line?: string | null;  // the whole line behind it, space-separated SAN
 }
 
 interface MoveInfo {
@@ -41,6 +43,10 @@ interface MoveInfo {
   // /api/bestmove for the green arrow so the arrow and the comment can never
   // disagree — they now come from the same search.
   bestMove: string | null;
+  // The rest of that line, so the coach's "y después te llevas la torre de d5" can be
+  // WATCHED instead of taken on faith. Same search, same depth; it was being computed
+  // and thrown away.
+  bestLine: string[] | null;
 }
 
 type Tab = "analizar" | "jugadas" | "consejos";
@@ -228,6 +234,9 @@ function buildMoves(pgn: string, dbMoves: DbMove[]): MoveInfo[] {
       evaluation: db?.evaluation ?? null,
       explanation: db?.explanation ?? null,
       bestMove: db?.best_move ?? null,
+      // Split here rather than at every use site, so "the line is a list of SAN" is
+      // decided once. Empty string and null both mean "no line".
+      bestLine: db?.best_line ? db.best_line.trim().split(/\s+/) : null,
     };
   });
 }
@@ -785,7 +794,10 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // Best move for the position being VIEWED, fetched automatically for every
   // ply during normal review — chess.com always shows this, not just when
   // asked. Cached per index so scrubbing back and forth doesn't refetch.
-  const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string } | null>>({});
+  // `line` is carried here too, holding just the one move, so `bestHere` has ONE shape.
+  // /api/bestmove answers with a single move — it has no line to give — and normalising it
+  // here means the preview never has to ask which of two shapes it is looking at.
+  const [autoBest, setAutoBest] = useState<Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string; line: string[] } | null>>({});
 
   // The analysis's OWN recommendation, per viewed position. Derived with useMemo
   // rather than fetched into state: there is nothing async about reading a column
@@ -798,7 +810,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // answer is ply 0's. Getting this off by one would look like the engine
   // disagreeing with the text rather than like a bug.
   const storedBest = useMemo(() => {
-    const out: Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string }> = {};
+    const out: Record<number, { from: string; to: string; promotion: "q" | "r" | "b" | "n"; san: string; line: string[] }> = {};
     const at = (i: number) => (i < 0 ? new Chess().fen() : moves[i]?.fen);
     for (let i = -1; i < moves.length; i++) {
       const san = moves[i + 1]?.bestMove;
@@ -806,7 +818,15 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       if (!san || !fen) continue;
       try {
         const mv = new Chess(fen).move(san);
-        if (mv) out[i] = { from: mv.from, to: mv.to, promotion: (mv.promotion ?? "q") as "q" | "r" | "b" | "n", san: mv.san };
+        if (!mv) continue;
+        // The stored line is VERIFIED against this board, never trusted — see
+        // verifiedLine. Falling back to the single move means a stale or absent line
+        // degrades to exactly the preview that existed before it.
+        const line = verifiedLine(fen, moves[i + 1]?.bestLine ?? [], san);
+        out[i] = {
+          from: mv.from, to: mv.to, promotion: (mv.promotion ?? "q") as "q" | "r" | "b" | "n",
+          san: mv.san, line: line ?? [mv.san],
+        };
       } catch { /* unreplayable SAN: the engine fallback below covers it */ }
     }
     return out;
@@ -826,7 +846,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
         const promotion = d.promotion ?? "q";
         try {
           const mv = new Chess(currentFen).move({ from: d.from, to: d.to, promotion });
-          setAutoBest((prev) => ({ ...prev, [idx]: mv ? { from: d.from, to: d.to, promotion, san: mv.san } : null }));
+          setAutoBest((prev) => ({ ...prev, [idx]: mv ? { from: d.from, to: d.to, promotion, san: mv.san, line: [mv.san] } : null }));
         } catch {
           setAutoBest((prev) => ({ ...prev, [idx]: null }));
         }
@@ -856,14 +876,37 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     try { return new Chess(currentFen).turn() === playerColor; } catch { return true; }
   })();
   const previewMoveInfo = !inExplore && !inStory && previewBest ? bestHere : null;
+  // How far along the recommended LINE the preview has walked. 0 is the recommendation
+  // itself, which is what the preview always used to show and all it could show.
+  const [previewStep, setPreviewStep] = useState(0);
+  // The line for the current suggestion. Games analysed before best_line existed — and the
+  // /api/bestmove fallback — carry a one-move line, so they degrade to exactly the old
+  // single-move preview rather than to an empty stepper.
+  const previewLine = useMemo(() => previewMoveInfo?.line ?? [], [previewMoveInfo]);
+  // Reset on every change of position or of the toggle. Without this, stepping three moves
+  // into one line and then arrowing to the next ply would leave the board showing a
+  // position from a line that no longer applies — the same class of bug as an arrow left
+  // pointing at the previous move.
+  useEffect(() => { setPreviewStep(0); }, [idx, previewBest]);
+  const step = Math.min(previewStep, Math.max(0, previewLine.length - 1));
   const previewFen = useMemo(() => {
-    if (!previewMoveInfo) return null;
+    if (!previewMoveInfo || previewLine.length === 0) return null;
     try {
       const c = new Chess(currentFen);
-      const mv = c.move({ from: previewMoveInfo.from, to: previewMoveInfo.to, promotion: previewMoveInfo.promotion });
-      return mv ? c.fen() : null;
+      for (let k = 0; k <= step; k++) if (!c.move(previewLine[k])) return null;
+      return c.fen();
     } catch { return null; }
-  }, [previewMoveInfo, currentFen]);
+  }, [previewMoveInfo, previewLine, step, currentFen]);
+  // The move to highlight is the one just played in the preview, not always the first.
+  const previewLastMove = useMemo(() => {
+    if (!previewFen || previewLine.length === 0) return null;
+    try {
+      const c = new Chess(currentFen);
+      let mv = null;
+      for (let k = 0; k <= step; k++) mv = c.move(previewLine[k]);
+      return mv ? { from: mv.from, to: mv.to } : null;
+    } catch { return null; }
+  }, [previewFen, previewLine, step, currentFen]);
 
   // Coach comment (LLaMA) GROUNDED in the engine's best move — fetched once the
   // best move is known for the current moment. Cached per move index.
@@ -1088,11 +1131,39 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   Same fix as the explore banner: normal flow instead of an
                   absolute overlay sitting on top of the board. */}
               {!inExplore && previewFen && previewMoveInfo && (
-                <div className="flex items-center justify-between px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
+                <div className="flex items-center gap-1.5 px-2 py-1 mb-1.5 rounded-xl text-xs font-bold"
                   style={{ background: "oklch(0.34 0.10 264 / 0.92)", color: "#fff" }}>
-                  <span className="flex items-center gap-1"><Target size={13} /> Mejor: {previewMoveInfo.san}</span>
+                  <Target size={13} className="shrink-0" />
+                  {/* The whole line, with the move now on the board lit up. This is the
+                      evidence for the comment's plan clause — "y después te llevas la
+                      torre de d5" is a claim, and this is where you check it. Scrolls
+                      inside itself so a six-ply line never widens the board column. */}
+                  <span className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto">
+                    {previewLine.map((san, k) => (
+                      <span key={k} className="px-1 py-0.5 rounded shrink-0 tabular-nums"
+                        style={k === step
+                          ? { background: "#fff", color: "oklch(0.34 0.10 264)" }
+                          : { opacity: k < step ? 0.55 : 0.8 }}>
+                        {san}
+                      </span>
+                    ))}
+                  </span>
+                  {previewLine.length > 1 && (
+                    <span className="flex items-center gap-0.5 shrink-0">
+                      <button onClick={() => setPreviewStep((p) => Math.max(0, p - 1))}
+                        disabled={step === 0} title="Jugada anterior de la línea" aria-label="Jugada anterior de la línea"
+                        className="px-1.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-40">
+                        <ChevronLeft size={13} />
+                      </button>
+                      <button onClick={() => setPreviewStep((p) => Math.min(previewLine.length - 1, p + 1))}
+                        disabled={step >= previewLine.length - 1} title="Jugada siguiente de la línea" aria-label="Jugada siguiente de la línea"
+                        className="px-1.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-40">
+                        <ChevronRight size={13} />
+                      </button>
+                    </span>
+                  )}
                   <button onClick={() => setPreviewBest(false)} title="Volver a la posición real" aria-label="Cerrar vista previa"
-                    className="px-1.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors">
+                    className="px-1.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors shrink-0">
                     <X size={13} />
                   </button>
                 </div>
@@ -1104,7 +1175,10 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                   inExplore
                     ? exploreLastMove
                     : previewMoveInfo
-                      ? { from: previewMoveInfo.from, to: previewMoveInfo.to }
+                      // The move just played IN THE LINE, which is only the recommendation
+                      // itself on step 0. Highlighting the first move while the board shows
+                      // the third would point at a piece that has since moved again.
+                      ? previewLastMove ?? { from: previewMoveInfo.from, to: previewMoveInfo.to }
                       : storyMomentSlide ? null : lastMove
                 }
                 arrows={
