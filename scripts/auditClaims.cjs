@@ -138,34 +138,56 @@ const AUTHORITIES = [
 const src = fs.readFileSync(SRC, "utf8");
 const lines = src.split(/\r?\n/);
 
-const FN = /^function (quietComment|slotA|slotB|slotC|opponentQuietComment|opponentSlip|opportunityClause|opportunityOutcome)\b/;
+// Which function a finding is IN — for the label only.
+const FN = /^function (quietComment|slotA|slotB|slotC|opponentQuietComment|opponentSlip|opportunityClause|opportunityOutcome|mateHeadline)\b/;
+
+// Functions whose OPENING GUARD governs their whole body, so scope may reach it. Two
+// separate lists on purpose, and the second one is short.
+//
+// Letting every function in FN widen the window weakened the audit measurably. slotC opens
+// with `if (f.good || f.isMate || …) return null`, so all 20-odd templates in its 55-line
+// body inherited `isMate` as authority, and a planted "Enrocar primero forzaba mate en 3"
+// — which the previous version of this script caught — started passing. An early-exit
+// guard PROVES THE FACT FALSE below it; this table matches fact NAMES and cannot tell the
+// two apart. Verified by running both mutants against both revisions rather than by
+// reasoning about it.
+//
+// `mateHeadline` qualifies because it is the shape a registry rule is: one guard at the
+// top, null otherwise, one decision. Adding a long multi-branch function here would
+// reintroduce the hole above.
+const UNIT_FN = /^function (mateHeadline)\b/;
 // A rule in QUIET_RULES / OPPONENT_RULES. Its guards are always the first statements of
 // `applies`, so the rule's opening is part of every template's scope no matter how far
 // down the body that template sits.
 const RULE = /^\s*id: "(\w+)", group: "\w+"/;
 const LOOKBACK = 10;
-const GUARD_LINES = 12;   // code lines from a rule's `id:` that can still be its guard
+const GUARD_LINES = 12;   // code lines from a unit's opening that can still be its guard
 
 const isComment = (l) => /^\s*(\/\/|\*|\/\*)/.test(l);
 
-// Where each line's enclosing rule starts, so scope can always reach the guards.
-// Before the registry refactor every template lived inside a top-level `function` and a
-// flat lookback was enough. Now a rule is an object literal with its guards at the top
-// and its templates 15 lines below, and the flat window could no longer see them — it
-// reported three sound `mateNet` templates as unauthorised while `band(f.evalAfter)` sat
-// right at the top of the same rule.
-const ruleStartOf = new Array(lines.length).fill(-1);
+// Where each line's enclosing UNIT starts — a registry rule, or a top-level function.
+// Scope has to reach a unit's guards no matter how far down its body a template sits,
+// because that is where this file puts them.
+//
+// Both halves were learned the same way. Before the registry refactor every template lived
+// in a top-level function and a flat lookback sufficed; a rule then became an object
+// literal with guards at the top and templates fifteen lines below, and the flat window
+// reported three sound `mateNet` templates as unauthorised while `band(f.evalAfter)` sat at
+// the top of that very rule. Adding rules alone was not enough either: `mateHeadline` is a
+// plain function shared by the registry and slot A, and its far-mate templates sit ~25
+// lines under its guard, so the same false report came back one commit later. See UNIT_FN
+// for why that list is short rather than "every function".
+const unitStartOf = new Array(lines.length).fill(-1);
 {
   let current = -1;
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(RULE);
-    if (m) current = i;
-    ruleStartOf[i] = current;
+    if (RULE.test(lines[i]) || UNIT_FN.test(lines[i])) current = i;
+    unitStartOf[i] = current;
   }
 }
 
 // Facts visible from a template on `idx`: everything named on its own line, the code
-// lines just above (where this file's guards live), and its rule's own guard block.
+// lines just above (where this file's guards live), and its enclosing unit's guard block.
 //
 // COMMENT lines do not consume the lookback budget. A comment cannot establish a fact,
 // so spending window on it was arbitrary — and this file documents its reasoning
@@ -187,7 +209,7 @@ function factsInScope(idx) {
     if (!isComment(lines[k])) budget--;
   }
 
-  const start = ruleStartOf[idx];
+  const start = unitStartOf[idx];
   if (start >= 0) {
     let seen = 0;
     for (let k = start; k < lines.length && seen < GUARD_LINES; k++) {
@@ -207,9 +229,9 @@ for (let i = 0; i < lines.length; i++) {
   const trimmed = raw.trim();
   const f = trimmed.match(FN);
   if (f) { fn = f[1]; continue; }
-  // Report the RULE id when the template lives in a registry. Every one of the 53
-  // templates was being labelled "(auxiliar)" since the refactor, which is useless for
-  // finding the thing being reported.
+  // Report the RULE id when the template lives in a registry. Every one of the templates
+  // was being labelled "(auxiliar)" since the refactor, which is useless for finding the
+  // thing being reported.
   const r = raw.match(RULE);
   if (r) { fn = r[1]; continue; }
   if (/^\s*(\/\/|\*)/.test(raw)) continue;          // comments hold examples, not templates

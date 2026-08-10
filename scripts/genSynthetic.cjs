@@ -161,6 +161,28 @@ const CASES = [
     why: "mate del RIVAL contra el jugador, desde el ply del rival",
     over: { byOpponent: true, evalBefore: 9996, evalAfter: 9995, classification: "best" },
   },
+
+  // ── the two branches that BYPASS the descriptive registry ────────────────────
+  // A `good` ply and an error ply never reach QUIET_RULES, so mateNet cannot speak on
+  // them. Measured: those were the last 4 of the 29 mate-silent plies in 25 real games.
+  {
+    why: "ply BRILLANTE con mate a mi favor: el mate es la noticia, no el elogio",
+    over: { good: true, classification: "brilliant", evalBefore: 9997, evalAfter: 9998, playedMotifs: [{ key: "double", label: "doble" }] },
+  },
+  {
+    why: "ERROR que me deja matado: lo más urgente que puede decir un comentario",
+    over: { classification: "blunder", evalBefore: -5.2, evalAfter: -9997 },
+  },
+  {
+    why: "ERROR con mate a mi favor y casilla conocida: aquí slotA SÍ nombra la casilla",
+    // deferToSquareRule=false en slotA: no hay regla ownThreat a la que cederle el turno,
+    // así que callar la casilla sería callar el mate entero.
+    over: { classification: "mistake", evalBefore: 9996, evalAfter: 9997, ownThreat: { kind: "mate", piece: "torre", square: "e8" } },
+  },
+  {
+    why: "ERROR con mate lejano a mi favor: el consejo se invierte, no lo persigas",
+    over: { classification: "blunder", evalBefore: 9990, evalAfter: 9989 },
+  },
 ];
 
 const facts = CASES.map((c, i) => ({

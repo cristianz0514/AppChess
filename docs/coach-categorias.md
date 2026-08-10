@@ -5,8 +5,8 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 150
-- **Variantes de texto:** 389
+- **Categorías:** 149
+- **Variantes de texto:** 394
 - **Sin nombre humano todavía:** 12
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -38,6 +38,20 @@ _Bandera:_ `(varios)`
 5. podías capturar ${art(m.piece)} de ${m.square}, que estaba sin defensa
 6. había una pieza sin defensa
 
+### Jaque mate ejecutado
+
+_Bandera:_ `isMate`
+
+1. Amenazas mate en ${square}: el rival no lo puede parar.
+2. Ojo: el rival tiene mate en ${square} y hay que impedirlo ya.
+3. Ojo: el rival tiene mate forzado${dist}. Ahora sólo sirve dar jaque, tapar o cambiar damas.
+4. Ojo: el rival tiene mate forzado. Está lejos, así que resiste: complica y busca cambios.
+5. Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.
+6. Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.
+7. Tienes mate forzado, aunque queda lejos: no hace falta que lo calcules. Juega sencillo y quédate con el material.
+8. Hay mate forzado a tu favor, pero es largo. Ve a lo seguro y cambia piezas; el mate llega solo.
+9. La posición está ganada por mate forzado, y todavía lejos. No lo fuerces: juega simple y no regales nada.
+
 ---
 
 ## Jugadas del rival — descriptivo
@@ -46,15 +60,18 @@ _Bandera:_ `(varios)`
 
 _Bandera:_ `oppMateNet`
 
-1. El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo único que hay que buscar.
+1. El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo que hay que buscar.
 2. ${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.
 3. El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; no te distraigas con el material.
+4. El rival mueve ${c.piece} a ${c.to}, pero sigues con mate forzado. Está lejos: juega sencillo, no lo fuerces.
+5. ${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: la posición está ganada por mate, aunque queda lejos.
+6. El rival juega ${c.piece} a ${c.to}. Mantienes mate forzado a la larga; ve a lo seguro y quédate con el material.
 
 ### Su jugada deja mate forzado contra ti
 
 _Bandera:_ `oppMateAgainst`
 
-1. ¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado${mateDistance(f.evalAfter)}.
+1. ¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado${mateDistanceOf(f.evalAfter)}.
 
 ### El rival da mate
 
@@ -446,23 +463,6 @@ _Bandera:_ `tookOpportunity`
 ---
 
 ## Tus jugadas — descriptivo
-
-### Red de mate a tu favor (distancia sólo si es fiable)
-
-_Bandera:_ `mateNet`
-
-1. Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.
-2. Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.
-3. Tienes mate forzado: la partida está sentenciada. Busca el mate, no el material.
-4. Hay mate forzado a tu favor. A partir de aquí el material da igual.
-5. La red de mate ya está tejida. Calcula el remate en vez de contar piezas.
-
-### Red de mate en tu contra
-
-_Bandera:_ `mateAgainst`
-
-1. Ojo: el rival tiene mate forzado${dist}. Busca jaques o cambiar damas; el material ya no cuenta.
-2. Cuidado, hay mate forzado contra ti${dist}. Lo único que sirve ahora es dar jaque o tapar.
 
 ### Táctica ejecutada (doble, clavada, enfilada, descubierta)
 

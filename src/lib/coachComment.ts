@@ -277,12 +277,22 @@ const MATE_MAG = 90; // |eval| at/above this means mate, not a pawn count
 const MATE_SCORE = 10000; // must equal engineApi.ts MATE_SCORE
 const mateInMoves = (e: number) => Math.max(1, MATE_SCORE - Math.round(Math.abs(e)));
 
-// How far a mate has to be before the DISTANCE stops being worth claiming.
+// Where a mate stops being something to CHASE — and, as it happens, where the distance
+// stops being worth quoting. Two separate questions that land on the same number:
 //
-// A `mate N` score is an upper bound, not the shortest mate: a fixed-depth search reports
-// the mate it happened to find. Over one real endgame the sweep said 9, then 7, then 9
-// again on consecutive plies — each honest, together unreadable. A mate within 4 moves
-// sits well inside a depth-16 search, so there the bound IS the answer.
+//   Can the number be trusted?  A `mate N` score is an upper bound, not the shortest
+//     mate: a fixed-depth search reports the mate it happened to find. Over one real
+//     endgame the sweep said 9, then 7, then 9 again on consecutive plies — each honest,
+//     together unreadable. A mate within 4 moves sits well inside a depth-16 search.
+//
+//   Should the player go for it?  No. The user's correction, and it was a correction to
+//     the design rather than a tweak: "no todos somos stockfish, una red de mate a 10
+//     movimientos nadie la verá y podríamos perder esos 10 movimientos." A 1050 told to
+//     hunt a mate in 9 will burn nine moves failing to calculate it and hand back the
+//     material advantage they already had. The first draft's long-mate text said "Busca
+//     el mate, no el material" and "A partir de aquí el material da igual" — actively
+//     bad coaching, in confident prose. Past this distance the advice INVERTS: keep it
+//     simple, keep the material, the mate arrives on its own.
 //
 // One constant, not four literals. The first pass wrote `4` inline in three rules and
 // left the fourth (`oppMateAgainst`) with no limit at all, so a mate in 5 was still being
@@ -291,10 +301,64 @@ const mateInMoves = (e: number) => Math.max(1, MATE_SCORE - Math.round(Math.abs(
 // what `node scripts/genSynthetic.cjs --show` is for.
 const MATE_DIST_RELIABLE = 4;
 /** " en 3 jugadas", or "" when the count is not worth asserting. */
-const mateDistance = (e: number) => {
+const mateDistanceOf = (e: number) => {
   const n = mateInMoves(e);
   return n <= MATE_DIST_RELIABLE ? ` en ${n} ${n === 1 ? "jugada" : "jugadas"}` : "";
 };
+
+/**
+ * The mate headline for the PLAYER's own ply, or null when there is no mate to report.
+ *
+ * One function because there are two callers and one wording. The descriptive registry
+ * reaches it through the `mateNet` / `mateAgainst` rules; slot A reaches it directly for
+ * the plies that never get to the registry at all — `good` moves and error-classified
+ * ones. Writing the templates twice is how the two copies drift, and the first attempt at
+ * this did exactly that: slot A grew its own copy of the near/far split and immediately
+ * disagreed with the registry about the square.
+ *
+ * `deferToSquareRule` is the difference between the callers, not a preference. When a
+ * mating SQUARE is known, "Amenazas mate en g2" beats any sentence about distance — the
+ * square comes from a verified one-move mate and the player can check it on the board. In
+ * the registry, `ownThreat` / `oppIgnoredThreat` are there to say it, so this stands down.
+ * In slot A nothing else will, so it says the square itself rather than going quiet about
+ * the mate, which is what the whole change is for.
+ */
+function mateHeadline(f: MoveFacts, s: number, deferToSquareRule: boolean): string | null {
+  const b = band(f.evalAfter);
+  if (b !== "mate" && b !== "mateado") return null;
+  // A move that IS the mate has its own sentence; this is for the plies before it.
+  if (f.isMate) return null;
+  const forPlayer = b === "mate";
+  const square = forPlayer
+    ? (f.ownThreat?.kind === "mate" ? f.ownThreat.square : null)
+    : (f.ignoredThreat?.kind === "mate" ? f.ignoredThreat.square : null);
+  if (square) {
+    if (deferToSquareRule) return null;
+    return forPlayer
+      ? `Amenazas mate en ${square}: el rival no lo puede parar.`
+      : `Ojo: el rival tiene mate en ${square} y hay que impedirlo ya.`;
+  }
+  const dist = mateDistanceOf(f.evalAfter);
+  const near = dist !== "";
+  if (!forPlayer) {
+    return near
+      ? `Ojo: el rival tiene mate forzado${dist}. Ahora sólo sirve dar jaque, tapar o cambiar damas.`
+      : `Ojo: el rival tiene mate forzado. Está lejos, así que resiste: complica y busca cambios.`;
+  }
+  // Near enough to calculate at the board: go and get it.
+  if (near) return pick([
+    `Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.`,
+    `Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.`,
+  ], s);
+  // Far: the opposite advice, on purpose. See MATE_DIST_RELIABLE. Three variants, not
+  // two — a mating sequence hits this on every one of the player's plies, and with two
+  // the text visibly alternated down the move list.
+  return pick([
+    `Tienes mate forzado, aunque queda lejos: no hace falta que lo calcules. Juega sencillo y quédate con el material.`,
+    `Hay mate forzado a tu favor, pero es largo. Ve a lo seguro y cambia piezas; el mate llega solo.`,
+    `La posición está ganada por mate forzado, y todavía lejos. No lo fuerces: juega simple y no regales nada.`,
+  ], s);
+}
 
 type Band = "mateado" | "perdida" | "peor" | "igualada" | "mejor" | "ganando" | "mate";
 function band(e: number): Band {
@@ -333,58 +397,29 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
     id: "mateNet", group: "tactics",
     applies: (f, c) => {
       if (band(f.evalAfter) !== "mate") return null;
-      // A move that IS the mate is slotA's sentence ("¡Jaque mate! …"); this rule is for
-      // the plies BEFORE it, where the net exists and nobody was naming it.
-      if (f.isMate) return null;
-      // Stands down when the threat search already named the mating SQUARE. A square is
-      // a stronger fact than a distance — it comes from a verified one-move mate, and
-      // the player can check it on the board — so `ownThreat` keeps "Amenazas mate en
-      // g2" instead of being overwritten with "mate forzado en 2 jugadas". Same
-      // principle as the rookToSeventh/rookToOpenFile constraint: specific beats generic
-      // about the same fact. Caught by the A/B diff, which showed this rule displacing
-      // two square-naming sentences with a vaguer one.
-      if (f.ownThreat?.kind === "mate") return null;
-      // The distance is only claimed when the search can be trusted about it — see
-      // MATE_DIST_RELIABLE. Past that the count is noise and only the verdict survives.
-      const dist = mateDistance(f.evalAfter);
-      // Both lists named before the return, rather than two inline pick() calls, so every
-      // template sits within reading distance of the fact that authorises it — which is
-      // literally how scripts/auditClaims.cjs approximates scope. THREE long variants,
-      // not two: a mating sequence hits this rule on every one of the player's plies, and
-      // with two the text visibly alternated down the move list. That same repetition is
-      // what got the `islands` promotion rejected last time.
-      const SHORT = [
-        `Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.`,
-        `Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.`,
-      ];
-      const LONG = [
-        `Tienes mate forzado: la partida está sentenciada. Busca el mate, no el material.`,
-        `Hay mate forzado a tu favor. A partir de aquí el material da igual.`,
-        `La red de mate ya está tejida. Calcula el remate en vez de contar piezas.`,
-      ];
+      // Every word of it lives in mateHeadline, which slot A calls too — see there for the
+      // near/far split and for why a known mating SQUARE outranks a distance. `true` is
+      // the deference: in this registry `ownThreat` is present to name that square, so
+      // this rule stands down and lets it.
+      const text = mateHeadline(f, c.s, true);
+      if (!text) return null;
       // namesMaterial suppresses slot B, which would add "sigues ganando" underneath a
       // mate. Slot B already bails out above MATE_MAG, so this is belt and braces — but
       // the flag is what the composer reads, and a mate is the strongest claim there is.
-      // `dist` is empty exactly when the count was not worth asserting, which is also
-      // when the SHORT wording ("Remátalo") stops fitting — one condition, not two.
-      return { text: pick(dist ? SHORT : LONG, c.s), namesMaterial: true };
+      return { text, namesMaterial: true };
     },
   },
   {
     id: "mateAgainst", group: "tactics",
     applies: (f, c) => {
-      // The same fact from the other side. Separate rule rather than a sign branch
+      // The same fact from the other side. A separate rule rather than a sign branch
       // inside `mateNet`, because the two could legitimately rank differently: being
-      // mated is urgent, having mate is just decisive.
+      // mated is urgent, having mate is merely decisive. `oppIgnoredThreat` is the square
+      // rule this one defers to.
       if (band(f.evalAfter) !== "mateado") return null;
-      // Same deference as mateNet: `ignoredThreat` naming the square the rival mates on
-      // is more actionable than how many moves away it is.
-      if (f.ignoredThreat?.kind === "mate") return null;
-      const dist = mateDistance(f.evalAfter);
-      return { text: pick([
-        `Ojo: el rival tiene mate forzado${dist}. Busca jaques o cambiar damas; el material ya no cuenta.`,
-        `Cuidado, hay mate forzado contra ti${dist}. Lo único que sirve ahora es dar jaque o tapar.`,
-      ], c.s), namesMaterial: true };
+      const text = mateHeadline(f, c.s, true);
+      if (!text) return null;
+      return { text, namesMaterial: true };
     },
   },
   {
@@ -1408,6 +1443,26 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     ], s), namesMaterial: false };
   }
 
+  // A mate on the board outranks everything below — the praise for a brilliant move and
+  // every error template alike. Measured over 25 real games: 29 plies had a mate nobody
+  // mentioned. The registry rules fixed 25; the last 4 were all error-classified plies,
+  // which never reach the descriptive tier at all, so they read "Con esta jugada pierdes el
+  // hilo de la posición" while the player either had mate or was being mated.
+  //
+  // Placed in the TWO branches that bypass the registry rather than above them both. The
+  // first attempt put one block up here, which also intercepted the `!isError` plies that
+  // do reach quietComment — and those already handle a mate with the full priority table,
+  // so the block overrode two rules that were doing better: `ownThreat` lost "Amenazas
+  // mate en g2" and `promotion` lost "Coronas en h1 y quedas con mate forzado a tu favor".
+  // Duplicating an arbiter is how you lose the arbiter's guards.
+  //
+  // `missedForcedMate` stays ABOVE the error-path call: it reports a mate that WAS
+  // available and is now gone, which is a different sentence from one still on the board.
+  if (f.good) {
+    const mate = mateHeadline(f, s, false);
+    if (mate) return { text: mate, namesMaterial: true };
+  }
+
   if (f.good) {
     if (f.onlyGoodMove) {
       return { text: pick([
@@ -1456,6 +1511,15 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
       `Tenías jaque mate forzado y esta jugada lo desperdicia.`,
       `Había mate forzado a tu favor: esta jugada lo deja ir.`,
     ], s), namesMaterial: false };
+  }
+
+  // The other branch that bypasses the registry: an error-classified ply. These are the
+  // 4 that were left, and the ones where staying quiet about the mate was worst — being
+  // mated is the single most urgent thing a comment can say, and it was coming out as
+  // "Error: le das la iniciativa al rival".
+  {
+    const mate = mateHeadline(f, s, false);
+    if (mate) return { text: mate, namesMaterial: true };
   }
 
   // A piece sitting "undefended" on the very square where it just captured is not
@@ -2051,11 +2115,20 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
       if (f.ignoredThreat?.kind === "mate") return null;
       // Every ply of a mating sequence lands here, so this needs variants for the same
       // reason mateNet does — three plies in a row read identically otherwise.
-      const dist = mateDistance(f.evalAfter);
-      return pick([
-        `El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo único que hay que buscar.`,
+      //
+      // And like mateNet, the ADVICE flips with the distance: "no te distraigas con el
+      // material" is right for a mate in 2 and wrong for a mate in 9, where the material
+      // is the thing that will actually win the game for a club player.
+      const dist = mateDistanceOf(f.evalAfter);
+      const near = dist !== "";
+      return pick(near ? [
+        `El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo que hay que buscar.`,
         `${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.`,
         `El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; no te distraigas con el material.`,
+      ] : [
+        `El rival mueve ${c.piece} a ${c.to}, pero sigues con mate forzado. Está lejos: juega sencillo, no lo fuerces.`,
+        `${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: la posición está ganada por mate, aunque queda lejos.`,
+        `El rival juega ${c.piece} a ${c.to}. Mantienes mate forzado a la larga; ve a lo seguro y quédate con el material.`,
       ], c.s);
     },
   },
@@ -2063,7 +2136,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
     id: "oppMateAgainst", group: "tactics",
     applies: (f, c) => {
       if (band(f.evalAfter) !== "mate" || f.isMate) return null;
-      return `¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado${mateDistance(f.evalAfter)}.`;
+      return `¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado${mateDistanceOf(f.evalAfter)}.`;
     },
   },
   {

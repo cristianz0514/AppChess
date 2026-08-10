@@ -3,13 +3,13 @@
 <!-- generado por scripts/auditFirings.cjs -->
 
 ```
-fixtures 9   plies medidos 411   (44 saltados: van por el tier de error)
+fixtures 9   plies medidos 412   (47 saltados: van por el tier de error)
 
 ── QUIET_RULES ─────────────────────────────────────────────────
   regla                        disparó  aplicó   suprimida por
-  mateNet                          5       5   
+  mateNet                          6       6   
   mateAgainst                      1       1   
-  tactic                          16      16   
+  tactic                          16      17   mateNet×1
   book                            16      16   
   promotion                        1       1   
   capture                         39      46   tactic×6, mateNet×1
@@ -59,9 +59,9 @@ fixtures 9   plies medidos 411   (44 saltados: van por el tier de error)
   developsPiece                   17      30   book×6, tactic×3, underDefendedAside×2
   toCenter                         2      25   book×8, capture×7, knightToCenter×2
   dominantTermGain                 0      13   book×7, capture×3, underDefendedAside×1
-  passivePiece                     1      20   mateNet×5, capture×4, ownThreat×2
+  passivePiece                     1      21   mateNet×6, capture×4, ownThreat×2
   endgameFallback                  0      20   majority×5, capture×3, connectedPassedPair×3
-  fallback                        16     186   capture×39, developsPiece×17, book×16
+  fallback                        16     187   capture×39, developsPiece×17, book×16
 
 ── OPPONENT_RULES ──────────────────────────────────────────────
   regla                        disparó  aplicó   suprimida por
