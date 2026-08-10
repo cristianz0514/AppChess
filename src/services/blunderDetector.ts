@@ -552,6 +552,26 @@ export function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhit
       structure: structureChange(fenBefore, fenAfter, me),
       dominantTerm: dom ? { term: dom.term, delta: dom.delta } : null,
       theirKingWorse: pressureOnOpponent(fenBefore, fenAfter, me).theirKingWorse,
+      // Which side, if either, is down to a bare king. Reported from a real game: with
+      // White reduced to `kd5` and nothing else, the coach said "no te distraigas con el
+      // material" — there was none — and three plies later, "no lo fuerces" while the
+      // player was checking that king toward the edge with two rooks. A mate against a
+      // bare king is far AND trivial, which is a combination none of the mate wording
+      // allowed for. Counting pieces is the cheapest fact in this file.
+      //
+      // "mine"/"theirs" are relative to WHOEVER MOVED, like every other field this helper
+      // produces (`me` is the mover's colour). On an opponent's ply "theirs" is therefore
+      // the PLAYER. Readers must combine it with who is mating rather than assuming the
+      // player's viewpoint — mateHeadline does, and getting it backwards would hand a
+      // technique tip to the side being mated.
+      bareKing: (() => {
+        const cells = new Chess(fenAfter).board().flat().filter(Boolean) as { type: string; color: string }[];
+        const theirs = me === "w" ? "b" : "w";
+        const left = (side: string) => cells.filter((c) => c.color === side && c.type !== "k").length;
+        if (left(theirs) === 0) return "theirs" as const;
+        if (left(me) === 0) return "mine" as const;
+        return null;
+      })(),
       defendsAttacked: (() => {
         const d = defendsAttacked(fenBefore, fenAfter, me);
         return d ? { piece: PIECE_ES[d.piece] ?? "pieza", square: d.square } : null;
@@ -578,7 +598,7 @@ export function boardReadingFacts(fenBefore: string, fenAfter: string, moverWhit
     // facts are still perfectly good on their own.
     return {
       underDefended: null, overloaded: null, structure: null, dominantTerm: null,
-      theirKingWorse: false, ignoredThreat: null, ownThreat: null,
+      theirKingWorse: false, bareKing: null, ignoredThreat: null, ownThreat: null,
       defendsAttacked: null, battery: null,
     };
   }

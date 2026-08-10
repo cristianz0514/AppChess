@@ -183,6 +183,26 @@ const CASES = [
     why: "ERROR con mate lejano a mi favor: el consejo se invierte, no lo persigas",
     over: { classification: "blunder", evalBefore: 9990, evalAfter: 9989 },
   },
+
+  // ── rey pelado: mate LEJANO que sí se persigue ───────────────────────────────
+  // Reportado con posición real (ply 160-172): el rival en `kd5` y nada más, y el
+  // comentario decía "no te distraigas con el material" con cero material en el tablero,
+  // y "no lo fuerces" en el ply donde el jugador daba jaque para acorralar. Un mate contra
+  // rey pelado es lejano Y trivial, combinación que la división cerca/lejos no preveía.
+  // `bareKing` es relativo a QUIEN MUEVE, así que el signo se invierte entre los dos tiers
+  // — que es justo el error a evitar.
+  {
+    why: "rey pelado del rival, mate lejano: técnica, no cálculo, y NADA de material",
+    over: { evalBefore: 9990, evalAfter: 9991, classification: "best", bareKing: "theirs" },
+  },
+  {
+    why: "rey pelado del rival visto desde el ply del RIVAL: bareKing es 'mine' aquí",
+    over: { byOpponent: true, evalBefore: -9990, evalAfter: -9991, classification: "best", bareKing: "mine" },
+  },
+  {
+    why: "mi rey pelado y me van a matar: no recomendar cambios que no puedo hacer",
+    over: { evalBefore: -9992, evalAfter: -9993, classification: "best", bareKing: "mine" },
+  },
 ];
 
 const facts = CASES.map((c, i) => ({

@@ -128,7 +128,11 @@ export interface MoveFacts {
     isolatedTheirs: string | null;
   } | null;
   dominantTerm?: { term: string; delta: number } | null;  // which part of the eval moved
-  theirKingWorse?: boolean;    // your move added real pressure to their king
+  theirKingWorse?: boolean;
+  // Which side is down to a bare king, relative to WHOEVER MOVED on this ply (same
+  // convention as theirKingWorse and the rest of boardReadingFacts). Only the mate wording
+  // reads it, and only to answer one question: is the mate a calculation or a technique?
+  bareKing?: "mine" | "theirs" | null;    // your move added real pressure to their king
   // From the null move: what the opponent is about to do, and what you're
   // threatening. The only genuinely PREDICTIVE facts in the set — everything
   // else describes the move that was already played.
@@ -340,23 +344,41 @@ function mateHeadline(f: MoveFacts, s: number, deferToSquareRule: boolean): stri
   }
   const dist = mateDistanceOf(f.evalAfter);
   const near = dist !== "";
+  // Is the side BEING MATED down to a bare king? `bareKing` is relative to the mover, and
+  // `forPlayer` says whether the mover is the one mating, so the two have to be combined.
+  const matedIsBare = forPlayer ? f.bareKing === "theirs" : f.bareKing === "mine";
   if (!forPlayer) {
+    // Advice for the side being mated. With no material left there is nothing to trade
+    // and nothing to complicate with, so the honest thing is to say so rather than to
+    // recommend a queen swap the player cannot make.
+    if (matedIsBare) return `Ojo: el rival tiene mate forzado${dist} y te queda sólo el rey. No hay defensa: aprende la posición para no repetirla.`;
     return near
       ? `Ojo: el rival tiene mate forzado${dist}. Ahora sólo sirve dar jaque, tapar o cambiar damas.`
       : `Ojo: el rival tiene mate forzado. Está lejos, así que resiste: complica y busca cambios.`;
   }
+  // A mate against a BARE KING is the third axis MATE_DIST_RELIABLE did not account for:
+  // it can be far and still be trivial. Reported from a real game, with the rival on `kd5`
+  // and nothing else — the coach said "no te distraigas con el material" (there was none)
+  // and, on the very ply the player checked that king toward the edge, "no lo fuerces".
+  // Both backwards. Here the mate is not a calculation, it is a technique, so the distance
+  // stops mattering and the advice is how to execute it.
+  if (matedIsBare) return pick([
+    `Al rival le queda sólo el rey: esto es mate de técnica, no de cálculo. Acórralo hacia el borde con tu rey y remata.`,
+    `Rey solo contra tus piezas. Empuja su rey a una banda, acerca el tuyo y da el mate; no hay prisa ni riesgo.`,
+    `Mate forzado contra el rey pelado. Ve reduciéndole casillas con jaques y con tu rey: cae solo.`,
+  ], s);
   // Near enough to calculate at the board: go and get it.
   if (near) return pick([
-    `Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.`,
-    `Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.`,
+    `Tienes mate forzado${dist}. Remátalo, es lo más rápido que hay.`,
+    `Mate forzado${dist} a tu favor. Ve al mate antes que a cualquier captura.`,
   ], s);
-  // Far: the opposite advice, on purpose. See MATE_DIST_RELIABLE. Three variants, not
-  // two — a mating sequence hits this on every one of the player's plies, and with two
-  // the text visibly alternated down the move list.
+  // Far, with pieces still on: here "you cannot calculate it" IS the reason, so keep the
+  // material and let the mate come. Three variants, not two — a mating sequence hits this
+  // on every one of the player's plies, and with two the text alternated visibly.
   return pick([
-    `Tienes mate forzado, aunque queda lejos: no hace falta que lo calcules. Juega sencillo y quédate con el material.`,
-    `Hay mate forzado a tu favor, pero es largo. Ve a lo seguro y cambia piezas; el mate llega solo.`,
-    `La posición está ganada por mate forzado, y todavía lejos. No lo fuerces: juega simple y no regales nada.`,
+    `Tienes mate forzado, aunque queda lejos: no hace falta que lo calcules. Juega sencillo y conserva tu ventaja.`,
+    `Hay mate forzado a tu favor, pero es largo. Ve a lo seguro; el mate llega solo.`,
+    `La posición está ganada por mate forzado, y todavía lejos. Sin prisa: no regales nada y seguirá ahí.`,
   ], s);
 }
 
@@ -2116,19 +2138,26 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
       // Every ply of a mating sequence lands here, so this needs variants for the same
       // reason mateNet does — three plies in a row read identically otherwise.
       //
-      // And like mateNet, the ADVICE flips with the distance: "no te distraigas con el
-      // material" is right for a mate in 2 and wrong for a mate in 9, where the material
-      // is the thing that will actually win the game for a club player.
+      // Three cases, not two, and the third is the one the user hit. On this tier the mover
+      // is the RIVAL, so their bare king is `bareKing === "mine"` — inverted from the
+      // player's tier, which is exactly the mistake to avoid here. Every one of the plies
+      // reported (160, 166, 172 of a real game) had the rival on a bare king and got
+      // "no te distraigas con el material" with nothing on the board to take.
+      const bare = f.bareKing === "mine";
       const dist = mateDistanceOf(f.evalAfter);
       const near = dist !== "";
-      return pick(near ? [
+      return pick(bare ? [
+        `${cap(c.piece)} del rival va a ${c.to}, pero le queda sólo el rey. Acórralo hacia el borde y remata.`,
+        `El rival mueve ${c.piece} a ${c.to} con el rey pelado. Empuja su rey a una banda y acerca el tuyo.`,
+        `El rival juega ${c.piece} a ${c.to}. Rey solo: quítale casillas y el mate cae.`,
+      ] : near ? [
         `El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo que hay que buscar.`,
         `${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.`,
-        `El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; no te distraigas con el material.`,
+        `El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; ve al remate.`,
       ] : [
-        `El rival mueve ${c.piece} a ${c.to}, pero sigues con mate forzado. Está lejos: juega sencillo, no lo fuerces.`,
+        `El rival mueve ${c.piece} a ${c.to}, pero sigues con mate forzado. Está lejos: sin prisa, no regales nada.`,
         `${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: la posición está ganada por mate, aunque queda lejos.`,
-        `El rival juega ${c.piece} a ${c.to}. Mantienes mate forzado a la larga; ve a lo seguro y quédate con el material.`,
+        `El rival juega ${c.piece} a ${c.to}. Mantienes mate forzado a la larga; ve a lo seguro.`,
       ], c.s);
     },
   },

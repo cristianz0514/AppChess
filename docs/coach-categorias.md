@@ -6,7 +6,7 @@ los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
 - **Categorías:** 149
-- **Variantes de texto:** 394
+- **Variantes de texto:** 401
 - **Sin nombre humano todavía:** 12
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -44,13 +44,17 @@ _Bandera:_ `isMate`
 
 1. Amenazas mate en ${square}: el rival no lo puede parar.
 2. Ojo: el rival tiene mate en ${square} y hay que impedirlo ya.
-3. Ojo: el rival tiene mate forzado${dist}. Ahora sólo sirve dar jaque, tapar o cambiar damas.
-4. Ojo: el rival tiene mate forzado. Está lejos, así que resiste: complica y busca cambios.
-5. Tienes mate forzado${dist}. Remátalo: ya no hace falta ganar material.
-6. Mate forzado${dist} a tu favor. Ve al mate, no a las capturas.
-7. Tienes mate forzado, aunque queda lejos: no hace falta que lo calcules. Juega sencillo y quédate con el material.
-8. Hay mate forzado a tu favor, pero es largo. Ve a lo seguro y cambia piezas; el mate llega solo.
-9. La posición está ganada por mate forzado, y todavía lejos. No lo fuerces: juega simple y no regales nada.
+3. Ojo: el rival tiene mate forzado${dist} y te queda sólo el rey. No hay defensa: aprende la posición para no repetirla.
+4. Ojo: el rival tiene mate forzado${dist}. Ahora sólo sirve dar jaque, tapar o cambiar damas.
+5. Ojo: el rival tiene mate forzado. Está lejos, así que resiste: complica y busca cambios.
+6. Al rival le queda sólo el rey: esto es mate de técnica, no de cálculo. Acórralo hacia el borde con tu rey y remata.
+7. Rey solo contra tus piezas. Empuja su rey a una banda, acerca el tuyo y da el mate; no hay prisa ni riesgo.
+8. Mate forzado contra el rey pelado. Ve reduciéndole casillas con jaques y con tu rey: cae solo.
+9. Tienes mate forzado${dist}. Remátalo, es lo más rápido que hay.
+10. Mate forzado${dist} a tu favor. Ve al mate antes que a cualquier captura.
+11. Tienes mate forzado, aunque queda lejos: no hace falta que lo calcules. Juega sencillo y conserva tu ventaja.
+12. Hay mate forzado a tu favor, pero es largo. Ve a lo seguro; el mate llega solo.
+13. La posición está ganada por mate forzado, y todavía lejos. Sin prisa: no regales nada y seguirá ahí.
 
 ---
 
@@ -60,12 +64,15 @@ _Bandera:_ `isMate`
 
 _Bandera:_ `oppMateNet`
 
-1. El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo que hay que buscar.
-2. ${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.
-3. El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; no te distraigas con el material.
-4. El rival mueve ${c.piece} a ${c.to}, pero sigues con mate forzado. Está lejos: juega sencillo, no lo fuerces.
-5. ${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: la posición está ganada por mate, aunque queda lejos.
-6. El rival juega ${c.piece} a ${c.to}. Mantienes mate forzado a la larga; ve a lo seguro y quédate con el material.
+1. ${cap(c.piece)} del rival va a ${c.to}, pero le queda sólo el rey. Acórralo hacia el borde y remata.
+2. El rival mueve ${c.piece} a ${c.to} con el rey pelado. Empuja su rey a una banda y acerca el tuyo.
+3. El rival juega ${c.piece} a ${c.to}. Rey solo: quítale casillas y el mate cae.
+4. El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo que hay que buscar.
+5. ${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.
+6. El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; ve al remate.
+7. El rival mueve ${c.piece} a ${c.to}, pero sigues con mate forzado. Está lejos: sin prisa, no regales nada.
+8. ${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: la posición está ganada por mate, aunque queda lejos.
+9. El rival juega ${c.piece} a ${c.to}. Mantienes mate forzado a la larga; ve a lo seguro.
 
 ### Su jugada deja mate forzado contra ti
 
