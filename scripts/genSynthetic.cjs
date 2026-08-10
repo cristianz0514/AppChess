@@ -203,6 +203,16 @@ const CASES = [
     why: "mi rey pelado y me van a matar: no recomendar cambios que no puedo hacer",
     over: { evalBefore: -9992, evalAfter: -9993, classification: "best", bareKing: "mine" },
   },
+  {
+    why: "me matan en 3 Y hay mejor jugada que captura: slotC no puede recomendar ganar un peón",
+    // El titular acaba de decir que sólo sirve dar jaque o tapar; slotC lo completaba con
+    // "Con el alfil a g5 te llevabas el peón". Encontrado sondeando la combinación, no
+    // esperando a verla en una partida.
+    over: {
+      classification: "blunder", evalBefore: -5, evalAfter: -9997,
+      bestPiece: "alfil", bestTo: "g5", bestCapturedPiece: "peón", bestTradeVerdict: "gana",
+    },
+  },
 ];
 
 const facts = CASES.map((c, i) => ({

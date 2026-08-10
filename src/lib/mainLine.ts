@@ -162,9 +162,20 @@ export function followUpClause(plan: LinePlan, voice: "player" | "opponent" = "p
   if (f.isMate) return `y remata con ${art(f.piece)} en ${f.to}`;
   if (f.captured) return `${then} ${art(f.captured)} de ${f.to}`;
   if (f.isCheck) {
-    return mine
-      ? `y sigues con jaque de ${art(f.piece)} en ${f.to}`
-      : `y sigue con jaque de ${art(f.piece)} en ${f.to}`;
+    // Two fixes here, found by review rather than by a screenshot.
+    //
+    // `deArt`: this read "jaque de el alfil en c5" — Spanish contracts de+el into del, and
+    // this file did not have the helper coachComment.ts already carries for exactly this.
+    // The bug shipped in 0aa1a28 and had never been read aloud.
+    //
+    // And the third-move connector, which the first pass wired into the capture and quiet
+    // branches and forgot here: a check three moves down was still being announced with
+    // "sigues", which claims the very NEXT move. Same false claim about WHEN that the
+    // capture branch was fixed for.
+    const now = plan.followUpIsThird
+      ? (mine ? "y acabas dando jaque" : "y acaba dando jaque")
+      : (mine ? "y sigues con jaque" : "y sigue con jaque");
+    return `${now} ${deArt(f.piece)} en ${f.to}`;
   }
   const move = plan.followUpIsThird
     ? (mine ? "y acabas jugando" : "y acaba jugando")
@@ -207,3 +218,8 @@ const ART: Record<string, string> = {
   torre: "la torre", dama: "la dama", rey: "el rey",
 };
 const art = (p: string) => ART[p] ?? `el ${p}`;
+/** "de" plus the article, contracted: de + el -> del. Spanish has no "de el". */
+const deArt = (p: string) => {
+  const a = art(p);
+  return a.startsWith("el ") ? `del ${a.slice(3)}` : `de ${a}`;
+};

@@ -77,6 +77,26 @@ const CASES = [
     why: "no hay segunda jugada: callar es correcto",
   },
   {
+    name: "tercera jugada que da JAQUE -> 'acabas dando jaque', y 'del' contraído",
+    fen: "4k3/6r1/8/2p5/8/8/3R1B2/4K3 w - - 0 1",
+    line: ["Rd4", "cxd4", "Bxd4", "Kf8", "Bc5+"],
+    voice: "player",
+    expect: "y acabas dando jaque del alfil en c5",
+    // Dos defectos en una frase. El conector de tercera jugada estaba puesto en las ramas
+    // de captura y de jugada tranquila y NO en la de jaque, así que un jaque tres jugadas
+    // más abajo se anunciaba con "sigues", que afirma la jugada siguiente. Y "de el alfil"
+    // — el español contrae de+el en del; ese venía de 0aa1a28 y nadie lo había leído.
+    why: "el conector de tercera jugada faltaba en la rama de jaque, y 'de el' no existe",
+  },
+  {
+    name: "segunda jugada que da jaque -> conector normal, 'de la' sin contraer",
+    fen: "4k3/6r1/8/8/8/8/3R1B2/4K3 w - - 0 1",
+    line: ["Rd7", "Kf8", "Rd8+"],
+    voice: "player",
+    expect: "y sigues con jaque de la torre en d8",
+    why: "deArt sólo contrae de+el: 'de la torre' tiene que quedarse como está",
+  },
+  {
     name: "recaptura sin tercera jugada -> sin plan",
     fen: "4k3/8/8/2p5/8/8/3R1B2/4K3 w - - 0 1",
     line: ["Rd4", "cxd4", "Bxd4"],

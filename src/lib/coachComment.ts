@@ -1912,6 +1912,15 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
   const s = f.variantSeed;
   const bp = art(f.bestPiece), sq = f.bestTo;
 
+  // Being mated changes what a "better move" even means, and this slot is concatenated
+  // after slot A. Found by probing the combination rather than by waiting for it: slot A
+  // now says "Ojo: el rival tiene mate forzado en 3 jugadas. Ahora sólo sirve dar jaque,
+  // tapar o cambiar damas." and slot C completed it with "Con el alfil a g5 te llevabas el
+  // peón" — recommending a pawn grab one clause after saying material is beside the point.
+  // In a lost-to-mate position the engine's move delays the mate; framing it as winning
+  // material is simply the wrong description of it.
+  if (band(f.evalAfter) === "mateado") return `${cap(bp)} a ${sq} aguantaba más.`;
+
   // When the headline is a missed mate, the alternative has to be about the
   // mate — "te llevabas el peón" badly undersells it.
   if (f.missedForcedMate) return `Con ${bp} a ${sq} forzabas el mate.`;

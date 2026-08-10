@@ -3,7 +3,7 @@
 <!-- generado por scripts/auditFirings.cjs -->
 
 ```
-fixtures 9   plies medidos 415   (47 saltados: van por el tier de error)
+fixtures 9   plies medidos 415   (48 saltados: van por el tier de error)
 
 ── QUIET_RULES ─────────────────────────────────────────────────
   regla                        disparó  aplicó   suprimida por

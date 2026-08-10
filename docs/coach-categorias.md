@@ -5,9 +5,9 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 149
-- **Variantes de texto:** 401
-- **Sin nombre humano todavía:** 12
+- **Categorías:** 150
+- **Variantes de texto:** 402
+- **Sin nombre humano todavía:** 13
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
 que se movió, `f.playedTo` la casilla de destino, y así. Al reescribir un texto,
@@ -1149,6 +1149,12 @@ _Bandera:_ `evalAfter`
 ---
 
 ## Tus jugadas — ranura C: qué era mejor
+
+### variantSeed
+
+_Bandera:_ `variantSeed`
+
+1. ${cap(bp)} a ${sq} aguantaba más.
 
 ### Mate forzado que se escapó
 
