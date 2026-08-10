@@ -42,7 +42,11 @@
 const fs = require("fs");
 const path = require("path");
 
-const SRC = path.join(__dirname, "..", "src", "lib", "coachComment.ts");
+// Optional path argument, so the same audit can be pointed at another revision of the
+// file (`git show HEAD:src/lib/coachComment.ts > tmp.ts`). That is how a change to the
+// SCOPE heuristic below gets verified: if widening the window were hiding real findings,
+// running the new script against the old source would show fewer than the old script did.
+const SRC = process.argv[2] || path.join(__dirname, "..", "src", "lib", "coachComment.ts");
 
 // ── The authority table ───────────────────────────────────────────────────────
 //
@@ -112,9 +116,16 @@ const AUTHORITIES = [
   },
   {
     question: "¿Hay mate?",
-    owner: "la búsqueda — isMate / missedForcedMate / ownThreat.kind",
-    says: [/jaque mate/i, /\bmate en\b/i, /\bhay mate\b/i, /mate forzado/i],
-    authorizedBy: ["isMate", "missedForcedMate", "ownThreat", "ignoredThreat", "opportunity", "isMate"],
+    owner: "la búsqueda — isMate / missedForcedMate / ownThreat.kind / band(evalAfter)",
+    says: [/jaque mate/i, /\bmate en\b/i, /\bhay mate\b/i, /mate forzado/i, /red de mate/i],
+    // `band` joins this list as a fourth authority. A mate score is encoded as
+    // ±(MATE_SCORE − N), so `band(f.evalAfter) === "mate"` is the engine saying "mate",
+    // exactly as directly as isMate does — and it is the only one of the four that
+    // speaks on the plies BEFORE the mating move, which is where 62% of the mates on
+    // the board were going unmentioned. Added when this audit correctly flagged the
+    // four new mateNet templates: the claim was sound, the table just did not know the
+    // fact that backs it yet.
+    authorizedBy: ["isMate", "missedForcedMate", "ownThreat", "ignoredThreat", "opportunity", "band", "evalAfter"],
   },
   {
     question: "¿Cambió el resultado de la partida?",
@@ -128,19 +139,61 @@ const src = fs.readFileSync(SRC, "utf8");
 const lines = src.split(/\r?\n/);
 
 const FN = /^function (quietComment|slotA|slotB|slotC|opponentQuietComment|opponentSlip|opportunityClause|opportunityOutcome)\b/;
+// A rule in QUIET_RULES / OPPONENT_RULES. Its guards are always the first statements of
+// `applies`, so the rule's opening is part of every template's scope no matter how far
+// down the body that template sits.
+const RULE = /^\s*id: "(\w+)", group: "\w+"/;
 const LOOKBACK = 10;
+const GUARD_LINES = 12;   // code lines from a rule's `id:` that can still be its guard
 
-// Facts visible from a template on `idx`: everything named on its own line plus
-// the lines just above, which is where this file's guards live (`if (f.x) return
-// …` one-liners, or a short block opened by `if (f.x) {`).
+const isComment = (l) => /^\s*(\/\/|\*|\/\*)/.test(l);
+
+// Where each line's enclosing rule starts, so scope can always reach the guards.
+// Before the registry refactor every template lived inside a top-level `function` and a
+// flat lookback was enough. Now a rule is an object literal with its guards at the top
+// and its templates 15 lines below, and the flat window could no longer see them — it
+// reported three sound `mateNet` templates as unauthorised while `band(f.evalAfter)` sat
+// right at the top of the same rule.
+const ruleStartOf = new Array(lines.length).fill(-1);
+{
+  let current = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(RULE);
+    if (m) current = i;
+    ruleStartOf[i] = current;
+  }
+}
+
+// Facts visible from a template on `idx`: everything named on its own line, the code
+// lines just above (where this file's guards live), and its rule's own guard block.
+//
+// COMMENT lines do not consume the lookback budget. A comment cannot establish a fact,
+// so spending window on it was arbitrary — and this file documents its reasoning
+// heavily, which meant the better-explained a rule was, the less of it the audit could
+// see. Counting only code makes the window mean "the last 10 things that RAN".
 function factsInScope(idx) {
   const found = new Set();
-  for (let k = Math.max(0, idx - LOOKBACK); k <= idx; k++) {
-    for (const m of lines[k].matchAll(/\bf\.(\w+)/g)) found.add(m[1]);
+  const note = (l) => {
+    for (const m of l.matchAll(/\bf\.(\w+)/g)) found.add(m[1]);
     // Locals destructured from a fact keep its authority: `const d = f.selfHang`
     // then `d.square` is still the attack table speaking.
-    for (const m of lines[k].matchAll(/\b(?:const|let) (\w+) = f\.(\w+)/g)) { found.add(m[2]); found.add(m[1]); }
-    if (/\bloose\b|\btactic\b|\bt\.kind\b/.test(lines[k])) found.add("loose");
+    for (const m of l.matchAll(/\b(?:const|let) (\w+) = f\.(\w+)/g)) { found.add(m[2]); found.add(m[1]); }
+    if (/\bloose\b|\btactic\b|\bt\.kind\b/.test(l)) found.add("loose");
+  };
+
+  let budget = LOOKBACK;
+  for (let k = idx; k >= 0 && budget >= 0; k--) {
+    note(lines[k]);
+    if (!isComment(lines[k])) budget--;
+  }
+
+  const start = ruleStartOf[idx];
+  if (start >= 0) {
+    let seen = 0;
+    for (let k = start; k < lines.length && seen < GUARD_LINES; k++) {
+      note(lines[k]);
+      if (!isComment(lines[k])) seen++;
+    }
   }
   return found;
 }
@@ -154,6 +207,11 @@ for (let i = 0; i < lines.length; i++) {
   const trimmed = raw.trim();
   const f = trimmed.match(FN);
   if (f) { fn = f[1]; continue; }
+  // Report the RULE id when the template lives in a registry. Every one of the 53
+  // templates was being labelled "(auxiliar)" since the refactor, which is useless for
+  // finding the thing being reported.
+  const r = raw.match(RULE);
+  if (r) { fn = r[1]; continue; }
   if (/^\s*(\/\/|\*)/.test(raw)) continue;          // comments hold examples, not templates
 
   for (const m of raw.matchAll(/`([^`]*)`/g)) {

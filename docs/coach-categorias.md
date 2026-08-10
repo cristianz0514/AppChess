@@ -5,8 +5,8 @@
 los cambios. Para cambiar un texto, cámbialo en el código (o dime cuál y lo
 cambio yo) y vuelve a generar este archivo.
 
-- **Categorías:** 146
-- **Variantes de texto:** 375
+- **Categorías:** 150
+- **Variantes de texto:** 388
 - **Sin nombre humano todavía:** 12
 
 Los huecos entre `${...}` los rellena el programa: `f.playedPiece` es la pieza
@@ -41,6 +41,20 @@ _Bandera:_ `(varios)`
 ---
 
 ## Jugadas del rival — descriptivo
+
+### Su jugada no cambia nada: mantienes mate forzado
+
+_Bandera:_ `oppMateNet`
+
+1. El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo único que hay que buscar.
+2. ${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.
+3. El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; no te distraigas con el material.
+
+### Su jugada deja mate forzado contra ti
+
+_Bandera:_ `oppMateAgainst`
+
+1. ¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado en ${n} ${jug}.
 
 ### El rival da mate
 
@@ -430,6 +444,25 @@ _Bandera:_ `tookOpportunity`
 ---
 
 ## Tus jugadas — descriptivo
+
+### Red de mate a tu favor (distancia sólo si es fiable)
+
+_Bandera:_ `mateNet`
+
+1. Tienes mate forzado en ${n} ${jug}. Remátalo: ya no hace falta ganar material.
+2. Mate forzado en ${n} ${jug} a tu favor. Ve al mate, no a las capturas.
+3. Tienes mate forzado: la partida está sentenciada. Busca el mate, no el material.
+4. Hay mate forzado a tu favor. A partir de aquí el material da igual.
+5. La red de mate ya está tejida. Calcula el remate en vez de contar piezas.
+
+### Red de mate en tu contra
+
+_Bandera:_ `mateAgainst`
+
+1. Ojo: el rival tiene mate forzado en ${n} ${jug}. Busca jaques o cambiar damas; el material ya no cuenta.
+2. Cuidado, hay mate forzado contra ti en ${n} ${jug}. Lo único que sirve ahora es dar jaque o tapar.
+3. Ojo: el rival tiene mate forzado. Busca jaques o cambiar damas; el material ya no cuenta.
+4. Cuidado, hay mate forzado contra ti. Lo único que sirve ahora es dar jaque o tapar.
 
 ### Táctica ejecutada (doble, clavada, enfilada, descubierta)
 

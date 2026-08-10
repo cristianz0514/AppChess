@@ -84,6 +84,8 @@ const NAMES = {
   // inferred from a condition, so these are the names of decision units. Several
   // deliberately differ from a fact name because one rule folds in several sub-cases:
   // `capture` covers recapture / winning / even, `book` covers all four theory cases.
+  mateNet: "Red de mate a tu favor (distancia sólo si es fiable)",
+  mateAgainst: "Red de mate en tu contra",
   tactic: "Táctica ejecutada (doble, clavada, enfilada, descubierta)",
   book: "Jugada de libro (apertura)",
   promotion: "Coronación",
@@ -116,6 +118,8 @@ const NAMES = {
   // Same facts, read from the player's side: on the rival's ply the mover is the rival,
   // so several of these invert in meaning — their under-defended piece is YOUR
   // opportunity, their ignored threat is YOUR chance.
+  oppMateNet: "Su jugada no cambia nada: mantienes mate forzado",
+  oppMateAgainst: "Su jugada deja mate forzado contra ti",
   oppMate: "El rival da mate",
   oppTacticOrLoose: "Táctica del rival contra ti (o pieza tuya suelta)",
   oppCapture: "El rival captura (recaptura / gana / parejo)",

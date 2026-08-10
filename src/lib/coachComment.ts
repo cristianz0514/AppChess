@@ -260,8 +260,30 @@ const pick = (variants: string[], seed: number) =>
 
 const MATE_MAG = 90; // |eval| at/above this means mate, not a pawn count
 
-type Band = "perdida" | "peor" | "igualada" | "mejor" | "ganando";
+// How far the mate is, in MOVES, recovered from the evaluation alone.
+//
+// The engine reports `mate N`, and engineApi encodes it as ±(MATE_SCORE − N). So the
+// distance is already inside every evaluation the pipeline ever stored: saying "mate en
+// 4" costs no extra search, only the arithmetic.
+//
+// MATE_SCORE is duplicated rather than imported because this file must stay
+// import-free — that property is what lets scripts/diffComments.cjs and
+// scripts/auditFirings.cjs load it standalone, and it is the whole reason a
+// byte-for-byte A/B diff over 435 real plies is cheap enough to run on every change.
+// The two copies are named here so a change to one is a change to a documented pair.
+const MATE_SCORE = 10000; // must equal engineApi.ts MATE_SCORE
+const mateInMoves = (e: number) => Math.max(1, MATE_SCORE - Math.round(Math.abs(e)));
+
+type Band = "mateado" | "perdida" | "peor" | "igualada" | "mejor" | "ganando" | "mate";
 function band(e: number): Band {
+  // Mate is checked FIRST and is its own band, not the top of the pawn scale. Measured
+  // over 25 real games: 47 plies had a mate on the board and 29 of them (62%) never
+  // mentioned it. The evaluation was consulted as a pawn count, so a mate in 3 came out
+  // as "quedas con ventaja decisiva" and a king being mated got endgame advice — "El
+  // rival activa su rey hacia f3: en el final es una pieza más". MATE_MAG already
+  // existed in this file, but only ever to SUPPRESS claims, never to make one.
+  if (e >= MATE_MAG) return "mate";
+  if (e <= -MATE_MAG) return "mateado";
   if (e <= -3) return "perdida";
   if (e <= -1) return "peor";
   if (e < 1) return "igualada";
@@ -269,7 +291,90 @@ function band(e: number): Band {
   return "ganando";
 }
 
+// ── The mate net, above everything ───────────────────────────────────────────
+//
+// A forced mate is the biggest outcome the game has, so it outranks the material count,
+// the tactic and the check. Until now nothing said it unless the move DELIVERED the mate
+// (slotA) or THREW it away (`missedForcedMate`, which is gated on `!good` — so playing
+// the best move with a mate available said nothing about the mate at all).
+//
+// Real examples these two rules replace, both from games where the player had mate on
+// the board: "Das jaque con la dama y quedas con ventaja decisiva" (a mate in 3, sold as
+// an advantage) and "Recuperas la torre en d1: el cambio queda saldado" (counting wood
+// while the king falls).
+//
+// The "why" lives out here rather than inside `applies` so the GUARD is the rule's first
+// statement, which is both this file's stated convention and what keeps the scope window
+// in scripts/auditClaims.cjs able to see the fact that authorises the claim.
 export const QUIET_RULES: ReadonlyArray<CoachRule> = [
+  {
+    id: "mateNet", group: "tactics",
+    applies: (f, c) => {
+      if (band(f.evalAfter) !== "mate") return null;
+      // A move that IS the mate is slotA's sentence ("¡Jaque mate! …"); this rule is for
+      // the plies BEFORE it, where the net exists and nobody was naming it.
+      if (f.isMate) return null;
+      // Stands down when the threat search already named the mating SQUARE. A square is
+      // a stronger fact than a distance — it comes from a verified one-move mate, and
+      // the player can check it on the board — so `ownThreat` keeps "Amenazas mate en
+      // g2" instead of being overwritten with "mate forzado en 2 jugadas". Same
+      // principle as the rookToSeventh/rookToOpenFile constraint: specific beats generic
+      // about the same fact. Caught by the A/B diff, which showed this rule displacing
+      // two square-naming sentences with a vaguer one.
+      if (f.ownThreat?.kind === "mate") return null;
+      // The DISTANCE is only claimed when the search can be trusted about it. A `mate N`
+      // score is an upper bound, not the shortest mate: a fixed-depth search reports the
+      // mate it happened to find. Over one real endgame the sweep reported 9, then 7,
+      // then 9 again on consecutive plies — each honest, together unreadable. A mate
+      // within 4 moves sits well inside a depth-16 search, so there the bound is the
+      // answer; past that the count is noise and only the verdict survives.
+      const RELIABLE = 4;
+      const n = mateInMoves(f.evalAfter);
+      const jug = n === 1 ? "jugada" : "jugadas";
+      // Both lists named before the return, rather than two inline pick() calls, so every
+      // template sits within reading distance of the fact that authorises it — which is
+      // literally how scripts/auditClaims.cjs approximates scope. THREE long variants,
+      // not two: a mating sequence hits this rule on every one of the player's plies, and
+      // with two the text visibly alternated down the move list. That same repetition is
+      // what got the `islands` promotion rejected last time.
+      const SHORT = [
+        `Tienes mate forzado en ${n} ${jug}. Remátalo: ya no hace falta ganar material.`,
+        `Mate forzado en ${n} ${jug} a tu favor. Ve al mate, no a las capturas.`,
+      ];
+      const LONG = [
+        `Tienes mate forzado: la partida está sentenciada. Busca el mate, no el material.`,
+        `Hay mate forzado a tu favor. A partir de aquí el material da igual.`,
+        `La red de mate ya está tejida. Calcula el remate en vez de contar piezas.`,
+      ];
+      // namesMaterial suppresses slot B, which would add "sigues ganando" underneath a
+      // mate. Slot B already bails out above MATE_MAG, so this is belt and braces — but
+      // the flag is what the composer reads, and a mate is the strongest claim there is.
+      return { text: pick(n <= RELIABLE ? SHORT : LONG, c.s), namesMaterial: true };
+    },
+  },
+  {
+    id: "mateAgainst", group: "tactics",
+    applies: (f, c) => {
+      // The same fact from the other side. Separate rule rather than a sign branch
+      // inside `mateNet`, because the two could legitimately rank differently: being
+      // mated is urgent, having mate is just decisive.
+      if (band(f.evalAfter) !== "mateado") return null;
+      // Same deference as mateNet: `ignoredThreat` naming the square the rival mates on
+      // is more actionable than how many moves away it is.
+      if (f.ignoredThreat?.kind === "mate") return null;
+      const n = mateInMoves(f.evalAfter);
+      const jug = n === 1 ? "jugada" : "jugadas";
+      return { text: n <= 4
+        ? pick([
+            `Ojo: el rival tiene mate forzado en ${n} ${jug}. Busca jaques o cambiar damas; el material ya no cuenta.`,
+            `Cuidado, hay mate forzado contra ti en ${n} ${jug}. Lo único que sirve ahora es dar jaque o tapar.`,
+          ], c.s)
+        : pick([
+            `Ojo: el rival tiene mate forzado. Busca jaques o cambiar damas; el material ya no cuenta.`,
+            `Cuidado, hay mate forzado contra ti. Lo único que sirve ahora es dar jaque o tapar.`,
+          ], c.s), namesMaterial: true };
+    },
+  },
   {
     id: "tactic", group: "tactics",
     applies: (f, c) => {
@@ -1033,6 +1138,9 @@ export const QUIET_PRIORITY: readonly string[] = [
   // aquí decides tú." became "Pones el alfil en e7, fuera de su casilla inicial." That
   // sentence is said once per game and is one of the most useful the coach has; a
   // developing move is not a better thing to say about a theory move.
+  // The mate net first: it is the largest expected outcome, and the measurement that put
+  // it here is in band() — 29 of 47 plies with a mate on the board never said so.
+  "mateNet", "mateAgainst",
   "tactic", "book", "promotion", "capture", "dustGain",
   // Threats and attacks: what the opponent is now forced to answer.
   "ownThreat", "looseEnemy", "check", "attacksBigger", "defendsAttacked",
@@ -1139,6 +1247,9 @@ export interface ArbiterTrace<R = RuleResult> { winnerId: string; candidates: Ru
  * failed to protect these once.
  */
 export const QUIET_CONSTRAINTS: ReadonlyArray<readonly [string, string, string]> = [
+  ["mateNet", "capture", "counting wood while the king falls: 'Recuperas la torre en d1' at mate in 2"],
+  ["mateNet", "check", "'Das jaque y quedas con ventaja decisiva' — that was a mate in 3"],
+  ["mateAgainst", "capture", "the same, from the side being mated"],
   ["tactic", "book", "84/84 plies with a tactic were being called theory"],
   ["ownThreat", "looseEnemy", "the null-move search outranks the heuristic on the same question"],
   ["capture", "defendsAttacked", "the capture is the headline, the cover is the footnote"],
@@ -1221,7 +1332,12 @@ if (process.env.NODE_ENV !== "production") {
 /** The locals the chain used to compute inline, now built once per call. */
 function quietCtx(f: MoveFacts, soft: boolean): QuietCtx {
   const where = band(f.evalAfter);
+  // The two mate bands need their own words. Without them the ternary's default swept a
+  // mate FOR the player into "en una posición muy difícil" — the exact inversion this
+  // band exists to prevent. In practice `mateNet`/`mateAgainst` outrank every rule that
+  // reads `standing`, so these are the safety net rather than the fix.
   const standing =
+    where === "mate" ? "con mate forzado a tu favor" : where === "mateado" ? "con mate en contra" :
     where === "ganando" ? "con ventaja decisiva" : where === "mejor" ? "con ventaja" :
     where === "igualada" ? "en una posición equilibrada" : where === "peor" ? "aún en desventaja" :
     `en una posición muy difícil`;
@@ -1231,6 +1347,7 @@ function quietCtx(f: MoveFacts, soft: boolean): QuietCtx {
   // for the trade templates and I reintroduced with a new variant. `state` is the
   // adjectival form for those.
   const state =
+    where === "mate" ? "sentenciada a tu favor" : where === "mateado" ? "sentenciada en tu contra" :
     where === "ganando" ? "decidida a tu favor" : where === "mejor" ? "a tu favor" :
     where === "igualada" ? "equilibrada" : where === "peor" ? "en tu contra" :
     "muy difícil";
@@ -1881,6 +1998,38 @@ export const OPPONENT_CONSTRAINTS: ReadonlyArray<readonly [string, string, strin
 
 export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   {
+    id: "oppMateNet", group: "tactics",
+    applies: (f, c) => {
+      // evalAfter is always the MOVER's perspective, and on this tier the mover is the
+      // RIVAL — so a mate in the PLAYER's favour appears as the rival's evaluation
+      // collapsing. Getting this sign backwards would congratulate the player on being
+      // mated, which is why the two directions are separate rules with separate guards.
+      if (band(f.evalAfter) !== "mateado" || f.isMate) return null;
+      // Defers to oppIgnoredThreat, which says "El rival no para tu mate en g3. Ahí lo
+      // tienes." — the square, and the fact they failed to stop it. Strictly more useful.
+      if (f.ignoredThreat?.kind === "mate") return null;
+      const n = mateInMoves(f.evalAfter);
+      const jug = n === 1 ? "jugada" : "jugadas";
+      // Every ply of a mating sequence lands here, so this needs variants for the same
+      // reason mateNet does — three plies in a row read identically otherwise.
+      const dist = n <= 4 ? ` en ${n} ${jug}` : "";
+      return pick([
+        `El rival mueve ${c.piece} a ${c.to}, pero tienes mate forzado${dist}: eso es lo único que hay que buscar.`,
+        `${cap(c.piece)} del rival va a ${c.to}, y no cambia nada: mantienes mate forzado${dist}.`,
+        `El rival juega ${c.piece} a ${c.to}. Sigues con mate forzado${dist}; no te distraigas con el material.`,
+      ], c.s);
+    },
+  },
+  {
+    id: "oppMateAgainst", group: "tactics",
+    applies: (f, c) => {
+      if (band(f.evalAfter) !== "mate" || f.isMate) return null;
+      const n = mateInMoves(f.evalAfter);
+      const jug = n === 1 ? "jugada" : "jugadas";
+      return `¡Alerta! Con ${c.piece} a ${c.to} el rival tiene mate forzado en ${n} ${jug}.`;
+    },
+  },
+  {
     id: "oppMate", group: "tactics",
     applies: (f, c) => {
       if (f.isMate) return `El rival da jaque mate con ${c.piece} en ${c.to}.`;
@@ -2454,6 +2603,10 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
 ];
 
 export const OPPONENT_PRIORITY: readonly string[] = [
+  // Same principle as the player's table: a mate on the board outranks the exchange that
+  // happens to be on this ply. "El rival activa su rey hacia f3: en el final es una pieza
+  // más" was printed while that king was being mated.
+  "oppMateNet", "oppMateAgainst",
   "oppMate", "oppTacticOrLoose", "oppCapture",
   "oppCheck", "oppOwnThreat", "oppPromotion",
   "oppCastle", "oppBook", "oppDust",
