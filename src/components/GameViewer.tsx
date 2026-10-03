@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, useSyncExternalStore } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
-import type { Arrow } from "./ChessBoard";
 import { Piece } from "./pieces";
+import { PIECE_VALUE } from "@/lib/attackMap";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, List, Brain, Zap, Search, Target, CheckCircle2, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
-import { play as playSound, isMuted, toggleMuted } from "@/lib/sound";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, Search, Target, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
+import { play as playSound, isMuted, subscribeMuted, toggleMuted } from "@/lib/sound";
 import { estimateEloFromAcpl, acplForElo } from "@/lib/eloEstimate";
 import { isBookPosition } from "@/lib/openingBook";
 import { verifiedLine } from "@/lib/mainLine";
@@ -48,22 +48,6 @@ interface MoveInfo {
   // and thrown away.
   bestLine: string[] | null;
 }
-
-type Tab = "analizar" | "jugadas" | "consejos";
-
-interface CriticalMoment {
-  idx: number;
-  move: MoveInfo;
-  evalBefore: number | null;
-  evalAfter: number | null;
-}
-
-// Story Mode is an emotional arc: intro ("you were winning") → each turning
-// point → outro ("your eval never recovered"). All computed from eval data.
-type StorySlide =
-  | { type: "intro"; peak: number; boardIdx: number }
-  | { type: "moment"; cm: CriticalMoment; boardIdx: number }
-  | { type: "outro"; recovered: boolean; finalEval: number | null; lastMoveNumber: number; boardIdx: number };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -151,38 +135,6 @@ function moveComment(m: MoveInfo | null, isMine: boolean): { label: string; text
     blunder: `${action}, perdiendo ventaja importante — revisa cuál era la mejor jugada.`,
   }[m.classification] ?? "";
   return { label, text, color };
-}
-
-// Coach-style narrative for a critical moment: a concise cause + a practical
-// takeaway. Rule-based (no latency/cost) but written like a blitz coach.
-function storyNarrative(
-  move: MoveInfo,
-  evalBefore: number | null,
-  evalAfter: number | null,
-): { cause: string; takeaway: string } {
-  const before = evalBefore ?? 0;
-  const after = evalAfter ?? 0;
-  const phase = move.moveNumber <= 10 ? "apertura" : move.moveNumber <= 25 ? "medio juego" : "final";
-
-  let cause: string;
-  if (before >= 2 && after < 1) {
-    cause = "Ibas ganando con claridad y esta jugada soltó casi toda la ventaja.";
-  } else if (before > 0.5 && after < -0.5) {
-    cause = "Aquí la partida se dio vuelta: pasaste de estar mejor a estar peor.";
-  } else if (after <= -2) {
-    cause = "Esta jugada te dejó en una posición claramente perdida.";
-  } else {
-    cause = "Cediste una parte importante de la evaluación con esta jugada.";
-  }
-
-  const takeaway =
-    phase === "apertura"
-      ? "En la apertura: desarrolla piezas y no muevas dos veces la misma sin razón."
-      : phase === "medio juego"
-        ? "Antes de atacar, revisa una vez más si dejas alguna pieza sin defensa."
-        : "En el final cada peón pesa — tómate el tiempo de calcular antes de mover.";
-
-  return { cause, takeaway };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -334,7 +286,6 @@ function EvalBar({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
 // Captured-material tray (chess.com/lichess standard) — small icons of every
 // piece each side has taken, plus the material lead. Was entirely absent;
 // the only material feedback lived in buried practice-mode text.
-const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
 
 function CapturedTray({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
   const byWhite: string[] = []; // pieces WHITE captured (black pieces taken off)
@@ -375,74 +326,6 @@ function CapturedTray({ moves, idx }: { moves: MoveInfo[]; idx: number }) {
   );
 }
 
-// ── Move History Table ────────────────────────────────────────────────────────
-
-function MoveTable({ moves, idx, onGo, compact }: {
-  moves: MoveInfo[];
-  idx: number;
-  onGo: (n: number) => void;
-  compact?: boolean;
-}) {
-  const pairs: Array<{ n: number; white: MoveInfo | null; black: MoveInfo | null }> = [];
-  for (let i = 0; i < moves.length; i += 2) {
-    pairs.push({ n: moves[i].moveNumber, white: moves[i] ?? null, black: moves[i + 1] ?? null });
-  }
-
-  // Keep the active move in view as the player navigates — both chess.com
-  // and lichess auto-scroll their move list; ours didn't, so the highlight
-  // could sit scrolled out of sight on longer games.
-  const activeRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [idx]);
-
-  function MoveCell({ m, flatIdx }: { m: MoveInfo | null; flatIdx: number }) {
-    if (!m) return <div className="flex-1" />;
-    const isActive = flatIdx === idx;
-    const col = m.classification ? CLASS_COLOR[m.classification] : undefined;
-    const isError = m.classification === "blunder" || m.classification === "mistake";
-    return (
-      <div
-        ref={isActive ? activeRef : undefined}
-        className="flex-1 flex items-center gap-1 cursor-pointer rounded px-1.5 py-1 transition-colors text-xs font-mono"
-        style={{
-          background: isActive ? "oklch(0.34 0.10 264 / 0.22)" : isError ? `${col}11` : "transparent",
-          borderLeft: isActive ? `2px solid var(--bv-purple)` : isError ? `2px solid ${col}` : "2px solid transparent",
-          color: col ?? "var(--foreground)",
-          fontWeight: isActive || m.classification ? 600 : 400,
-        }}
-        onClick={() => onGo(flatIdx)}
-      >
-        <span>{m.san}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl overflow-hidden border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-      <div className="grid grid-cols-7 px-3 py-2 border-b text-[10px] font-bold tracking-widest uppercase text-muted-foreground"
-        style={{ borderColor: "var(--border)" }}>
-        <div className="col-span-1">#</div>
-        <div className="col-span-3">Blancas</div>
-        <div className="col-span-3">Negras</div>
-      </div>
-      <div className={`overflow-y-auto divide-y divide-border ${compact ? "max-h-48" : "max-h-[60vh]"}`}>
-        {pairs.map(({ n, white, black }) => {
-          const wi = white ? moves.indexOf(white) : -1;
-          const bi = black ? moves.indexOf(black) : -1;
-          return (
-            <div key={n} className="grid grid-cols-7 px-2 py-0.5 items-center text-xs">
-              <div className="col-span-1 text-[10px] text-muted-foreground font-mono pl-1">{n}</div>
-              <div className="col-span-3"><MoveCell m={white} flatIdx={wi} /></div>
-              <div className="col-span-3"><MoveCell m={black} flatIdx={bi} /></div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 
 interface Props {
@@ -458,11 +341,8 @@ interface Props {
   autoStory?: boolean;
 }
 
-export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, opening, accuracy, avgAccuracy, gameId, autoStory }: Props) {
+export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, accuracy, avgAccuracy }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
-  // Full SAN history, for book/theory-move detection (openingBook.ts) — a
-  // move only counts as "book" in the context of every move played before it.
-  const sanHistory = useMemo(() => moves.map((m) => m.san), [moves]);
 
   const firstBlunderIdx = jumpToBlunder
     ? moves.findIndex((m) => m.classification === "blunder")
@@ -474,18 +354,18 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // routinely runs longer than that and got cut off mid-sentence. Tap to
   // expand it instead: compact (and stable) by default, full text on demand.
   // Collapses again on the next move so it doesn't stay expanded forever.
-  const [commentExpanded, setCommentExpanded] = useState(false);
-  useEffect(() => { setCommentExpanded(false); }, [idx]);
+  // Keyed by move index rather than reset in an effect: the expanded text
+  // collapses by itself as soon as idx changes.
+  const [expandedFor, setExpandedFor] = useState<number | null>(null);
+  const commentExpanded = expandedFor === idx;
+  // Declared up here (was further down) because enterExplore() below uses it.
+  const [previewBest, setPreviewBest] = useState(false);
 
   const startFen    = new Chess().fen();
   const currentFen  = idx >= 0 ? moves[idx].fen  : startFen;
   const currentMove = idx >= 0 ? moves[idx]       : null;
   const lastMove    = currentMove ? { from: currentMove.from, to: currentMove.to } : null;
   const currentIsBook = idx >= 0 && isBookPosition(moves[idx].fen);
-
-  // Best move arrow state (Story Mode's per-moment arrow; general review now
-  // uses the automatic autoBest cache below instead of a manual fetch).
-  const [bestMoveArrow, setBestMoveArrow] = useState<Arrow | null>(null);
 
 
   // Exploration mode state (free interactive moves from any position)
@@ -497,7 +377,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const exploreLastMove = inExplore && exploreIdx > 0 ? exploreMoves[exploreIdx - 1] : null;
 
   function enterExplore() {
-    setBestMoveArrow(null);
     setPreviewBest(false);
     setExploreFens([currentFen]);
     setExploreMoves([]);
@@ -527,7 +406,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   }
 
   const go = useCallback((n: number) => {
-    setBestMoveArrow(null);
     setPreviewBest(false);
     setIdx(Math.max(-1, Math.min(moves.length - 1, n)));
   }, [moves.length]);
@@ -541,35 +419,39 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     touchX.current = null;
     if (Math.abs(dx) < 40) return;
     setIdx((cur) => Math.max(-1, Math.min(moves.length - 1, cur + (dx < 0 ? 1 : -1))));
-    setBestMoveArrow(null);
     setPreviewBest(false);
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") { setBestMoveArrow(null); setPreviewBest(false); setIdx((c) => Math.max(-1, c - 1)); }
-      else if (e.key === "ArrowRight") { setBestMoveArrow(null); setPreviewBest(false); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
+      if (e.key === "ArrowLeft") { setPreviewBest(false); setIdx((c) => Math.max(-1, c - 1)); }
+      else if (e.key === "ArrowRight") { setPreviewBest(false); setIdx((c) => Math.min(moves.length - 1, c + 1)); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [moves.length]);
 
   // Celebrate when YOU land on a Brilliant ‼ or Great ! move (chess.com-style delight).
-  const [celebrate, setCelebrate] = useState<{ label: string; emoji: string; color: string } | null>(null);
   const playerColorEarly = playedAs === "white" ? "w" : "b";
+  const celebrateCandidate =
+    currentMove && currentMove.color === playerColorEarly &&
+    (currentMove.classification === "brilliant" || currentMove.classification === "great")
+      ? {
+          label: CLASS_LABEL[currentMove.classification],
+          emoji: CLASS_EMOJI[currentMove.classification],
+          color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)",
+        }
+      : null;
+  // The banner hides itself after 1.7s: the timer's CALLBACK records which move
+  // it was dismissed for (state is never set synchronously inside the effect).
+  const [celebrateDismissedFor, setCelebrateDismissedFor] = useState<number | null>(null);
+  const celebrateIdx = celebrateCandidate ? idx : null;
   useEffect(() => {
-    if (currentMove && currentMove.color === playerColorEarly &&
-        (currentMove.classification === "brilliant" || currentMove.classification === "great")) {
-      setCelebrate({
-        label: CLASS_LABEL[currentMove.classification],
-        emoji: CLASS_EMOJI[currentMove.classification],
-        color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)",
-      });
-      const t = setTimeout(() => setCelebrate(null), 1700);
-      return () => clearTimeout(t);
-    }
-    setCelebrate(null);
-  }, [idx, currentMove, playerColorEarly]);
+    if (celebrateIdx === null) return;
+    const t = setTimeout(() => setCelebrateDismissedFor(celebrateIdx), 1700);
+    return () => clearTimeout(t);
+  }, [celebrateIdx]);
+  const celebrate = celebrateCandidate && celebrateDismissedFor !== idx ? celebrateCandidate : null;
 
   // Board orientation — flip like any chess review tool.
   const [flipped, setFlipped] = useState(false);
@@ -577,12 +459,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     flipped ? (playedAs === "white" ? "black" : "white") : playedAs;
 
   // Sound: mute toggle (persisted) + a subtle cue when you navigate to a move.
-  const [soundOn, setSoundOn] = useState(true);
-  useEffect(() => { setSoundOn(!isMuted()); }, []);
+  const soundOn = useSyncExternalStore(subscribeMuted, () => !isMuted(), () => true);
   const didMountSound = useRef(false);
   useEffect(() => {
     if (!didMountSound.current) { didMountSound.current = true; return; }
-    if (inExplore || inStory || idx < 0 || !currentMove) return;
+    if (inExplore || idx < 0 || !currentMove) return;
     const san = currentMove.san;
     const cls = currentMove.classification;
     if (cls === "blunder" || cls === "mistake") playSound("error");
@@ -593,9 +474,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     else playSound("move");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
-
-  const blunderCount = useMemo(() => moves.filter(m => m.classification === "blunder").length, [moves]);
-  const mistakeCount = useMemo(() => moves.filter(m => m.classification === "mistake").length, [moves]);
 
   // ── Critical moments: YOUR moves that swung the game most against you ───────
   const playerColor = playedAs === "white" ? "w" : "b";
@@ -660,70 +538,12 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     [playerColor],
   );
 
-  const criticalMoments = useMemo(() => {
-    const candidates: { idx: number; loss: number }[] = [];
-    moves.forEach((m, i) => {
-      if (m.color !== playerColor) return;
-      const loss = m.centipawnLoss ?? 0;
-      if (loss >= 150) candidates.push({ idx: i, loss });
-    });
-    // Take the 3 worst, then present them in chronological order.
-    return candidates
-      .sort((a, b) => b.loss - a.loss)
-      .slice(0, 3)
-      .sort((a, b) => a.idx - b.idx)
-      .map(({ idx: i }) => ({
-        idx: i,
-        move: moves[i],
-        evalBefore: toMine(i > 0 ? moves[i - 1].evaluation : 0),
-        evalAfter: toMine(moves[i].evaluation),
-      }));
-  }, [moves, playerColor, toMine]);
-
-  const criticalMoment = criticalMoments.length > 0 ? criticalMoments[0] : null;
-
   // (fmtEval lived here. Its only caller was the comment fallback, which stopped
   // printing pawn numbers — the eval bar already shows them, and mixing that
   // register into the prose is what made those lines read like debug output.)
 
-  // ── Story Mode: guided EMOTIONAL arc through the game ───────────────────────
-  const storySlides = useMemo<StorySlide[]>(() => {
-    if (criticalMoments.length === 0) return [];
-    const firstIdx = criticalMoments[0].idx;
-    let peak = 0;
-    for (let i = 0; i < firstIdx; i++) {
-      const e = toMine(moves[i].evaluation);
-      if (e != null && e > peak) peak = e;
-    }
-    const lastIdx = criticalMoments[criticalMoments.length - 1].idx;
-    let recovered = false;
-    for (let i = lastIdx + 1; i < moves.length; i++) {
-      const e = toMine(moves[i].evaluation);
-      if (e != null && e >= 0.5) { recovered = true; break; }
-    }
-    const finalEval = toMine(moves[moves.length - 1].evaluation);
-    return [
-      { type: "intro", peak, boardIdx: Math.max(-1, firstIdx - 1) },
-      // Board sits BEFORE the move so the "played" (red) and "best" (green)
-      // arrows both point from the real position the player faced.
-      ...criticalMoments.map((cm) => ({ type: "moment" as const, cm, boardIdx: Math.max(-1, cm.idx - 1) })),
-      {
-        type: "outro",
-        recovered,
-        finalEval,
-        lastMoveNumber: criticalMoments[criticalMoments.length - 1].move.moveNumber,
-        boardIdx: moves.length - 1,
-      },
-    ];
-  }, [criticalMoments, moves, toMine]);
-
-  const [storyStep, setStoryStep] = useState<number | null>(null);
-  const inStory = storyStep !== null;
-  const currentSlide = inStory ? storySlides[storyStep!] : null;
-  const storyMomentSlide = currentSlide?.type === "moment" ? currentSlide : null;
-
   // Review-summary modal — pops up on open (chess.com style) unless we arrived
-  // straight into Story Mode. Reopenable from the "Resumen" button.
+  // Reopenable from the "Resumen" button.
   const gameAnalyzed = accuracy != null || moves.some((m) => m.classification);
   const [showSummary, setShowSummary] = useState(false);
   const summaryAutoOpened = useRef(false);
@@ -734,62 +554,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     const t = setTimeout(() => setShowSummary(true), 350);
     return () => clearTimeout(t);
   }, [gameAnalyzed]);
-
-  // Engine's best move per critical moment (Stockfish, objective) — SAN + green
-  // arrow, grounding the "why" in real calculation. Cached by move index.
-  const [storyBest, setStoryBest] = useState<Record<number, string | null>>({});
-  const [bestLoading, setBestLoading] = useState(false);
-
-  useEffect(() => {
-    if (!currentSlide || currentSlide.type !== "moment") return;
-    const cm = currentSlide.cm;
-    const fenBefore = cm.idx > 0 ? moves[cm.idx - 1].fen : new Chess().fen();
-    if (storyBest[cm.idx] !== undefined) {
-      const cached = storyBest[cm.idx];
-      if (cached) {
-        try {
-          const mv = new Chess(fenBefore).move(cached);
-          if (mv) setBestMoveArrow({ from: mv.from, to: mv.to, color: "green" });
-        } catch {}
-      }
-      return;
-    }
-    // The analysis already recorded what it recommended for THIS ply, so use it:
-    // that is what the written comment is talking about. /api/bestmove runs a
-    // different engine build on the server at depth 12, so asking it again could
-    // (and did) point the arrow at a move the comment never mentions. It stays as
-    // the fallback for games analysed before best_move existed.
-    const stored = cm.move.bestMove;
-    if (stored) {
-      try {
-        const mv = new Chess(fenBefore).move(stored);
-        if (mv) {
-          setBestMoveArrow({ from: mv.from, to: mv.to, color: "green" });
-          setStoryBest((prev) => ({ ...prev, [cm.idx]: stored }));
-          return;
-        }
-      } catch { /* unreplayable SAN: fall through to the engine */ }
-    }
-    let cancelled = false;
-    setBestLoading(true);
-    setBestMoveArrow(null);
-    fetch(`/api/bestmove?fen=${encodeURIComponent(fenBefore)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (cancelled) return;
-        let san: string | null = null;
-        if (d?.from && d?.to) {
-          try {
-            const mv = new Chess(fenBefore).move({ from: d.from, to: d.to, promotion: "q" });
-            if (mv) { san = mv.san; setBestMoveArrow({ from: d.from, to: d.to, color: "green" }); }
-          } catch {}
-        }
-        setStoryBest((prev) => ({ ...prev, [cm.idx]: san }));
-      })
-      .catch(() => { if (!cancelled) setStoryBest((prev) => ({ ...prev, [cm.idx]: null })); })
-      .finally(() => { if (!cancelled) setBestLoading(false); });
-    return () => { cancelled = true; };
-  }, [currentSlide, moves, storyBest]);
 
   // Best move for the position being VIEWED, fetched automatically for every
   // ply during normal review — chess.com always shows this, not just when
@@ -832,7 +596,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     return out;
   }, [moves]);
   useEffect(() => {
-    if (inExplore || inStory) return;
+    if (inExplore) return;
     if (autoBest[idx] !== undefined) return;
     // Already answered by the analysis itself — don't ask a second, different
     // engine the same question.
@@ -853,14 +617,13 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       })
       .catch(() => { if (!cancelled) setAutoBest((prev) => ({ ...prev, [idx]: null })); });
     return () => { cancelled = true; };
-  }, [idx, inExplore, inStory, currentFen, autoBest, storedBest]);
+  }, [idx, inExplore, currentFen, autoBest, storedBest]);
 
   // Tapping the best-move readout plays it out on the board (Lichess-style
   // preview) instead of only pointing an arrow at it — the position itself
   // updates so you can see the resulting structure, then the X restores the
   // real position.
-  const [previewBest, setPreviewBest] = useState(false);
-  const bestHere = storedBest[idx] ?? autoBest[idx];
+    const bestHere = storedBest[idx] ?? autoBest[idx];
   // WHOSE move this readout is about. The board shows the position AFTER move idx,
   // so the side to move in it is the opposite of whoever just moved — which means
   // that while you are looking at your OWN mistake, this suggestion is always the
@@ -875,10 +638,9 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   const bestIsMine = (() => {
     try { return new Chess(currentFen).turn() === playerColor; } catch { return true; }
   })();
-  const previewMoveInfo = !inExplore && !inStory && previewBest ? bestHere : null;
+  const previewMoveInfo = !inExplore && previewBest ? bestHere : null;
   // How far along the recommended LINE the preview has walked. 0 is the recommendation
   // itself, which is what the preview always used to show and all it could show.
-  const [previewStep, setPreviewStep] = useState(0);
   // The line for the current suggestion. Games analysed before best_line existed — and the
   // /api/bestmove fallback — carry a one-move line, so they degrade to exactly the old
   // single-move preview rather than to an empty stepper.
@@ -887,7 +649,11 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // into one line and then arrowing to the next ply would leave the board showing a
   // position from a line that no longer applies — the same class of bug as an arrow left
   // pointing at the previous move.
-  useEffect(() => { setPreviewStep(0); }, [idx, previewBest]);
+  const previewKey = `${idx}:${previewBest}`;
+  const [stepState, setStepState] = useState({ key: previewKey, step: 0 });
+  const previewStep = stepState.key === previewKey ? stepState.step : 0;
+  const setPreviewStep = (fn: (p: number) => number) =>
+    setStepState((s) => ({ key: previewKey, step: fn(s.key === previewKey ? s.step : 0) }));
   const step = Math.min(previewStep, Math.max(0, previewLine.length - 1));
   const previewFen = useMemo(() => {
     if (!previewMoveInfo || previewLine.length === 0) return null;
@@ -908,52 +674,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
     } catch { return null; }
   }, [previewFen, previewLine, step, currentFen]);
 
-  // Coach comment (LLaMA) GROUNDED in the engine's best move — fetched once the
-  // best move is known for the current moment. Cached per move index.
-  const [aiComment, setAiComment] = useState<Record<number, string>>({});
-  const [aiLoading, setAiLoading] = useState(false);
-
-  useEffect(() => {
-    if (!currentSlide || currentSlide.type !== "moment") return;
-    const cm = currentSlide.cm;
-    const best = storyBest[cm.idx];
-    if (best === undefined) return;              // wait for the engine best move
-    if (aiComment[cm.idx] !== undefined) return; // already fetched
-    const fenBefore = cm.idx > 0 ? moves[cm.idx - 1].fen : new Chess().fen();
-    const phase = cm.move.moveNumber <= 10 ? "apertura" : cm.move.moveNumber <= 25 ? "medio juego" : "final";
-    let cancelled = false;
-    setAiLoading(true);
-    fetch("/api/explain", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fenBefore, san: cm.move.san, bestMove: best, moveNumber: cm.move.moveNumber,
-        evalBefore: cm.evalBefore, evalAfter: cm.evalAfter, phase, gameId, ply: cm.idx,
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled && d?.text) setAiComment((prev) => ({ ...prev, [cm.idx]: d.text })); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setAiLoading(false); });
-    return () => { cancelled = true; };
-  }, [currentSlide, storyBest, aiComment, moves, gameId]);
-
-  function startStory() {
-    if (storySlides.length === 0) return;
-    setBestMoveArrow(null);
-    setStoryStep(0);
-    go(storySlides[0].boardIdx);
-  }
-  function exitStory() { setStoryStep(null); setBestMoveArrow(null); }
-
-
-  function storyGo(step: number) {
-    const clamped = Math.max(0, Math.min(storySlides.length - 1, step));
-    setStoryStep(clamped);
-    setBestMoveArrow(null);
-    go(storySlides[clamped].boardIdx);
-  }
-
   if (moves.length === 0) {
     return (
       <div className="rounded-2xl border p-8 text-center" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
@@ -961,12 +681,6 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
       </div>
     );
   }
-
-  const TABS = [
-    { id: "analizar" as Tab, label: "Analizar",  Icon: BarChart2 },
-    { id: "jugadas"  as Tab, label: "Jugadas",   Icon: List      },
-    { id: "consejos" as Tab, label: "Consejos",  Icon: Brain     },
-  ];
 
   return (
     <div className="flex flex-col gap-1.5 pt-1 pb-1">
@@ -1040,7 +754,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 </div>
                 <button
                   type="button"
-                  onClick={() => commentText && setCommentExpanded((v) => !v)}
+                  onClick={() => commentText && setExpandedFor((v) => (v === idx ? null : idx))}
                   className="flex-1 min-w-0 text-left"
                   aria-expanded={commentExpanded}
                 >
@@ -1082,7 +796,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
               onTouchStart={!inExplore ? onTouchStart : undefined}
               onTouchEnd={!inExplore ? onTouchEnd : undefined}>
               {/* Brilliant/Great celebration */}
-              {celebrate && !inExplore && !storyMomentSlide && (
+              {celebrate && !inExplore && (
                 <div className="absolute inset-x-0 top-3 z-20 flex justify-center pointer-events-none">
                   <div
                     key={celebrate.label + idx}
@@ -1179,25 +893,20 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                       // itself on step 0. Highlighting the first move while the board shows
                       // the third would point at a piece that has since moved again.
                       ? previewLastMove ?? { from: previewMoveInfo.from, to: previewMoveInfo.to }
-                      : storyMomentSlide ? null : lastMove
+                      : lastMove
                 }
                 arrows={
                   inExplore || previewMoveInfo
                     ? []
-                    : storyMomentSlide
-                      ? [
-                          { from: storyMomentSlide.cm.move.from, to: storyMomentSlide.cm.move.to, color: "red" },
-                          ...(bestMoveArrow ? [bestMoveArrow] : []),
-                        ]
-                      : bestHere
-                        ? [{ from: bestHere.from, to: bestHere.to, color: "blue" }]
-                        : []
+                    : bestHere
+                      ? [{ from: bestHere.from, to: bestHere.to, color: "blue" }]
+                      : []
                 }
                 interactive={inExplore}
                 onMove={inExplore ? handleExploreMove : undefined}
-                lastMoveBadge={!inExplore && !previewMoveInfo && !storyMomentSlide && currentIsBook
+                lastMoveBadge={!inExplore && !previewMoveInfo && currentIsBook
                   ? { emoji: BOOK_EMOJI, color: BOOK_COLOR }
-                  : !inExplore && !previewMoveInfo && !storyMomentSlide && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
+                  : !inExplore && !previewMoveInfo && currentMove?.classification && CLASS_EMOJI[currentMove.classification]
                     ? { emoji: CLASS_EMOJI[currentMove.classification], color: CLASS_COLOR[currentMove.classification] ?? "var(--bv-purple)" }
                     : null}
               />
@@ -1305,7 +1014,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
                 </button>
               )}
               <button
-                onClick={() => { const on = !toggleMuted(); setSoundOn(on); if (on) playSound("move"); }}
+                onClick={() => { const on = !toggleMuted(); if (on) playSound("move"); }}
                 aria-label={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
                 title={soundOn ? "Silenciar sonidos" : "Activar sonidos"}
                 className="w-11 h-11 flex items-center justify-center rounded-xl border transition-colors hover:bg-muted/40"

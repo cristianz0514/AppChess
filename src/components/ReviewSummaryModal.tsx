@@ -42,24 +42,27 @@ interface Props {
 }
 
 export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, avgAccuracy, counts, theirCounts, myEloEstimate, theirEloEstimate, momentsCount, gameResult }: Props) {
+  // `render` keeps the modal mounted while it animates out. It is turned on
+  // during render (derived from `open`) and off by the timer below, so no effect
+  // sets state synchronously.
   const [render, setRender] = useState(open);
+  if (open && !render) setRender(true);
   const [shown, setShown] = useState(false);
   const [displayAcc, setDisplayAcc] = useState(0);
 
   useEffect(() => {
     if (open) {
-      setRender(true);
       const r = requestAnimationFrame(() => setShown(true));
       return () => cancelAnimationFrame(r);
     }
-    setShown(false);
+    const r = requestAnimationFrame(() => { setShown(false); setDisplayAcc(0); });
     const t = setTimeout(() => setRender(false), 260);
-    return () => clearTimeout(t);
+    return () => { cancelAnimationFrame(r); clearTimeout(t); };
   }, [open]);
 
   // Count the precisión up from 0 when the modal appears (premium micro-interaction).
   useEffect(() => {
-    if (!shown || accuracy == null) { setDisplayAcc(accuracy ?? 0); return; }
+    if (!shown || accuracy == null) return;
     const target = accuracy;
     const start = performance.now();
     const dur = 650;
@@ -75,6 +78,9 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
   }, [shown, accuracy]);
 
   if (!render) return null;
+
+  // Before the count-up starts (or with no accuracy) show the final value, as before.
+  const shownAcc = !shown || accuracy == null ? (accuracy ?? 0) : displayAcc;
 
   const acc = accuracy ?? 0;
   const headline =
@@ -128,7 +134,7 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
             </div>
             <div className="text-right">
               <p className="text-4xl font-display font-bold leading-none" style={{ color: "var(--bv-green)" }}>
-                {accuracy != null ? displayAcc.toFixed(1) : "—"}<span className="text-lg">%</span>
+                {accuracy != null ? shownAcc.toFixed(1) : "—"}<span className="text-lg">%</span>
               </p>
               <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-0.5">Precisión</p>
               {accDelta != null && (

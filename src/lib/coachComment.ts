@@ -446,7 +446,7 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "tactic", group: "tactics",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       // ── Tactics, above everything including the opening book ────────────────────
       // Measured over eight real games: 84 of 84 plies where tacticalMotifs found a
       // fork, pin, skewer or discovered check got a comment that never mentioned it.
@@ -702,7 +702,7 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "opposition", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.opposition) return { text: `Tomas la oposición: el rey rival tiene que ceder terreno.`, namesMaterial: false };
       return null;
     },
@@ -719,14 +719,14 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "rookBehindPassed", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.rookBehindPassed) return { text: `Torre detrás del peón pasado, que es su sitio: lo empuja según avanza.`, namesMaterial: false };
       return null;
     },
   },
   {
     id: "connectsRooks", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.connectsRooks) return { text: `Conectas las torres: ya se defienden entre ellas.`, namesMaterial: false };
       return null;
     },
@@ -782,14 +782,14 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "backwardPawn", group: "structure",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.backwardPawn) return { text: `El peón de ${f.backwardPawn} está retrasado: no puede avanzar ni recibir apoyo, y en el final eso pesa.`, namesMaterial: false };
       return null;
     },
   },
   {
     id: "islands", group: "structure",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.islands && f.islands.mine > f.islands.theirs) return { text: `Tienes ${f.islands.mine} islas de peones contra ${f.islands.theirs}: tu estructura está más partida y es más difícil de defender.`, namesMaterial: false };
       return null;
     },
@@ -875,7 +875,7 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "doublesRooks", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.doublesRooks) return { text: `Doblas las torres en la columna ${f.playedTo[0]}: juntas pesan mucho más.`, namesMaterial: false };
       return null;
     },
@@ -902,14 +902,14 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "fianchetto", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.fianchetto) return { text: `Fianchetto: el alfil a ${f.playedTo} apunta a la diagonal larga.`, namesMaterial: false };
       return null;
     },
   },
   {
     id: "queenOutEarly", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.queenOutEarly) return { text: `Sacas la dama pronto: cuidado, el rival puede ganar tiempos atacándola.`, namesMaterial: false };
       return null;
     },
@@ -942,7 +942,7 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "toCenter", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.toCenter) return { text: `Ocupas el centro con ${art(f.playedPiece)} en ${f.playedTo}.`, namesMaterial: false };
       return null;
     },
@@ -961,14 +961,14 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   },
   {
     id: "brokeTheirStructure", group: "structure",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.structure?.brokeTheirStructure) return { text: `Le dejas peones doblados en la columna ${f.structure.brokeTheirStructure}: un defecto permanente.`, namesMaterial: false };
       return null;
     },
   },
   {
     id: "isolatedTheirs", group: "structure",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.structure?.isolatedTheirs) return { text: `Aíslas el peón rival de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`, namesMaterial: false };
       return null;
     },
@@ -2296,7 +2296,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppCastle", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.isCastle) return `El rival enroca y pone su rey a salvo.`;
       return null;
     },
@@ -2408,28 +2408,28 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppCreatedPassed", group: "structure",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.structure?.createdPassed) return `El rival crea un peón pasado en ${f.structure.createdPassed}: pesará en el final.`;
       return null;
     },
   },
   {
     id: "oppBrokeYourStructure", group: "structure",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.structure?.brokeTheirStructure) return `Esa captura te deja peones doblados en la columna ${f.structure.brokeTheirStructure}.`;
       return null;
     },
   },
   {
     id: "oppIsolatesYours", group: "structure",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.structure?.isolatedTheirs) return `El rival te aísla el peón de ${f.structure.isolatedTheirs}: ya no tiene quién lo defienda.`;
       return null;
     },
   },
   {
     id: "oppOpposition", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       // Direct opposition taken by the RIVAL's king means the PLAYER's king is the
       // one that has to give ground — the opposite reading from the mover's own
       // quiet-move branch, and worth a warning rather than a shrug.
@@ -2458,7 +2458,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppDefendsAttacked", group: "threats",
-    applies: (f, c) => {
+    applies: (f, _c) => {
 
       // Their position improving: worth knowing, not alarming.
       if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.`;
@@ -2477,7 +2477,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppBattery", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.battery) {
         const b = f.battery;
         // Two of the SAME piece is a doubling, not a pairing, and naming it as a
@@ -2555,21 +2555,21 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppRookBehindPassed", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.rookBehindPassed) return `El rival pone la torre detrás de su peón pasado: lo empuja según avanza.`;
       return null;
     },
   },
   {
     id: "oppConnectsRooks", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.connectsRooks) return `El rival conecta sus torres.`;
       return null;
     },
   },
   {
     id: "oppConnectedPassedPair", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       // Same standing endgame features, read from the player's side: their connected
       // passers and their wing majority are threats, and naming the endgame type is
       // useful to the player whoever just moved.
@@ -2589,7 +2589,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppMajority", group: "endgame",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.majority) return `El rival tiene mayoría de peones en el flanco de ${f.majority}: de ahí le va a salir un pasado.`;
       return null;
     },
@@ -2606,7 +2606,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppGivesKingLuft", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.givesKingLuft) return `El rival le da aire a su rey: gana casilla de escape.`;
       return null;
     },
@@ -2628,7 +2628,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppWeakensKingShield", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
 
       // Their position getting worse without being an outright error: openings for you.
       //
@@ -2659,7 +2659,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   },
   {
     id: "oppQueenOutEarly", group: "shape",
-    applies: (f, c) => {
+    applies: (f, _c) => {
       if (f.queenOutEarly) return `El rival saca la dama pronto: puedes ganar tiempos atacándola.`;
       return null;
     },

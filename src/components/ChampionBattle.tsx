@@ -5,6 +5,7 @@ import { Chess } from "chess.js";
 import { Hourglass } from "lucide-react";
 import { ChessBoard } from "./ChessBoard";
 import { Piece } from "./pieces";
+import { PIECE_VALUE } from "@/lib/attackMap";
 import { play as playSound } from "@/lib/sound";
 
 export type BattleResult = "win" | "loss" | "draw";
@@ -21,7 +22,6 @@ interface Props {
 
 // Same convention as GameViewer's CapturedTray: byWhite = pieces WHITE has
 // captured (i.e. black pieces taken off the board), and vice versa.
-const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
 
 function CapturedTray({ byWhite, byBlack }: { byWhite: string[]; byBlack: string[] }) {
   if (byWhite.length === 0 && byBlack.length === 0) return null;

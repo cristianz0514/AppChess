@@ -87,15 +87,17 @@ export function ChessBoard({
   // en passant's captured pawn still teleport (rare enough to accept).
   const slideRef = useRef<HTMLDivElement | null>(null);
   const prevMoveKey = useRef<string | null>(null);
+  const lastFrom = lastMove?.from;
+  const lastTo = lastMove?.to;
   useLayoutEffect(() => {
-    if (!lastMove) return;
-    const key = `${lastMove.from}-${lastMove.to}`;
+    if (!lastFrom || !lastTo) return;
+    const key = `${lastFrom}-${lastTo}`;
     if (prevMoveKey.current === key) return;
     prevMoveKey.current = key;
     const el = slideRef.current;
     if (!el) return;
-    const from = sqToColRow(lastMove.from, orientation);
-    const to = sqToColRow(lastMove.to, orientation);
+    const from = sqToColRow(lastFrom, orientation);
+    const to = sqToColRow(lastTo, orientation);
     const dx = (from.col - to.col) * 100;
     const dy = (from.row - to.row) * 100;
     el.style.transition = "none";
@@ -103,7 +105,7 @@ export function ChessBoard({
     void el.offsetHeight; // force reflow so the instant offset commits before animating
     el.style.transition = "transform 0.2s cubic-bezier(0.2, 0, 0.2, 1)";
     el.style.transform = "translate(0, 0)";
-  }, [lastMove?.from, lastMove?.to, orientation]);
+  }, [lastFrom, lastTo, orientation]);
 
   // Legal-move dots/rings for the selected piece — standard on lichess and
   // chess.com, and genuinely useful for a learning product (shows exactly

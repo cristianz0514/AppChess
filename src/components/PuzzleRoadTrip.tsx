@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Lock, Star } from "lucide-react";
 import type { RoadTripWorld, RoadTripNode } from "@/services/puzzleProgress";
@@ -9,7 +9,7 @@ interface Props {
   worlds: RoadTripWorld[];
 }
 
-// Abstract coordinate system for the winding path — an SVG viewBox and the
+// Abstract coordinate system for the winding path â€” an SVG viewBox and the
 // HTML node overlay share these units, so the same path shape scales to any
 // screen width and to any NUMBER of puzzles (no fixed background artwork).
 const ROW = 130;
@@ -37,14 +37,16 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // `useState(initialWorlds)` only seeds state on first mount — a later
+  // `useState(initialWorlds)` only seeds state on first mount: a later
   // `router.refresh()` (from BackgroundSeeder, once it tops up more puzzles)
-  // passes a NEW `worlds` prop, but plain useState would silently ignore it.
-  // Sync local state whenever the server sends fresh data, so newly-seeded
-  // nodes actually appear on the path without a manual reload.
-  useEffect(() => {
+  // passes a NEW `worlds` prop, which plain useState would silently ignore.
+  // Re-sync during render when the prop changes (React's documented way to derive
+  // state from props), so newly-seeded nodes appear without a manual reload.
+  const [lastInitialWorlds, setLastInitialWorlds] = useState(initialWorlds);
+  if (lastInitialWorlds !== initialWorlds) {
+    setLastInitialWorlds(initialWorlds);
     setWorlds(initialWorlds);
-  }, [initialWorlds]);
+  }
 
   function toast(msg: string) {
     setToastMsg(msg);
@@ -57,7 +59,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
       toast("Completa el ejercicio anterior para desbloquear este");
       return;
     }
-    // A real navigation, not a bottom sheet — the puzzle opens as its own
+    // A real navigation, not a bottom sheet â€” the puzzle opens as its own
     // full page (matches how /blunders/[id] works) and progress is re-read
     // fresh from the server every time this road trip page is revisited.
     router.push(`/practica-mate/${node.id}`);
@@ -68,16 +70,16 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
 
   return (
     <div className="relative">
-      {/* Progress summary now lives in the page's fixed header (chip + %) —
+      {/* Progress summary now lives in the page's fixed header (chip + %) â€”
           just the thin bar stays here as a visual anchor under it. */}
       <div className="h-1.5 rounded-full overflow-hidden mb-6" style={{ background: "var(--border)" }}>
         <div className="h-full w-full rounded-full transition duration-500"
           style={{ transform: `scaleX(${totalNodes > 0 ? totalSolved / totalNodes : 0})`, transformOrigin: "left", background: "linear-gradient(90deg, var(--bv-purple), var(--bv-green))" }} />
       </div>
 
-      {worlds.map((world, wi) => (
+      {worlds.map((world) => (
         <div key={world.mateIn} className="mb-6">
-          {/* World banner — frosted glass card */}
+          {/* World banner â€” frosted glass card */}
           <div className="mx-auto max-w-[300px] rounded-3xl p-6 text-center border mb-2"
             style={{
               background: "rgba(255,255,255,0.95)", backdropFilter: "blur(10px)",
@@ -130,7 +132,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
                 <div key={node.id} className="absolute flex flex-col items-center gap-2"
                   style={{
                     left: `${x}%`, top: `${y}px`,
-                    // Staggered pop-in as the path reveals itself — this page is
+                    // Staggered pop-in as the path reveals itself â€” this page is
                     // seen occasionally (not dozens of times a day like the
                     // dashboard), so a bit of delight here doesn't get old.
                     // Capped stagger so a 50-node world still settles quickly.
@@ -141,7 +143,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
                     <div className="absolute -top-11 flex flex-col items-center" style={{ animation: "puzzleBob 1.6s ease-in-out infinite" }}>
                       <div className="px-3.5 py-1.5 rounded-xl text-[10px] font-bold text-white whitespace-nowrap shadow-lg"
                         style={{ background: "var(--foreground)" }}>
-                        Aquí vas
+                        AquÃ­ vas
                       </div>
                       {/* Speech-bubble tail pointing down at the node */}
                       <div style={{
@@ -191,7 +193,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
                       backdropFilter: "blur(4px)",
                       color: isPersonal ? "#1BAAA6" : "var(--muted-foreground)",
                     }}>
-                    {node.state === "locked" ? "—" : isPersonal ? "De tu partida" : `Ej. ${i + 1}`}
+                    {node.state === "locked" ? "â€”" : isPersonal ? "De tu partida" : `Ej. ${i + 1}`}
                   </span>
                 </div>
               );

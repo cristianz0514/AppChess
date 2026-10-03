@@ -1,4 +1,5 @@
 import { Chess, type Square } from "chess.js";
+import { PIECE_VALUE } from "./attackMap";
 
 // Rule-based tactical-pattern detection — grounded in real board geometry
 // (ray-casting over the actual position), not the AI guessing. Uses the
@@ -19,7 +20,6 @@ export interface DetectedMotif {
   pieceName?: string; // Spanish piece name, ready to drop into a sentence
 }
 
-const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 const PIECE_NAME_ES: Record<string, string> = { p: "peón", n: "caballo", b: "alfil", r: "torre", q: "dama", k: "rey" };
 const KNIGHT_OFFSETS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
 const KING_OFFSETS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];

@@ -22,6 +22,14 @@ function ensureInit() {
   muted = loadMuted();
 }
 
+// Subscribers (useSyncExternalStore) so every mute button re-renders when the
+// preference changes, instead of each one copying it into its own state.
+const listeners = new Set<() => void>();
+export function subscribeMuted(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => { listeners.delete(cb); };
+}
+
 export function isMuted(): boolean {
   ensureInit();
   return muted;
@@ -31,6 +39,7 @@ export function setMuted(next: boolean) {
   ensureInit();
   muted = next;
   try { window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+  listeners.forEach((l) => l());
 }
 
 export function toggleMuted(): boolean {

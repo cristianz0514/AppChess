@@ -1,6 +1,5 @@
 import { cache } from "react";
 import { supabase } from "@/lib/supabase";
-import { endedByAbandonment } from "./pgnParser";
 import type { DashboardStats, OpeningStat, Game } from "@/types";
 
 export const getUserId = cache(async function(username: string): Promise<string | null> {

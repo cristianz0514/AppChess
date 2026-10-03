@@ -7,14 +7,14 @@ export type SceneVariant =
   | "olimpiada" | "premiacion" | "sala-elite" | "exhibicion-mundial";
 
 const IMAGE_SRC: Record<SceneVariant, string> = {
-  "living-room": "/campeones/sala.jpg",
-  "club": "/campeones/club.jpg",
-  "torneo-infantil": "/campeones/torneo-infantil.jpg",
-  "torneo-internacional": "/campeones/torneo-internacional.jpg",
-  "olimpiada": "/campeones/olimpiada.jpg",
-  "premiacion": "/campeones/premiacion.jpg",
-  "sala-elite": "/campeones/sala-elite.jpg",
-  "exhibicion-mundial": "/campeones/exhibicion-mundial.jpg",
+  "living-room": "/campeones/sala.webp",
+  "club": "/campeones/club.webp",
+  "torneo-infantil": "/campeones/torneo-infantil.webp",
+  "torneo-internacional": "/campeones/torneo-internacional.webp",
+  "olimpiada": "/campeones/olimpiada.webp",
+  "premiacion": "/campeones/premiacion.webp",
+  "sala-elite": "/campeones/sala-elite.webp",
+  "exhibicion-mundial": "/campeones/exhibicion-mundial.webp",
 };
 
 export function SceneBackground({ variant }: { variant: SceneVariant }) {
