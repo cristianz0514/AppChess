@@ -12,6 +12,7 @@ import { ruleOfTheSquare, endgameKind, pawnMajority } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
 import { sideAccuracy, winPercent } from "@/lib/accuracy";
+import { classifyWinLoss, isBrilliantSacrifice } from "@/lib/moveClassification";
 import { createEngineCache } from "@/lib/engineCache";
 import { lineToScore } from "@/lib/engineApi";
 import { openingFamily } from "@/lib/translateOpening";
@@ -656,47 +657,7 @@ const DEEP_DEPTH = 16;
 // from board-reading CATEGORIES and from COVERAGE instead.
 const MAX_DEEP_MOVES = 8;
 
-/**
- * Classification from how much WIN PROBABILITY the move gave away, not from raw
- * centipawns.
- *
- * lib/accuracy.ts already argued this in its own header — "100 centipawns thrown
- * away from a dead-equal position changes the game, while the same 100 thrown away
- * from +9 changes nothing" — and fixed the ACCURACY figure accordingly. This
- * function was left on raw centipawns, so one consumer got the correct model and
- * the other did not.
- *
- * The symptom, reported from a real game: an eval moving from +11.6 to +8.9 is a
- * 270cp "loss" and was labelled a BLUNDER, even though the player had played the
- * engine's own first choice and both positions are completely won. In win
- * probability that same move gives away about 1%, which is what it actually cost.
- *
- * Thresholds were CALIBRATED against real cases rather than picked to look tidy.
- * A first pass at 1/2/5/10/20 read "+0.2 -> -2.0" — equal to two pawns down — as a
- * mere mistake at 19.5%, which no player would accept, so the bands were tightened
- * until every reference case landed where a human would put it:
- *
- *   +11.6 -> +8.9   1.2%   excellent   (the reported bug: was "blunder")
- *   0.0   -> -0.1   0.9%   best
- *   0.0   -> -0.5   4.6%   inaccuracy
- *   +0.2  -> -2.0  19.5%   blunder
- *   +3.0  -> +0.2  23.3%   blunder
- *   +0.5  -> -3.2  31.1%   blunder
- *
- * "-6.0 -> -9.0" landing on inaccuracy (6.4%) is deliberate and is the same
- * principle seen from the losing side: the game was already gone, so the move
- * changed nothing about the outcome. That is exactly what the win-probability
- * model is for, and treating it as a blunder is what made the old bands wrong in
- * both directions.
- */
-function classify(winLostPercent: number): MoveClassification {
-  if (winLostPercent < 1) return "best";
-  if (winLostPercent < 2) return "excellent";
-  if (winLostPercent < 4) return "good";
-  if (winLostPercent < 8) return "inaccuracy";
-  if (winLostPercent < 18) return "mistake";
-  return "blunder";
-}
+// classify() lives in lib/moveClassification.ts so it can be unit-tested.
 
 // Converts a side-to-move score (pawns) at ply i to white's perspective.
 const toWhite = (score: number, i: number) => (i % 2 === 1 ? score : -score);
@@ -860,7 +821,7 @@ export async function analyzeGame(
         winLost = Math.max(0, winPercent(beforeMover * 100) - winPercent(afterMover * 100));
       }
       const suggestion = sweepBest[i] && sweepBest[i] !== move.san ? sweepBest[i] : null;
-      return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classify(winLost), best_move: suggestion };
+      return { game_id: gameId, ply: i, move_number: Math.floor(i / 2) + 1, move: move.san, evaluation: cur, centipawn_loss: centipawnLoss, classification: classifyWinLoss(winLost), best_move: suggestion };
     });
 
   // ── Pass 2: deepen the worst positions ──────────────────────────────────────
@@ -923,18 +884,14 @@ export async function analyzeGame(
 
     const movedVal = VAL[h.piece] ?? 0;
     const capturedVal = h.captured != null ? (VAL[h.captured] ?? 0) : 0;
-    // Sacrifice: a cheaper enemy piece can capture the piece we just moved,
-    // yet the engine still rates this the best move → brilliant. Requires
-    // `capturedVal < movedVal` — i.e. this move is a NET material loss (or
-    // gives away a piece for nothing) — otherwise a plain even trade (e.g.
-    // bishop takes knight, pawn recaptures: capturedVal 3 == movedVal 3)
-    // was wrongly flagged brilliant just because the recapturer was cheap.
+    // Sacrifice rule lives in lib/moveClassification.ts (tested): the move must
+    // leave the mover down material, not merely be recapturable by something cheap.
     let brilliant = false;
     if (movedVal >= 3 && capturedVal < movedVal && evalBefore <= 4.5) {
       try {
         const c = new Chess(fens[i]);
-        const caps = c.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured);
-        if (caps.length && Math.min(...caps.map((x) => VAL[x.piece] ?? 99)) < movedVal) brilliant = true;
+        const recapturerValues = c.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured).map((x) => VAL[x.piece] ?? 99);
+        brilliant = isBrilliantSacrifice({ movedValue: movedVal, capturedValue: capturedVal, evalBefore, recapturerValues });
       } catch { /* ignore */ }
     }
     if (brilliant) { moves[i].classification = "brilliant"; continue; }
