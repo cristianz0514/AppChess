@@ -48,7 +48,7 @@ export default async function ChampionsPage() {
                   ) : allDone ? (
                     <p className="text-xs mt-1 flex items-center gap-1.5 font-semibold" style={{ color: "var(--bv-green)" }}>
                       {/* eslint-disable-next-line @next/next/no-img-element -- small, fixed local asset */}
-                      <img src="/campeones/medalla-oro.png" alt="" width={16} height={16} className="shrink-0" />
+                      <img src="/campeones/medalla-oro.webp" alt="" width={16} height={16} className="shrink-0" />
                       Completado
                     </p>
                   ) : completedCount > 0 ? (

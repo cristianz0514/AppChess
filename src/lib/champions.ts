@@ -282,7 +282,7 @@ export const CHAMPIONS: Champion[] = [
         ],
         outroWin: [
           { speaker: "Larisa", text: "…Eras la rival más fuerte que he enfrentado en un equipo.", side: "other", portrait: "larisa-sorpresa" },
-          { speaker: "Narrador", text: "Hungría venció a la Unión Soviética y se llevó el oro por equipos — con Judit, de doce años, jugando un papel decisivo.", side: "other", image: "/campeones/periodico-polgar.jpg" },
+          { speaker: "Narrador", text: "Hungría venció a la Unión Soviética y se llevó el oro por equipos — con Judit, de doce años, jugando un papel decisivo.", side: "other", image: "/campeones/periodico-polgar.webp" },
           { speaker: "Judit", text: "Ganamos juntas. Así se siente mejor.", side: "player", portrait: "judit-teen" },
         ],
         outroLoseOrDraw: [
@@ -347,7 +347,7 @@ export const CHAMPIONS: Champion[] = [
         playerColor: "black",
         scene: "torneo-internacional",
         intro: [
-          { speaker: "Narrador", text: "El récord de Gran Maestro más joven de la historia lleva más de veinte años en manos de Bobby Fischer. Judit está a un paso de romperlo.", side: "other", image: "/campeones/reloj-ajedrez.jpg" },
+          { speaker: "Narrador", text: "El récord de Gran Maestro más joven de la historia lleva más de veinte años en manos de Bobby Fischer. Judit está a un paso de romperlo.", side: "other", image: "/campeones/reloj-ajedrez.webp" },
           { speaker: "GM Petrov", text: "Sabe lo que está en juego en esta partida, ¿verdad?", side: "other", portrait: "petrov" },
           { speaker: "Judit", text: "Lo sé. Por eso no pienso dejarlo pasar.", side: "player", portrait: "judit-teen" },
         ],
