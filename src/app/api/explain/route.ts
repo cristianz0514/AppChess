@@ -42,7 +42,7 @@ function classify(swingPawns: number): string {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body?.san || !body?.fenBefore) {
-    return NextResponse.json({ error: "missing data" }, { status: 400 });
+    return NextResponse.json({ error: "faltan datos" }, { status: 400 });
   }
 
   const { fenBefore, san, bestMove, moveNumber, evalBefore, evalAfter, gameId, ply } = body;
@@ -68,9 +68,9 @@ export async function POST(req: NextRequest) {
     const board = new Chess(fenBefore);
     played = board.move(san);
   } catch {
-    return NextResponse.json({ error: "invalid move" }, { status: 400 });
+    return NextResponse.json({ error: "jugada inválida" }, { status: 400 });
   }
-  if (!played) return NextResponse.json({ error: "invalid move" }, { status: 400 });
+  if (!played) return NextResponse.json({ error: "jugada inválida" }, { status: 400 });
 
   const rawMotifs = detectMotifs(fenBefore, san);
   const selfHang = rawMotifs.find((m) => m.key === "hangs_own");

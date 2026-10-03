@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Chess } from "chess.js";
-import { getTopLines } from "@/services/stockfish";
+import { getTopLines, EngineBusyError } from "@/services/stockfish";
+import { rateLimit } from "@/lib/rateLimit";
+import { isValidFen } from "@/lib/validate";
 
 // Solution + forgiving acceptance set for one "Entrena tus errores" exercise.
 // Chess positions usually have more than one good move, so accepting ONLY the
@@ -8,9 +10,12 @@ import { getTopLines } from "@/services/stockfish";
 // short MultiPV search and accept any first move whose evaluation is within
 // half a pawn of the best — "at least as good", not "identical to the engine".
 export async function POST(req: NextRequest) {
+  const limited = rateLimit(req, "exercise", 60, 60_000);
+  if (limited) return limited;
+
   const { fen } = await req.json().catch(() => ({}));
-  if (!fen || typeof fen !== "string") {
-    return NextResponse.json({ error: "fen requerido" }, { status: 400 });
+  if (!isValidFen(fen)) {
+    return NextResponse.json({ error: "fen requerido y válido" }, { status: 400 });
   }
 
   // Normalize a line's score to a single centipawn-comparable number from the
@@ -45,7 +50,8 @@ export async function POST(req: NextRequest) {
       bestSan: toSanFromUci(bestUci),
       acceptable: [...new Set(acceptable)],
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof EngineBusyError) return NextResponse.json({ error: "motor ocupado" }, { status: 503 });
     return NextResponse.json({ error: "motor no disponible" }, { status: 503 });
   }
 }

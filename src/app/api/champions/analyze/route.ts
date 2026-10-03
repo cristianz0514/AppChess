@@ -17,9 +17,9 @@ export async function POST(req: NextRequest) {
   // caller could insert game rows into another account.
   const cookieStore = await cookies();
   const username = cookieStore.get("bv_username")?.value;
-  if (!username) return NextResponse.json({ error: "No session" }, { status: 401 });
+  if (!username) return NextResponse.json({ error: "Sin sesión" }, { status: 401 });
   const userId = await getUserId(decodeURIComponent(username).toLowerCase());
-  if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!userId) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
 
   const { championId, chapterId, pgn, playerColor, result } = await req.json().catch(() => ({}));
 

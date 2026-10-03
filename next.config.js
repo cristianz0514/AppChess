@@ -5,16 +5,10 @@ const ENGINE_FILES = [
   './node_modules/stockfish/bin/stockfish-18-lite-single.wasm',
 ]
 
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  register: true,
-  skipWaiting: true,
-  // Disable PWA in all environments until service worker compatibility is confirmed
-  disable: true,
-  buildExcludes: [/middleware-manifest\.json$/],
-})
-
-module.exports = withPWA({
+// next-pwa was removed: it was permanently `disable: true`, and dragged in
+// deprecated glob/workbox/rollup-plugin-terser packages for nothing. If a real
+// service worker is wanted later, use Serwist rather than reviving it.
+module.exports = {
   reactStrictMode: true,
   serverExternalPackages: ['stockfish'],
 
@@ -37,6 +31,13 @@ module.exports = withPWA({
         headers: [
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
           { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+          // Baseline hardening. A CSP is deliberately not set here yet: the
+          // inline <style>/<script> the app and Next emit would need a nonce
+          // setup, and a wrong CSP silently breaks pages.
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
         ],
       },
       {
@@ -82,4 +83,4 @@ module.exports = withPWA({
       './node_modules/stockfish/bin/stockfish.js',
     ],
   },
-})
+}

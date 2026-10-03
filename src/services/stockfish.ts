@@ -79,9 +79,21 @@ let chain: Promise<unknown> = Promise.resolve();
 // What remains uses the engine for ONE position at a time: the bot opponent,
 // move hints, exercise generation and puzzles.
 
+// Thrown instead of queueing without limit: every search holds the single
+// engine for several seconds, so an unbounded queue lets a burst of requests
+// pile up and starve everyone. Routes map this to HTTP 503.
+export class EngineBusyError extends Error {
+  constructor() { super("engine queue full"); }
+}
+const MAX_QUEUE = 8;
+let pending = 0;
+
 function runExclusive<T>(task: () => Promise<T>): Promise<T> {
+  if (pending >= MAX_QUEUE) return Promise.reject(new EngineBusyError());
+  pending++;
   const result = chain.then(task, task);
-  chain = result.catch(() => {});
+  const release = () => { pending--; };
+  chain = result.then(release, release);
   return result;
 }
 
