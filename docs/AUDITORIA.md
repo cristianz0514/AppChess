@@ -8,7 +8,7 @@ Después de la auditoría se corrigió todo lo que se podía sin una decisión t
 
 | ID | Estado | Qué se hizo / por qué no |
 |---|---|---|
-| A1 RLS | **Pendiente (tuyo)** | Las políticas viven en el panel de Supabase; con solo la `anon key` no se pueden leer ni cambiar desde el código. Hay que revisarlas allí y decidir el modelo de acceso. Documentado en el README. |
+| A1 RLS | **Preparado, falta aplicar** | Revisado en el panel tras la restauración: RLS está DESACTIVADO en 7 de 8 tablas (solo `champion_progress` tenía política, y era ALL). Quedó escrita `supabase/migrations/010_rls_hardening.sql`: activa RLS y deja a `anon` solo las operaciones que la app usa (sin DELETE salvo `moves` e `insights`, sin UPDATE en `users`). Evita el borrado masivo, no la lectura ni la manipulación: eso exige login real. Falta ejecutarla en Supabase y probar la app. |
 | A2 Cookie | **Pendiente (producto)** | Firmar la cookie no sirve mientras cualquiera pueda pedir una firmada para cualquier usuario público; requiere login real (OAuth) — decisión de producto. Documentado en el README. |
 | A3 insights/pending | Hecho | El usuario sale solo de la cookie; error genérico. |
 | A4 Motor y seed | Hecho | FEN y `elo` validados, límite por IP, cola del motor con tope (503 si está llena), `puzzles/seed` exige sesión. |
