@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { fetchAllGames, validateUsername } from "./chesscom";
+import { fetchAllGames, validateUsername, ChessComUnavailableError } from "./chesscom";
 import { parseGames } from "./pgnParser";
 
 export type ImportProgress = (phase: string, done: number, total: number) => void;
@@ -9,8 +9,9 @@ export async function importGames(username: string, onProgress?: ImportProgress)
   userId: string;
 }> {
   onProgress?.("Verificando tu usuario de Chess.com…", 0, 1);
-  const valid = await validateUsername(username);
-  if (!valid) throw new Error("No encontramos ese usuario en Chess.com. Revisa que esté bien escrito.");
+  const check = await validateUsername(username);
+  if (check === "unavailable") throw new ChessComUnavailableError();
+  if (check === "not_found") throw new Error("No encontramos ese usuario en Chess.com. Revisa que esté bien escrito.");
 
   const userId = await getOrCreateUser(username);
   const rawGames = await fetchAllGames(username, (done, total) => {
