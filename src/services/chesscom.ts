@@ -91,27 +91,21 @@ export async function fetchAllGames(
   return all.sort((a, b) => b.end_time - a.end_time);
 }
 
-export async function fetchRecentGames(
-  username: string,
-  maxGames = 50
-): Promise<ChessComGame[]> {
+// Games from the last `months` calendar months (current one included), newest
+// first. Best-effort on purpose: a month chess.com won't answer for is skipped,
+// not fatal — this is what refreshes a RETURNING user, whose history is already
+// stored, so a partial answer (or none) must never block them from signing in.
+export async function fetchRecentMonths(username: string, months = 3): Promise<ChessComGame[]> {
   const now = new Date();
-  const months: { year: number; month: number }[] = [];
-  for (let i = 0; i < 6; i++) {
+  const list: { year: number; month: number }[] = [];
+  for (let i = 0; i < months; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+    list.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
   }
-
   const results = await Promise.all(
-    months.map(({ year, month }) =>
-      fetchMonthGames(username, year, month).catch(() => [] as ChessComGame[])
-    )
+    list.map(({ year, month }) => fetchMonthGames(username, year, month).catch(() => [] as ChessComGame[])),
   );
-
-  return results
-    .flat()
-    .sort((a, b) => b.end_time - a.end_time)
-    .slice(0, maxGames);
+  return results.flat().sort((x, y) => y.end_time - x.end_time);
 }
 
 async function fetchMonthGames(

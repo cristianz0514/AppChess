@@ -8,7 +8,7 @@ import { isValidUsername } from "@/lib/validate";
 export async function POST(req: NextRequest) {
   // A full-history import hits chess.com and writes thousands of rows, so one
   // client gets a handful per 10 minutes, not unlimited.
-  const limited = rateLimit(req, "import", 5, 10 * 60_000);
+  const limited = rateLimit(req, "import", 12, 10 * 60_000);
   if (limited) return limited;
 
   const { username } = await req.json().catch(() => ({}));
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         const result = await importGames(name, (phase, done, total) => {
           send({ phase, done, total });
         });
-        send({ finished: true, imported: result.imported, userId: result.userId });
+        send({ finished: true, imported: result.imported, userId: result.userId, stale: result.stale === true });
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "No se pudo importar. Inténtalo de nuevo." });
       } finally {

@@ -1,22 +1,47 @@
 import { supabase } from "@/lib/supabase";
-import { fetchAllGames, validateUsername, ChessComUnavailableError } from "./chesscom";
+import { fetchAllGames, fetchRecentMonths, validateUsername, ChessComUnavailableError } from "./chesscom";
 import { parseGames } from "./pgnParser";
 
 export type ImportProgress = (phase: string, done: number, total: number) => void;
 
+// How many recent months a RETURNING user's refresh pulls. Their older history is
+// already stored, so re-downloading and re-upserting thousands of games on every
+// sign-in only added time and chances for chess.com to refuse us.
+const REFRESH_MONTHS = 3;
+
 export async function importGames(username: string, onProgress?: ImportProgress): Promise<{
   imported: number;
   userId: string;
+  // True when chess.com couldn't be reached and the stored data was used as is.
+  stale?: boolean;
 }> {
-  onProgress?.("Verificando tu usuario de Chess.com…", 0, 1);
-  const check = await validateUsername(username);
-  if (check === "unavailable") throw new ChessComUnavailableError();
-  if (check === "not_found") throw new Error("No encontramos ese usuario en Chess.com. Revisa que esté bien escrito.");
+  onProgress?.("Verificando tu usuario…", 0, 1);
+  const existingId = await findUser(username);
+  const hasHistory = existingId ? await countGames(existingId) > 0 : false;
 
-  const userId = await getOrCreateUser(username);
-  const rawGames = await fetchAllGames(username, (done, total) => {
-    onProgress?.("Descargando tu historial de Chess.com…", done, total);
-  });
+  const check = await validateUsername(username);
+  if (check === "unavailable") {
+    // chess.com not answering (it often refuses shared-hosting IPs). Someone who
+    // already has stored games doesn't need it to open their own account; only a
+    // brand-new profile truly can't proceed, because there is nothing to show.
+    if (existingId && hasHistory) return { imported: 0, userId: existingId, stale: true };
+    throw new ChessComUnavailableError();
+  }
+  if (check === "not_found" && !(existingId && hasHistory)) {
+    throw new Error("No encontramos ese usuario en Chess.com. Revisa que esté bien escrito.");
+  }
+
+  const userId = existingId ?? (await createUser(username));
+
+  let rawGames;
+  if (existingId && hasHistory) {
+    onProgress?.("Buscando partidas nuevas…", 0, 1);
+    rawGames = await fetchRecentMonths(username, REFRESH_MONTHS);
+  } else {
+    rawGames = await fetchAllGames(username, (done, total) => {
+      onProgress?.("Descargando tu historial de Chess.com…", done, total);
+    });
+  }
   const parsed = parseGames(rawGames, username);
 
   if (parsed.length === 0) return { imported: 0, userId };
@@ -60,15 +85,24 @@ export async function importGames(username: string, onProgress?: ImportProgress)
   return { imported: parsed.length, userId };
 }
 
-async function getOrCreateUser(username: string): Promise<string> {
-  const { data: existing } = await supabase
+async function findUser(username: string): Promise<string | null> {
+  const { data } = await supabase
     .from("users")
     .select("id")
     .eq("chess_username", username.toLowerCase())
-    .single();
+    .maybeSingle();
+  return data?.id ?? null;
+}
 
-  if (existing) return existing.id;
+async function countGames(userId: string): Promise<number> {
+  const { count } = await supabase
+    .from("games")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  return count ?? 0;
+}
 
+async function createUser(username: string): Promise<string> {
   const { data: created, error } = await supabase
     .from("users")
     .insert({ chess_username: username.toLowerCase() })
