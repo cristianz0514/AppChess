@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { importGames } from "@/services/gameImport";
 import { rateLimit } from "@/lib/rateLimit";
 import { isValidUsername } from "@/lib/validate";
 
@@ -10,6 +9,16 @@ export async function POST(req: NextRequest) {
   // client gets a handful per 10 minutes, not unlimited.
   const limited = rateLimit(req, "import", 12, 10 * 60_000);
   if (limited) return limited;
+
+  // Checked before loading anything that touches the database: a missing
+  // .env.local otherwise surfaced as an opaque 500 on every sign-in.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return new Response(
+      JSON.stringify({ error: "El servidor no tiene configurada la base de datos (faltan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY)." }),
+      { status: 503 },
+    );
+  }
+  const { importGames } = await import("@/services/gameImport");
 
   const { username } = await req.json().catch(() => ({}));
   const name = typeof username === "string" ? username.trim() : "";
