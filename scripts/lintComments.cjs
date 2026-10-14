@@ -41,6 +41,8 @@ const SEAMS = [
   ["pawn number", /[+\-−]\d+[.,]\d/],
   ["algebraic notation", /\b[KQRBN][a-h]?x?[a-h][1-8][+#]?(?=[\s.,;:]|$)|\b[a-h]x[a-h][1-8]\b|\bO-O\b/],
   ["unfilled slot", /\$\{|\{\w+\}/],
+  ["gender: feminine piece with a masculine participle", /\b(la torre|la dama)( de [a-h][1-8])?,? (que )?(estaba |queda |se queda |tenías )?(atacado|colgado|defendido|desprotegido)\b/i],
+  ["gender: masculine clitic on a feminine piece", /\b(la torre|la dama)\b[^.]{0,40}\b(llevártelo)\b/i],
 ];
 
 for (const f of files) {

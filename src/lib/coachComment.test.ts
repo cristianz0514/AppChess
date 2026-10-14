@@ -168,6 +168,19 @@ describe("template seams", () => {
     expect(t).not.toMatch(/torre[^.]*colgado/);
   });
 
+  it("participles and pronouns agree with the piece", () => {
+    const defend = (piece: string) => composeCoachComment(facts({
+      defendsAttacked: { piece, square: "h8" }, playedPiece: "rey", playedTo: "c8", variantSeed: 0,
+    }))!;
+    expect(defend("torre")).toMatch(/atacada/);
+    expect(defend("caballo")).toMatch(/atacado/);
+    const loose = (piece: string) => composeCoachComment(facts({
+      playedMotifs: [{ key: "hanging", label: "pieza colgada", piece, square: "f6" }], variantSeed: 0,
+    }))!;
+    expect(loose("torre")).toMatch(/llevártela/);
+    expect(loose("alfil")).toMatch(/llevártelo/);
+  });
+
   it("a double threat with a check is not reported as a discovered check", () => {
     const t = composeCoachComment(facts({
       byOpponent: true, classification: "best",

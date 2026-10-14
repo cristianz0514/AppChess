@@ -590,7 +590,11 @@ function betterStory(
       return { text: `${lead} ${forkClause(t, rival ? "rivalPast" : "youPast")}, y ${rival ? "ganaba" : "ganabas"} ${word}.`, gain: bestNet };
     }
     if (later) {
-      return { text: `${lead} ${rival ? "acababa" : "acababas"} ganando ${word}: ${art(later.captured!)} de ${later.capSquare ?? later.to} caía.`, gain: bestNet };
+      // The capture is quoted as the example only when it is a real part of the total: "ganando
+      // más de una pieza: el peón de d5 caía" made the example contradict the sum.
+      const example = val(later.captured) >= 3 || val(later.captured) >= bestNet * 0.5
+        ? `: ${art(later.captured!)} de ${later.capSquare ?? later.to} caía` : "";
+      return { text: `${lead} ${rival ? "acababa" : "acababas"} ganando ${word}${example}.`, gain: bestNet };
     }
     return null;
   }

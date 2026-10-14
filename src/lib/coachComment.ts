@@ -703,7 +703,7 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
       if (f.defendsAttacked) {
         const d = f.defendsAttacked;
         return { text: pick([
-          `Defiendes ${art(d.piece)} de ${d.square}, que estaba atacado.`,
+          `Defiendes ${art(d.piece)} de ${d.square}, que estaba atacad${d.piece === "torre" || d.piece === "dama" ? "a" : "o"}.`,
           `Cubres ${art(d.piece)} de ${d.square} justo a tiempo.`,
         ], c.s), namesMaterial: true };
       }
@@ -2665,7 +2665,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
     applies: (f, _c) => {
 
       // Their position improving: worth knowing, not alarming.
-      if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacado.`;
+      if (f.defendsAttacked) return `El rival defiende ${art(f.defendsAttacked.piece)} de ${f.defendsAttacked.square}, que tenías atacad${f.defendsAttacked.piece === "torre" || f.defendsAttacked.piece === "dama" ? "a" : "o"}.`;
       return null;
     },
   },
