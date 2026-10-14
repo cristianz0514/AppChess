@@ -20,12 +20,21 @@
 const fs = require("fs");
 const path = require("path");
 
-const FILES = [
+const LITE = [
   "stockfish-18-lite-single.js", "stockfish-18-lite-single.wasm",
   "stockfish-18-lite.js", "stockfish-18-lite.wasm",
+];
+const FULL = [
   "stockfish-18-single.js", "stockfish-18-single.wasm",
   "stockfish-18.js", "stockfish-18.wasm",
 ];
+
+// ENGINE_LITE_ONLY=1 ships just the 7MB builds. Used for the hosted deploy: the
+// 108MB full nets are slower per position than lite at the same depth (see
+// engineBuild.ts) and browserEngine already picks lite first, so they only add
+// ~215MB of static files to every deployment. A device that forces a full build
+// simply fails to load it and is demoted back to lite.
+const FILES = process.env.ENGINE_LITE_ONLY === "1" ? LITE : [...LITE, ...FULL];
 
 const from = path.join(__dirname, "..", "node_modules", "stockfish", "bin");
 const to = path.join(__dirname, "..", "public", "engine");

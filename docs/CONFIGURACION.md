@@ -33,3 +33,7 @@ El plan gratuito pausa el proyecto tras ~1 semana sin actividad. `vercel.json` l
 2. Environment Variables: las dos de arriba (Production, Preview y Development).
 3. Deploy. Cada `git push` a `main` redespliega solo.
 4. Probar `/api/health` y luego entrar con tu usuario.
+
+## Motor de análisis en el navegador (Vercel)
+
+El análisis de partidas corre Stockfish **en el navegador**, desde `/engine/*.wasm`. Esos archivos no están en git: los copia `scripts/copyEngine.cjs`. `vercel.json` usa `buildCommand`, que **no ejecuta** el gancho `prebuild` de npm, así que el comando incluye la copia (`ENGINE_LITE_ONLY=1`: solo las versiones ligeras, 14 MB; las completas de 108 MB no se usan por defecto). Si `/engine/stockfish-18-lite-single.wasm` responde 404, las partidas se quedan en "Analizando con Stockfish…".
