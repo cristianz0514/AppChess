@@ -57,7 +57,18 @@ Pruebas: `src/lib/lineStory.test.ts` (24 casos con posiciones armadas a mano: pi
 | Por qué una jugada tiene o no historia | `scripts/storyDebug.mts` imprime las líneas y la decisión |
 | Reclamos sin su autoridad, cobertura de campos, plan de jugadas | `scripts/auditClaims.cjs`, `auditCoverage.cjs`, `checkPlan.cjs`, `diffComments.cjs` |
 
-Resultado del lint sobre las mismas 8 partidas reales: **de 31 problemas a 6** a mitad del trabajo (los 6 restantes se corrigieron después: contracción "de el" y encabezados repetidos). `auditClaims`: 0 reclamos sin autoridad.
+Resultado del lint (`scripts/lintComments.cjs`):
+
+| Corpus | Comentarios | Problemas |
+|---|---|---|
+| 8 partidas reales, **antes** de la mejora | 474 | **31** (reproches en jugadas buenas, "desperdicias la ventaja" tras una buena jugada, la misma frase 4–8 veces) |
+| 41 partidas reales, **después** (código final) | 2783 | **0** |
+
+En el camino el lint encontró errores que a ojo no se veían, todos corregidos y con prueba: "jaque de el alfil", "la torre … colgado/atacado", "el alfil … llevártela", "Ojo a el alfil".
+
+`auditClaims`: 0 reclamos sin autoridad · `auditCoverage`: ningún campo sin usar · `checkPlan`: todo OK.
+
+**Validación de punta a punta en producción** (la app real en Vercel, motor en el navegador, base de datos real): se re-analizó una partida de cristianz05 con el botón nuevo; el análisis terminó, escribió 59 jugadas y el resumen mostró el Elo con su rango y el rating real. Se leyeron los comentarios generados y se corrigieron dos defectos de género que solo se veían ahí.
 
 ## 5. El Elo: ¿estaba muy alto? Sí, y por una razón más profunda que la fórmula
 
