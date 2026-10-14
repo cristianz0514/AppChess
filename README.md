@@ -27,7 +27,7 @@ GitHub Actions corre las cuatro en cada push a `main` (`.github/workflows/ci.yml
 
 `scripts/audit*.cjs` y `scripts/checkPlan.cjs` auditan los comentarios del coach (afirmaciones, cobertura, disparos); sus resultados quedan en `docs/`.
 
-Para medir lo que la app **realmente dice y calcula** sobre partidas reales (con Stockfish real y sin base de datos): `scripts/analyzeOffline.mts` → `scripts/lintComments.cjs` (costuras y contradicciones en miles de comentarios) y `scripts/calibrateElo.mts` (Elo contra ratings reales). Cómo funcionan y qué midieron: `docs/MOTOR-DE-COMENTARIOS.md`.
+Para medir lo que la app **realmente dice y calcula** sobre partidas reales (con Stockfish real y sin base de datos): `scripts/analyzeOffline.mts` → `scripts/lintComments.cjs` (costuras y contradicciones en miles de comentarios), `scripts/measureStories.cjs` (qué parte cuenta una historia verificada) y `scripts/minePatterns.cjs` (qué errores siguen sin explicación) y `scripts/calibrateElo.mts` (Elo contra ratings reales). Cómo funcionan y qué midieron: `docs/MOTOR-DE-COMENTARIOS.md`.
 
 ## Modelo de acceso (leer antes de tocar la seguridad)
 

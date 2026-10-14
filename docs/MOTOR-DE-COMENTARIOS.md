@@ -94,6 +94,30 @@ Medido con `scripts/measureStories.cjs` sobre las mismas 41 partidas:
 | Imprecisiones + errores con explicación posicional | — | 75 de 611 |
 
 **Lectura honesta:** el paso 2 ayuda sobre todo a las imprecisiones. En los errores y errores graves rinde poco (17 de 307) porque casi todos ya tenían material o táctica que contar; los que no, suelen ser situaciones donde la diferencia entre dos finales de línea no es tan nítida como para nombrarla con seguridad. Lint: 0 problemas en 2783 comentarios. 155 pruebas.
+### 2.3 Patrones concretos, sacados de los datos (no adivinados)
+
+Para saber qué patrones valían la pena se agregó un gancho de diagnóstico (`analyzeGame(..., trace)`, no lo usa la app) que registra, por cada jugada, las líneas que recibió el comentarista y qué historia salió. `scripts/minePatterns.cjs` etiqueta con características simples y comprobables los errores que **siguen sin explicación** y cuenta cuáles se repiten.
+
+Lo que mostró, sobre 611 errores e imprecisiones reales: 398 ya tenían historia y **213 no**, y esos 213 son una cola larga de imprecisiones pequeñas, sobre todo de apertura, donde las dos jugadas son tranquilas (166 de 240 en la medición previa). No hay un patrón dominante: el que yo suponía ("capturar con la pieza equivocada") aparece en 7 de 240. Por eso se implementó solo lo que es **exacto y comprobable**:
+
+| Patrón | Qué comprueba | Ejemplo |
+|---|---|---|
+| **Pérdida ya decisiva** (ajuste, no patrón) | Con |eval| ≥ 3 la evaluación casi no se mueve con el material (perdido por 5 o por 7), así que exigir que "la caída corrobore" bloqueaba pérdidas reales de una torre. Ahora la línea basta en posiciones decisivas | *Tras la torre del rival a c5, acaba llevándose el peón de f5: pierdes un peón.* |
+| **Pierdes un tiempo** | La respuesta ataca la pieza que moviste (con algo más barato o sin defensa), esa pieza tiene que moverse otra vez, y la mejor línea no pierde ese tiempo | *El peón del rival ataca el caballo en g6 y tienes que moverlo otra vez: pierdes un tiempo. Con el peón a f5 no lo perdías.* |
+| **Caballo rival inatacable** | Un caballo rival avanzado donde ningún peón tuyo podrá atacarlo, que la mejor línea no permite | *En la línea principal el caballo del rival se instala en d5, donde ningún peón tuyo puede echarlo.* |
+| **Captura con la pieza equivocada** | La mejor jugada captura lo mismo con una pieza más barata y la jugada elegida pierde la más cara en el cambio | *Capturas en d5 con la torre y te la recapturan: es el cambio más caro. Con el caballo a d5 cambiabas más barato.* |
+
+Medido sobre las mismas 41 partidas (`measureStories.cjs`):
+
+| | Paso 2 | Paso 3 |
+|---|---|---|
+| Errores y imprecisiones sin explicación | 246 de 630 (39 %) | **213 de 611 (35 %)** |
+| Imprecisiones con historia / genéricas | 32 % / 21 % | **36 % / 19 %** |
+| Mis errores con historia | 62 % | 64 % |
+| Patrones nuevos disparados | — | pierdes un tiempo 15 · caballo inatacable 17 · captura equivocada 0 |
+
+**Lectura honesta:** es una mejora real pero pequeña, y es lo que los datos permiten. El 35 % restante es, en su mayoría, diferencias sutiles entre dos jugadas tranquilas que ni un entrenador humano resumiría en una frase comprobable; para esas, el comentario se queda en la jugada mejor y en el efecto en la evaluación, sin inventar una causa. Si aparecen más patrones en partidas futuras, se agregan donde ya hay lugar (`positionalDiff.ts` para diferencias entre finales de línea, `lineStory.ts` para causas dentro de la línea), cada uno con su prueba.
+
 ## 3. Contradicciones y repetición (`src/lib/coachComment.ts`)
 
 - "Se te escapó" solo sobre una jugada que fue un error; nunca junto a "mejor/excelente".
@@ -113,6 +137,7 @@ Medido con `scripts/measureStories.cjs` sobre las mismas 41 partidas:
 | Lo que la app **realmente dice** en partidas reales | `scripts/analyzeOffline.mts` corre `analyzeGame` real con Stockfish real y sin base de datos |
 | Costuras, contradicciones y repeticiones sobre miles de comentarios | `node scripts/lintComments.cjs <salidas.json>` |
 | Por qué una jugada tiene o no historia | `scripts/storyDebug.mts` imprime las líneas y la decisión |
+| Qué errores siguen sin explicación y qué comparten | `node scripts/minePatterns.cjs <salidas.json> [--show característica]` |
 | Reclamos sin su autoridad, cobertura de campos, plan de jugadas | `scripts/auditClaims.cjs`, `auditCoverage.cjs`, `checkPlan.cjs`, `diffComments.cjs` |
 
 Resultado del lint (`scripts/lintComments.cjs`):

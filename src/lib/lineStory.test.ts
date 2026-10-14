@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildStory, replay, lineNet, settledBalance, forkTargets, worth, type StoryInput } from "./lineStory";
+import { buildStory, replay, lineNet, settledBalance, forkTargets, worth, tempoStory, wrongPieceStory, type StoryInput } from "./lineStory";
 
 // Positions are hand-built so each one isolates ONE cause. The engine lines are supplied by
 // the test (the module reads lines, it does not search), which is what makes these
@@ -87,7 +87,7 @@ describe("what a move allows", () => {
   });
 
   it("stays silent when the evaluation does not back the material claim", () => {
-    const s = buildStory(base({ fenBefore: BISHOP_ATTACKS_KNIGHT, playedSan: "Kf2", mover: "w", reply: ["Bxc3"], evalBefore: -3, evalAfter: -3.1 }));
+    const s = buildStory(base({ fenBefore: BISHOP_ATTACKS_KNIGHT, playedSan: "Kf2", mover: "w", reply: ["Bxc3"], evalBefore: -2, evalAfter: -2.1 }));
     expect(s?.allows ?? null).toBeNull();
   });
 
@@ -102,6 +102,14 @@ describe("what a move allows", () => {
     expect(s?.allows).toContain("El rival no atiende tu amenaza");
     expect(s?.allows).toContain("te lo llevas con el alfil");
     expect(s?.better).toBeNull();   // advice to the rival is useless to the player
+  });
+});
+
+describe("a loss in an already decisive position", () => {
+  it("is told even though the evaluation barely moves: at -4 it does not track material", () => {
+    const s = buildStory(base({ fenBefore: BISHOP_ATTACKS_KNIGHT, playedSan: "Kf2", mover: "w", reply: ["Bxc3"], evalBefore: -4, evalAfter: -4.1 }));
+    expect(s?.kind).toBe("ignored");
+    expect(s?.allows).toContain("ya estaba atacado y no lo atendiste");
   });
 });
 
@@ -189,6 +197,60 @@ describe("what a quiet move is for", () => {
     const fen = "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1";
     const s = buildStory(base({ fenBefore: fen, playedSan: "exd5", mover: "w", reply: ["Kd7", "Kd2", "Kd6", "Kd3", "Kxd5"], classification: "good", good: true }));
     expect(s?.achieves ?? null).toBeNull();
+  });
+});
+
+describe("losing a tempo", () => {
+  // 1.e4 e5 2.Nf3 Nc6, then white goes Bb5 and the a6 pawn kicks the bishop.
+  const fen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
+  const inp = (best: string[], byOpponent = false) => base({
+    fenBefore: fen, playedSan: "Bb5", mover: "w", byOpponent, reply: ["a6", "Ba4"], best,
+    evalBefore: 0.3, evalAfter: -0.2, classification: "inaccuracy",
+  });
+
+  it("the reply attacks the piece with something cheaper and it has to move again", () => {
+    const s = buildStory(inp(["Nc3", "Nf6", "Bb5"]));
+    expect(s?.kind).toBe("positional");
+    expect(s?.allows).toBe("El peón del rival ataca el alfil en b5 y tienes que moverlo otra vez: pierdes un tiempo.");
+    expect(s?.better).toBe("Con el caballo a c3 no lo perdías.");
+  });
+
+  it("told from the player's side when the rival is the one who loses it", () => {
+    const s = buildStory(inp(["Nc3", "Nf6", "Bb5"], true));
+    expect(s?.allows).toBe("Con el peón a a6 atacas el alfil del rival en b5 y tiene que moverse otra vez: ganas un tiempo.");
+  });
+
+  it("is silent when the best line loses the same tempo", () => {
+    const s = buildStory(inp(["Bc4", "a6", "Bb3"]));
+    expect(s?.allows ?? "").not.toMatch(/pierdes un tiempo/);
+  });
+
+  it("is silent when the attacker is not cheaper and the piece is defended", () => {
+    // A knight attacks a defended knight: trading is available, nothing is forced to move.
+    const f2 = "4k3/8/8/8/3n4/8/8/R3K2N w - - 0 1";
+    const s = tempoStory(replay(f2, ["Nf2", "Nb3", "Ng4"]), base({ fenBefore: f2, playedSan: "Nf2", mover: "w", reply: ["Nb3", "Ng4"], best: ["Ra4"] }));
+    expect(s).toBeNull();
+  });
+});
+
+describe("capturing with the wrong piece", () => {
+  // White can take the d5 pawn with the knight or with the rook; the pawn on e6 retakes either.
+  const fen = "4k3/8/4p3/3p4/8/2N5/3R4/4K3 w - - 0 1";
+  const L = replay(fen, ["Rxd5", "exd5"]);
+
+  it("names the dearer piece that was exchanged and the cheaper one that could have been", () => {
+    const s = wrongPieceStory(L, base({ fenBefore: fen, playedSan: "Rxd5", mover: "w", reply: ["exd5"], best: ["Nxd5", "exd5"] }));
+    expect(s?.cause).toBe("Capturas en d5 con la torre y te la recapturan: es el cambio más caro.");
+    expect(s?.contrast).toBe("Con el caballo a d5 cambiabas más barato.");
+  });
+
+  it("is silent when the played piece is the cheaper one", () => {
+    const L2 = replay(fen, ["Nxd5", "exd5"]);
+    expect(wrongPieceStory(L2, base({ fenBefore: fen, playedSan: "Nxd5", mover: "w", reply: ["exd5"], best: ["Rxd5", "exd5"] }))).toBeNull();
+  });
+
+  it("is silent when the best move captures somewhere else", () => {
+    expect(wrongPieceStory(L, base({ fenBefore: fen, playedSan: "Rxd5", mover: "w", reply: ["exd5"], best: ["Nb5"] }))).toBeNull();
   });
 });
 

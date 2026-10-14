@@ -39,6 +39,25 @@ describe("what differs between where the move leads and where the best move lead
     expect(diff("r3k2r/8/8/8/8/8/8/4K2R w - - 0 1", "r3k2r/8/8/8/8/8/8/5RK1 w - - 0 1")).toBeNull();
   });
 
+  it("a knight the rival plants where no pawn of ours can remove it", () => {
+    // Played: the black knight sits on d4 and we have no pawns. Best: it is still on g8.
+    const d = diff("4k3/8/8/8/3n4/8/8/4K3 w - - 0 1", "4k1n1/8/8/8/8/8/8/4K3 w - - 0 1");
+    expect(d?.key).toBe("oppOutpost");
+    expect(d?.square).toBe("d4");
+    expect(describeDifference(d!, true, "el caballo a e2").cause).toBe("En la línea principal el caballo del rival se instala en d4, donde ningún peón tuyo puede echarlo.");
+  });
+
+  it("is not an outpost while a pawn of ours can still attack the square", () => {
+    // The pawn on c2 can reach c3 and challenge d4.
+    expect(diff("4k3/8/8/8/3n4/8/2P5/4K3 w - - 0 1", "4k1n1/8/8/8/8/8/2P5/4K3 w - - 0 1")).toBeNull();
+  });
+
+  it("works from black's side", () => {
+    const d = diff("4k3/8/8/3N4/8/8/8/4K3 b - - 0 1", "4k3/8/8/8/8/8/8/4K1N1 b - - 0 1", "b");
+    expect(d?.key).toBe("oppOutpost");
+    expect(d?.square).toBe("d5");
+  });
+
   it("a bishop locked in by its own pawns", () => {
     const d = diff("4k3/8/8/8/8/8/1PPP4/2B1K3 w - - 0 1", "4k3/8/8/8/8/4B3/1PPP4/4K3 w - - 0 1");
     expect(d?.key).toBe("passive");

@@ -35,6 +35,8 @@ export interface Profile {
   doubled: string[];          // files with 2+ own pawns
   isolated: string[];         // squares of own isolated pawns
   oppPassed: string[];        // enemy passed pawns
+  /** Squares of enemy KNIGHTS standing, advanced, where none of this side's pawns can ever attack them. */
+  oppOutposts: string[];
   /** For each file with no pawns at all: own rooks+queens minus the enemy's. */
   fileControl: Record<string, number>;
   passive: PassivePiece | null;
@@ -81,6 +83,22 @@ export function profile(fen: string, me: Color): Profile {
     fileControl[f] = onFile(mine) - onFile(theirs);
   }
 
+  // An enemy knight in the opponent's half that none of our pawns can attack now or later: a pawn
+  // can challenge a square only from an adjacent file, standing behind it from the pawn's own
+  // point of view. If there is no such pawn, nothing will ever dislodge the knight.
+  const myPawns = mine.filter((p) => p.type === "p");
+  const oppOutposts = theirs.filter((p) => {
+    if (p.type !== "n") return false;
+    const f = FILES.indexOf(p.square[0]), r = Number(p.square[1]);
+    const advanced = opp === "w" ? r >= 4 : r <= 5;
+    if (!advanced) return false;
+    return !myPawns.some((q) => {
+      const qf = FILES.indexOf(q.square[0]), qr = Number(q.square[1]);
+      if (Math.abs(qf - f) !== 1) return false;
+      return me === "w" ? qr <= r - 1 : qr >= r + 1;
+    });
+  }).map((p) => p.square);
+
   const terms = evalTerms(fen, me);
   return {
     bishops: mine.filter((p) => p.type === "b").length,
@@ -91,6 +109,7 @@ export function profile(fen: string, me: Color): Profile {
     doubled: ps.doubledFiles,
     isolated: ps.isolated,
     oppPassed: eps.passed,
+    oppOutposts,
     fileControl,
     passive: passivePiece(fen, me),
     mobility: terms.mobility,
@@ -101,7 +120,7 @@ export function profile(fen: string, me: Color): Profile {
 
 export type FeatureKey =
   | "oppPassed" | "bishopPairLost" | "bishopPairGiven" | "openFile" | "kingExposed"
-  | "castling" | "shield" | "doubled" | "isolated" | "passive" | "mobility" | "development";
+  | "castling" | "shield" | "doubled" | "isolated" | "passive" | "mobility" | "development" | "oppOutpost";
 
 export interface Difference {
   key: FeatureKey;
@@ -132,6 +151,10 @@ export function differences(played: Profile, best: Profile, minScore = MIN_SCORE
   // A passed pawn the rival gets.
   const newPassed = played.oppPassed.find((s) => !best.oppPassed.includes(s));
   if (newPassed && played.oppPassed.length > best.oppPassed.length) push({ key: "oppPassed", score: 3, square: newPassed });
+
+  // A knight the rival plants where no pawn of ours can ever remove it.
+  const newOutpost = played.oppOutposts.find((s) => !best.oppOutposts.includes(s));
+  if (newOutpost) push({ key: "oppOutpost", score: 2, square: newOutpost });
 
   // The bishop pair.
   if (best.bishops >= 2 && played.bishops < 2) push({ key: "bishopPairLost", score: 2 });
@@ -189,6 +212,10 @@ export function describeDifference(d: Difference, you: boolean, bestMove: string
       return you
         ? { cause: `En la línea principal el rival consigue un peón pasado en ${d.square}.`, contrast: c("lo evitabas.") }
         : { cause: `Con esa jugada consigues un peón pasado en ${d.square}.`, contrast: null };
+    case "oppOutpost":
+      return you
+        ? { cause: `En la línea principal el caballo del rival se instala en ${d.square}, donde ningún peón tuyo puede echarlo.`, contrast: c("no se lo permitías.") }
+        : { cause: `Tu caballo se instala en ${d.square}, donde ningún peón del rival puede echarlo.`, contrast: null };
     case "bishopPairLost":
       return you
         ? { cause: `En la línea principal te quedas sin la pareja de alfiles.`, contrast: c("la conservabas.") }

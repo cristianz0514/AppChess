@@ -11,7 +11,7 @@ import { ignoredThreat, ownThreat } from "@/lib/threats";
 import { ruleOfTheSquare, endgameKind, pawnMajority } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
-import { buildStory } from "@/lib/lineStory";
+import { buildStory, type StoryInput, type Story } from "@/lib/lineStory";
 import { sideAccuracy, winPercent } from "@/lib/accuracy";
 import { classifyWinLoss, isBrilliantSacrifice } from "@/lib/moveClassification";
 import { createEngineCache } from "@/lib/engineCache";
@@ -20,6 +20,15 @@ import { openingFamily } from "@/lib/translateOpening";
 import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
+
+/**
+ * Diagnostic hook: what the comment pass was GIVEN for one ply (the lines, the evaluations, the
+ * classification), what story it made of it, and the text it wrote. Not used by the app. It
+ * exists so that a measurement run over real games can ask "which errors still get no
+ * explanation, and what do their lines have in common?" — the question the pattern library
+ * (lib/errorPatterns.ts) is built from — without re-implementing the pipeline to find out.
+ */
+export type StoryTrace = (t: { ply: number; input: StoryInput; story: Story | null; text: string | null }) => void;
 
 /** A UCI line, replayed from `fromFen` into SAN. Stops at the first move that does not fit. */
 function uciLineToSan(fromFen: string, pv: readonly string[]): string[] {
@@ -723,6 +732,7 @@ export async function analyzeGame(
   // single line of analysis logic changing, which is the point.
   engine: CoachEngine,
   onProgress?: (done: number, total: number, label?: string) => void,
+  trace?: StoryTrace,
 ): Promise<void> {
   const chess = new Chess();
 
@@ -1182,13 +1192,12 @@ export async function analyzeGame(
     // no loss" is evidence the legacy rules must respect. Built HERE, before the error branch,
     // so the opportunity recorded for the player's next move can carry its verified reason.
     let story: ReturnType<typeof buildStory> = null;
-    try {
-      story = buildStory({
-        fenBefore, playedSan: moves[i].move, mover: playerColor, byOpponent: isOpponentPly(i),
-        reply: replySans, best: mainSans, evalBefore, evalAfter,
-        classification: moves[i].classification, good: good || onlyGoodMove,
-      });
-    } catch { story = null; }
+    const storyInput: StoryInput = {
+      fenBefore, playedSan: moves[i].move, mover: playerColor, byOpponent: isOpponentPly(i),
+      reply: replySans, best: mainSans, evalBefore, evalAfter,
+      classification: moves[i].classification, good: good || onlyGoodMove,
+    };
+    try { story = buildStory(storyInput); } catch { story = null; }
     if (!good) {
       try {
         const opp = (await cache.getAnalysis(fens[i], DEEP_DEPTH, 1)).lines;
@@ -1335,6 +1344,7 @@ export async function analyzeGame(
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     }, info);
     winnerAt[i] = info.winner;
+    trace?.({ ply: i, input: storyInput, story, text });
 
     if (text) {
       // The recommended move travels WITH the sentence that recommends it. The
@@ -1409,17 +1419,16 @@ export async function analyzeGame(
     // Kept whole, those two lines are exactly what the deep tier searches for, at depth 16
     // as well, so quiet moves get the same verified story at no extra engine cost.
     let story: ReturnType<typeof buildStory> = null;
-    try {
-      story = buildStory({
-        fenBefore, playedSan: moves[i].move, mover: moverWhite ? "w" : "b", byOpponent: isOpponentPly(i),
-        reply: uciLineToSan(fens[i], evals[i]?.pv ?? []),
-        best: i > 0 ? uciLineToSan(fens[i - 1], evals[i - 1]?.pv ?? []) : [],
-        evalBefore, evalAfter,
-        classification: moves[i].classification,
-        // Only the player's own sound moves can "achieve" something.
-        good: !isOpponentPly(i) && (moves[i].classification === "best" || moves[i].classification === "excellent" || moves[i].classification === "good"),
-      });
-    } catch { story = null; }
+    const storyInput: StoryInput = {
+      fenBefore, playedSan: moves[i].move, mover: moverWhite ? "w" : "b", byOpponent: isOpponentPly(i),
+      reply: uciLineToSan(fens[i], evals[i]?.pv ?? []),
+      best: i > 0 ? uciLineToSan(fens[i - 1], evals[i - 1]?.pv ?? []) : [],
+      evalBefore, evalAfter,
+      classification: moves[i].classification,
+      // Only the player's own sound moves can "achieve" something.
+      good: !isOpponentPly(i) && (moves[i].classification === "best" || moves[i].classification === "excellent" || moves[i].classification === "good"),
+    };
+    try { story = buildStory(storyInput); } catch { story = null; }
     // The same forced gain is true on every ply until somebody collects it; saying it each time
     // is the standing-fact repetition again. Announce it once per side, then step aside.
     if (story?.achieves && story.key) {
@@ -1473,6 +1482,7 @@ export async function analyzeGame(
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
     }, info);
     winnerAt[i] = info.winner;
+    trace?.({ ply: i, input: storyInput, story, text });
     if (text) quietUpdates.push({ ply: i, text });
   }
   // Write in small concurrent batches — one round-trip per move would add ~25

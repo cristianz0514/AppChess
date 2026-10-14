@@ -381,7 +381,7 @@ export function buildStory(inp: StoryInput): Story | null {
     // No material, no tactic, no mate: the error is in the SHAPE of the position the move leads
     // to. Compare where it leads with where the best move leads.
     if (!story.allows && !story.better) {
-      const pos = positionalStory(L, replay(inp.fenBefore, inp.best, WINDOW), inp);
+      const pos = wrongPieceStory(L, inp) ?? tempoStory(L, inp) ?? positionalStory(L, replay(inp.fenBefore, inp.best, WINDOW), inp);
       if (pos) { story.allows = pos.cause; story.better = pos.contrast; story.kind = "positional"; }
     }
     // A weak consequence ("tras X el rival acaba llevándose un peón") beside a much bigger
@@ -392,6 +392,64 @@ export function buildStory(inp: StoryInput): Story | null {
     if (w) { story.achieves = w.text; story.kind = w.kind; story.key = w.key ?? null; }
   }
   return story;
+}
+
+/**
+ * Capturing on the right square with the wrong piece: the best move takes the same thing, but
+ * with a cheaper piece, and the played line gets the more valuable one recaptured.
+ */
+export function wrongPieceStory(L: readonly Ev[], inp: StoryInput): { cause: string; contrast: string | null } | null {
+  const B = replay(inp.fenBefore, inp.best, 2);
+  if (L.length < 2 || B.length === 0) return null;
+  const M = L[0], r1 = L[1], b1 = B[0];
+  if (!M.captured || !b1.captured || M.to !== b1.to || M.piece === b1.piece) return null;
+  if (val(M.piece) <= val(b1.piece)) return null;                 // the played piece must be the dearer one
+  if (r1.capSquare !== M.to) return null;                         // and it must actually be retaken there
+  const you = !inp.byOpponent;
+  return you
+    ? {
+        cause: `Capturas en ${M.to} con ${art(M.piece)} y te la recapturan: es el cambio más caro.`,
+        contrast: `Con ${art(b1.piece)} a ${b1.to} cambiabas más barato.`,
+      }
+    : {
+        cause: `El rival captura en ${M.to} con ${art(M.piece)} y se la recapturas: se cambia la pieza más valiosa.`,
+        contrast: null,
+      };
+}
+
+/**
+ * Losing a tempo: the piece that moved is attacked by the reply and has to move again, while the
+ * best line does not. The line itself is the evidence — the attack and the second move are both
+ * in it — so nothing is inferred.
+ */
+export function tempoStory(L: readonly Ev[], inp: StoryInput): { cause: string; contrast: string | null } | null {
+  if (L.length < 3) return null;
+  const M = L[0], r1 = L[1], m2 = L[2];
+  if (M.piece === "p" || M.piece === "k" || M.captured || M.check) return null;
+  if (r1.captured || r1.check || m2.color !== M.color || m2.from !== M.to) return null;
+  // The REPLY created the attack: the piece it moved now attacks our piece...
+  const map = buildAttackMap(r1.fenAfter);
+  const attackedByReply = attackersOf(map, M.to, r1.color).some((a) => a.from === r1.to);
+  if (!attackedByReply) return null;
+  // ...and it is a real attack: by something cheaper, or on a piece nothing defends.
+  const attackers = attackersOf(map, M.to, r1.color).filter((a) => a.from === r1.to);
+  const defenders = attackersOf(map, M.to, M.color);
+  const cheaper = attackers.some((a) => val(a.type) < val(M.piece));
+  if (!cheaper && defenders.length > 0) return null;
+  // The best line must not lose the same tempo.
+  const B = replay(inp.fenBefore, inp.best, 3);
+  if (B.length >= 3 && B[2].color === M.color && B[2].from === B[0].to && B[0].piece === M.piece) return null;
+  const you = !inp.byOpponent;
+  const b1 = B[0];
+  return you
+    ? {
+        cause: `${cap(art(r1.piece))} del rival ataca ${art(M.piece)} en ${M.to} y tienes que mover${clit(M.piece) === "la" ? "la" : "lo"} otra vez: pierdes un tiempo.`,
+        contrast: b1 ? `Con ${art(b1.piece)} a ${b1.to} no lo perdías.` : null,
+      }
+    : {
+        cause: `Con ${art(r1.piece)} a ${r1.to} atacas ${art(M.piece)} del rival en ${M.to} y tiene que moverse otra vez: ganas un tiempo.`,
+        contrast: null,
+      };
 }
 
 /**
@@ -500,7 +558,13 @@ function allowsStory(
   const onPawnScale = Math.abs(inp.evalBefore) < MATE_MAG && Math.abs(inp.evalAfter) < MATE_MAG;
   // Two independent measurements have to agree: the replayed line says WHAT falls, the
   // evaluation says HOW MUCH the position actually cost.
-  if (onPawnScale && drop < lost * 0.4) return null;
+  //
+  // Not when the position was already decisive (|eval| ≥ 3): there the evaluation hardly moves
+  // with material — a side that is lost by 5 pawns is lost by 7 with another rook gone — so the
+  // drop says nothing about how much was lost, and the line is the only evidence there is. It
+  // was blocking real, verified losses of a rook or more in already-lost positions.
+  const decisive = Math.abs(inp.evalBefore) >= 3;
+  if (onPawnScale && !decisive && drop < lost * 0.4) return null;
 
   const gone = biggestTaken(L.slice(1), opp);
   const word = worth(lost, gone);

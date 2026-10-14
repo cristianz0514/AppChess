@@ -11,7 +11,7 @@
 // to measure what it actually computes (Elo calibration) — with the production code path,
 // not a re-implementation of it.
 import { readFileSync, writeFileSync } from "node:fs";
-import { analyzeGame } from "@/services/blunderDetector";
+import { analyzeGame, type StoryTrace } from "@/services/blunderDetector";
 import { createNodeEngine } from "./lib/nodeEngine.mts";
 import { store } from "./lib/supabaseStub.mts";
 
@@ -35,9 +35,10 @@ for (let g = from; g < Math.min(to, all.length); g++) {
   store.moves = [];
   store.gameUpdate = {};
   const depthsFrom = engine.depthsReached.length;
+  const traces: Parameters<StoryTrace>[0][] = [];
   const t0 = Date.now();
   try {
-    await analyzeGame(game.id, game.pgn, engine);
+    await analyzeGame(game.id, game.pgn, engine, undefined, (t) => traces.push(t));
   } catch (e) {
     console.error(`[${g}] ${game.id} failed:`, (e as Error).message);
     continue;
@@ -50,6 +51,8 @@ for (let g = from; g < Math.min(to, all.length); g++) {
     minDepth: depths.length ? Math.min(...depths) : null,
     accuracy: store.gameUpdate.accuracy ?? null,
     moves: store.moves,
+    // What the comment pass was given for each ply, and what it made of it (see StoryTrace).
+    traces: traces.map((t) => ({ ply: t.ply, input: t.input, story: t.story, text: t.text })),
   });
   console.log(`[${g}] ${game.id} ${store.moves.length} plies, ${Math.round((Date.now() - t0) / 1000)}s, minDepth ${depths.length ? Math.min(...depths) : "-"}`);
   writeFileSync(outPath, JSON.stringify(results));
