@@ -21,6 +21,21 @@ import type { Move } from "@/types";
 
 export type MoveClassification = Move["classification"];
 
+/** A UCI line, replayed from `fromFen` into SAN. Stops at the first move that does not fit. */
+function uciLineToSan(fromFen: string, pv: readonly string[]): string[] {
+  let c: Chess;
+  try { c = new Chess(fromFen); } catch { return []; }
+  const out: string[] = [];
+  for (const uci of pv) {
+    try {
+      const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4, 5) || "q" });
+      if (!mv) break;
+      out.push(mv.san);
+    } catch { break; }
+  }
+  return out;
+}
+
 // How many moves get the ENGINE-GROUNDED comment tier (a deep re-evaluation plus
 // the top lines), as opposed to the board-reading tier every move already gets.
 // Raised from 20 now that the analysis runs on the user's own CPU instead of a
@@ -1064,19 +1079,7 @@ export async function analyzeGame(
     // opponent's error, not silence just because the label stayed "best".
     const good = moves[i].classification === "brilliant" || moves[i].classification === "great" || punishingBest.has(i);
 
-    // Helper: turn a UCI line into readable SAN from a position.
-    const pvToSan = (fromFen: string, pv: string[]): string[] => {
-      const c = new Chess(fromFen);
-      const out: string[] = [];
-      for (const uci of pv) {
-        try {
-          const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4, 5) || "q" });
-          if (!mv) break;
-          out.push(mv.san);
-        } catch { break; }
-      }
-      return out;
-    };
+    const pvToSan = uciLineToSan;
 
     const h = history[i];
     const VAL = PIECE_VAL;
@@ -1387,6 +1390,8 @@ export async function analyzeGame(
   // fallback ("Equilibrio (+0.2).") on the other ~25, which read as if nothing
   // had changed.
   const richIdx = new Set(chosen);
+  // What each side has already been told it wins, by story key (see the quiet tier below).
+  const announced: [Set<string>, Set<string>] = [new Set(), new Set()];
   const quietUpdates: { ply: number; text: string }[] = [];
   for (let i = 0; i < history.length; i++) {
     if (richIdx.has(i)) continue;
@@ -1397,12 +1402,39 @@ export async function analyzeGame(
     const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
     const rawMotifs = detectMotifs(fenBefore, moves[i].move);
     const selfHang = rawMotifs.find((m) => m.key === "hangs_own");
+
+    // The move told as cause and effect — for the moves that never got a search of their own.
+    // The sweep already evaluated this position (the line that follows the move) and the one
+    // before it (the line this move was chosen from), and used to keep only their first move.
+    // Kept whole, those two lines are exactly what the deep tier searches for, at depth 16
+    // as well, so quiet moves get the same verified story at no extra engine cost.
+    let story: ReturnType<typeof buildStory> = null;
+    try {
+      story = buildStory({
+        fenBefore, playedSan: moves[i].move, mover: moverWhite ? "w" : "b", byOpponent: isOpponentPly(i),
+        reply: uciLineToSan(fens[i], evals[i]?.pv ?? []),
+        best: i > 0 ? uciLineToSan(fens[i - 1], evals[i - 1]?.pv ?? []) : [],
+        evalBefore, evalAfter,
+        classification: moves[i].classification,
+        // Only the player's own sound moves can "achieve" something.
+        good: !isOpponentPly(i) && (moves[i].classification === "best" || moves[i].classification === "excellent" || moves[i].classification === "good"),
+      });
+    } catch { story = null; }
+    // The same forced gain is true on every ply until somebody collects it; saying it each time
+    // is the standing-fact repetition again. Announce it once per side, then step aside.
+    if (story?.achieves && story.key) {
+      const side = i % 2;
+      if (announced[side].has(story.key)) { story = { ...story, achieves: null, kind: "none" }; }
+      else announced[side].add(story.key);
+    }
+
     // This side's last three descriptive winners: a standing fact that already spoke on any
     // of them stays quiet, so the move gets a sentence about what IT did.
     const recentRules = [2, 4, 6].map((d) => winnerAt[i - d]).filter((w): w is string => !!w);
     const info: CommentInfo = {};
     const text = composeCoachComment({
       recentRules,
+      story,
       variantSeed: i,
       playedPiece: PIECE_ES[h.piece] ?? "pieza",
       playedTo: h.to,

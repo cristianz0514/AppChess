@@ -1409,6 +1409,28 @@ export const STANDING_RULES: ReadonlySet<string> = new Set([
   "givesKingLuft", "oppGivesKingLuft",
 ]);
 
+/**
+ * Facts the descriptive rules state that matter MORE than "this wins material later": a mate
+ * being threatened or suffered, and a piece of yours that this very move rescued. A verified
+ * story replaces the generic sentence; it must not replace "Amenazas mate en d7" or "Cubres el
+ * caballo de a4 justo a tiempo" — the first is the most urgent thing on the board, the second
+ * is why the move was played at all.
+ */
+const URGENT_LEGACY: ReadonlySet<string> = new Set(["mateNet", "mateAgainst", "defendsAttacked"]);
+function legacyIsMoreUrgent(f: MoveFacts): boolean {
+  if (f.ownThreat?.kind === "mate" || f.ignoredThreat?.kind === "mate") return true;
+  const outer = activeInfo;
+  const probe: CommentInfo = {};
+  activeInfo = probe;
+  try { slotA(f); } finally { activeInfo = outer; }
+  return !!probe.winner && URGENT_LEGACY.has(probe.winner);
+}
+
+/** Descriptive rules that say little enough that a verified idea about the move should replace them. */
+const IDEA_REPLACES: ReadonlySet<string> = new Set([
+  "fallback", "endgameFallback", "dominantTermGain", "passivePiece", "retreats", "toCenter", "pawnBreak",
+]);
+
 /** Out-parameter of composeCoachComment: which descriptive rule won, for the recency memory. */
 export interface CommentInfo { winner?: string }
 let activeInfo: CommentInfo | null = null;
@@ -2231,7 +2253,9 @@ const sentenceCount = (t: string) => (t.match(/[.!?](\s|$)/g) ?? []).length;
 
 export function composeCoachComment(f: MoveFacts, info?: CommentInfo): string | null {
   const outer = activeInfo;
-  activeInfo = info ?? null;
+  // Always an object: composeInner itself reads which rule won (the weak-idea replacement), so it
+  // cannot depend on the caller having asked to see it.
+  activeInfo = info ?? {};
   try { return composeInner(f); } finally { activeInfo = outer; }
 }
 
@@ -2291,16 +2315,25 @@ function composeInner(f: MoveFacts): string | null {
       // the consequence was one sentence, so the comment stays short.
       const plain = f.bestPiece && f.bestTo && sentenceCount(st.allows) < 2
         ? `Lo indicado era ${art(f.bestPiece)} a ${f.bestTo}.` : null;
-      const second = st.better ?? plain;
+      // A verified reason the previous move left an opportunity the player did not take is worth
+      // as much as a verified better move: it is the same information from the rival's side.
+      const missed = f.missedOpportunity?.how ? opportunityOutcome(f) : null;
+      const second = st.better ?? missed ?? plain;
       return second ? `${st.allows} ${second}` : st.allows;
     }
     // Not over a mate: the mate rules say "mate en 3", which is the larger fact.
-    if (st.achieves && !isError && !f.isMate && Math.abs(f.evalAfter) < MATE_MAG) return st.achieves;
+    // "Ideas" of a quiet move (a pawn the line walks to the last rank, a queen trade) are weaker
+    // than a named descriptive rule — they only replace the generic ones, below.
+    const weakIdea = st.kind === "promotes" || st.kind === "queenTrade";
+    if (st.achieves && !weakIdea && !isError && !f.isMate && Math.abs(f.evalAfter) < MATE_MAG && !legacyIsMoreUrgent(f)) return st.achieves;
   }
 
   const a = slotA(f);
   if (!a) return null;
   if (f.isMate && f.evalAfter > 0) return a.text;
+  if (st?.achieves && (st.kind === "promotes" || st.kind === "queenTrade") && activeInfo?.winner && IDEA_REPLACES.has(activeInfo.winner)) {
+    return st.achieves;
+  }
 
   const b = slotB(f, a.namesMaterial);
   // A verified reason for the better move replaces the generic "lo indicado era" slot.

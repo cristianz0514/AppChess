@@ -65,6 +65,18 @@ describe("browser engine", () => {
     expect(r.score).toBeCloseTo(0.35);
     expect(r.bestMove).toBe("e2e4");
     expect(r.depth).toBe(16);
+    expect(r.pv).toEqual(["e2e4", "e7e5"]);          // the variation travels with the score
+  });
+
+  it("keeps the exact variation, not the one-move probe of an aspiration window", async () => {
+    FakeWorker.onGo = (w) => {
+      w.emit("info depth 15 multipv 1 score cp 30 nodes 1 pv d2d4 d7d5 c2c4");
+      w.emit("info depth 16 multipv 1 score cp 40 lowerbound nodes 1 pv d2d4");
+      w.emit("bestmove d2d4");
+    };
+    const eng = await load();
+    const r = await eng.evaluatePosition("fenP", 16);
+    expect(r.pv).toEqual(["d2d4", "d7d5", "c2c4"]);
   });
 
   it("a search at its deadline is STOPPED and drained, and cannot leak into the next position", async () => {

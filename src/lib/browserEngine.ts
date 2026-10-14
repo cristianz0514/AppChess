@@ -39,7 +39,7 @@
 
 import {
   type CoachEngine, type EngineLine, type EvalResult,
-  parseScore, parseMultiPvLine,
+  parseScore, parseMultiPvLine, parsePv,
 } from "./engineApi";
 import {
   type BuildId, chooseBuild, fallbackAfter, markBuildFailed, threadsFor,
@@ -232,13 +232,18 @@ async function evaluateOne(fen: string, depth: number): Promise<EvalResult> {
     let best: EvalResult | null = null;
     let bestMove: string | null = null;
     let reached = 0;
+    let pv: string[] | undefined;
     worker.postMessage("position fen " + fen);
     await search(
       worker, `go depth ${depth}`, SOFT_EVAL_MS,
       (line, finish) => {
         if (line.startsWith("info") && line.includes("score")) {
           const parsed = parseScore(line);
-          if (parsed) { best = parsed; reached = depthOf(line); }
+          if (parsed) {
+            best = parsed; reached = depthOf(line);
+            const p = parsePv(line);
+            if (p) pv = p;
+          }
         } else if (line.startsWith("bestmove")) {
           // Kept, not just used as an end-of-search signal: this is the same answer
           // /api/bestmove was being asked for separately, already computed here.
@@ -249,7 +254,7 @@ async function evaluateOne(fen: string, depth: number): Promise<EvalResult> {
       },
       () => null,
     );
-    if (best) return { ...(best as EvalResult), bestMove, depth: reached };
+    if (best) return { ...(best as EvalResult), bestMove, depth: reached, ...(pv ? { pv } : {}) };
     // Not one score came back: the engine is dead or wedged, and a made-up 0.00 would be
     // read as a level position. Replace it and try this position once more.
     needsRestart = true;

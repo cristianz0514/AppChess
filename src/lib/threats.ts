@@ -92,6 +92,13 @@ function bestWinHere(fen: string, me: Color): Threat | null {
   return best;
 }
 
+/**
+ * The best thing `me` could win RIGHT NOW in a position where it is `me`'s turn: a capture the
+ * opponent cannot answer, or a mate. Used to tell a gain a move CREATES from one that was already
+ * on the board and that any sensible move would keep.
+ */
+export const gainAvailable = (fen: string, me: Color): Threat | null => bestWinHere(fen, me);
+
 export function ownThreat(fenAfterMyMove: string, me: Color, fenBefore?: string): Threat | null {
   const passed = passTurn(fenAfterMyMove);
   if (!passed) return null;

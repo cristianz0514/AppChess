@@ -138,6 +138,60 @@ describe("a good move", () => {
   });
 });
 
+describe("what a quiet move is for", () => {
+  it("a pawn the line walks to the last rank", () => {
+    // White pawn on a6; the line is a6-a7, ...Kf8, a8=Q.
+    const fen = "4k3/8/P7/8/8/8/8/4K3 w - - 0 1";
+    const s = buildStory(base({ fenBefore: fen, playedSan: "a7", mover: "w", reply: ["Kd7", "a8=Q+"], classification: "best", good: true, evalBefore: 3, evalAfter: 3 }));
+    expect(s?.kind).toBe("promotes");
+    expect(s?.achieves).toBe("La línea principal lleva este peón a coronar en a8, en 2 jugadas.");
+    expect(s?.key).toBe("promo:a8");
+  });
+
+  it("does not call a capture or a promotion a quiet idea", () => {
+    const fen = "4k3/P7/8/8/8/8/8/4K3 w - - 0 1";
+    const s = buildStory(base({ fenBefore: fen, playedSan: "a8=Q+", mover: "w", reply: ["Kd7"], classification: "best", good: true }));
+    expect(s?.achieves ?? null).toBeNull();
+  });
+
+  it("a queen trade the line makes, when nobody comes out ahead", () => {
+    // Qd2 faces Qd7 on the d-file, defended by the rook; white makes a quiet move and the line
+    // trades the queens: ...Qxd2 Rxd2.
+    const fen = "4k3/3q4/8/8/8/8/3Q4/3RK3 w - - 0 1";
+    const s = buildStory(base({ fenBefore: fen, playedSan: "Kf1", mover: "w", reply: ["Qxd2", "Rxd2"], classification: "best", good: true }));
+    expect(s?.kind).toBe("queenTrade");
+    expect(s?.achieves).toBe("Con esto se llega al cambio de damas: la línea principal las cambia y la partida se simplifica.");
+  });
+
+  it("is not a queen trade when the queen is simply lost", () => {
+    const fen = "3qk3/8/8/8/8/8/3Q4/4K3 w - - 0 1";
+    const s = buildStory(base({ fenBefore: fen, playedSan: "Qd5", mover: "w", reply: ["Qxd5"], classification: "good", good: true }));
+    expect(s?.achieves ?? null).toBeNull();
+  });
+
+  it("announces a gain the move CREATES, with a key so the caller can say it once", () => {
+    // Ne2 cannot take the queen; Nc3 attacks it and the line collects: ...Kd7 Nxd5.
+    const fen = "4k3/8/8/3q4/8/8/4N3/4K3 w - - 0 1";
+    const s = buildStory(base({ fenBefore: fen, playedSan: "Nc3", mover: "w", reply: ["Kd7", "Nxd5"], classification: "good", good: true }));
+    expect(s?.kind).toBe("wins");
+    expect(s?.achieves).toBe("Con el caballo a c3 el rival ya no puede evitar perder la dama: la dama de d5 caerá.");
+    expect(s?.key).toBe("wins:qd5");
+  });
+
+  it("does NOT credit a move for a gain that was already on the board", () => {
+    // The knight on c3 already attacks the loose queen: a quiet king move merely keeps the win.
+    const fen = "4k3/8/8/3q4/8/2N5/8/4K3 w - - 0 1";
+    const s = buildStory(base({ fenBefore: fen, playedSan: "Ke2", mover: "w", reply: ["Kd7", "Nxd5"], classification: "good", good: true }));
+    expect(s?.achieves ?? null).toBeNull();
+  });
+
+  it("does not tell an exchange as 'el rival ya no puede evitar perder'", () => {
+    const fen = "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1";
+    const s = buildStory(base({ fenBefore: fen, playedSan: "exd5", mover: "w", reply: ["Kd7", "Kd2", "Kd6", "Kd3", "Kxd5"], classification: "good", good: true }));
+    expect(s?.achieves ?? null).toBeNull();
+  });
+});
+
 describe("geometry", () => {
   it("counts the king as a fork target", () => {
     const L = replay(`${KNIGHT_FORK} w - - 0 1`, ["Nc7+"]);

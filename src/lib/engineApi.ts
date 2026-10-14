@@ -22,6 +22,27 @@ export interface EvalResult {
   /** Depth the search actually REACHED (it can be lower than requested when a search is
    *  stopped at its deadline). Lets a caller tell a full-depth result from a truncated one. */
   depth?: number;
+  /**
+   * The principal variation of the search, UCI, from THIS position (the side to move first).
+   *
+   * Every search already produced it and every evaluation threw it away, keeping only the first
+   * move. Kept, it gives each ply of a game the line that follows it — and the line before it,
+   * from the previous position — which is all lib/lineStory.ts needs to tell what a move leads
+   * to. It is what lets quiet moves, which never get a deep search of their own, have a story
+   * at no extra engine cost.
+   */
+  pv?: string[];
+}
+
+/** The variation of an `info` line, or null when it carries none or is only a bound. */
+export function parsePv(line: string, maxPlies = 12): string[] | null {
+  // A line flagged lowerbound/upperbound is an aspiration-window probe whose PV is cut to one
+  // move; only the exact line that follows is a variation worth keeping.
+  if (/ (lowerbound|upperbound)( |$)/.test(line)) return null;
+  const m = line.match(/ pv (.+)$/);
+  if (!m) return null;
+  const pv = m[1].trim().split(/\s+/).slice(0, maxPlies);
+  return pv.length > 0 ? pv : null;
 }
 
 export interface EngineLine {

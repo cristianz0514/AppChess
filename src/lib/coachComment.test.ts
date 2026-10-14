@@ -126,6 +126,38 @@ describe("the verified story takes precedence", () => {
     }));
     expect(t ?? "").not.toMatch(/caerá/);
   });
+
+  const wins = story({ kind: "wins", achieves: "Con el alfil a f4 el rival ya no puede evitar perder una torre." });
+
+  it("a later gain does not replace a mate threat", () => {
+    const t = composeCoachComment(facts({
+      classification: "best", ownThreat: { kind: "mate", piece: "dama", square: "d7" }, story: wins,
+    }))!;
+    expect(t).toMatch(/mate/i);
+    expect(t).not.toMatch(/ya no puede evitar perder/);
+  });
+
+  it("a later gain does not replace the rescue of an attacked piece", () => {
+    const t = composeCoachComment(facts({
+      classification: "best", defendsAttacked: { piece: "caballo", square: "a4" }, story: wins,
+    }))!;
+    expect(t).toMatch(/caballo de a4/);
+    expect(t).not.toMatch(/ya no puede evitar perder/);
+  });
+
+  it("a verified gain DOES replace a generic sentence", () => {
+    const t = composeCoachComment(facts({ classification: "best", story: wins }))!;
+    expect(t).toBe("Con el alfil a f4 el rival ya no puede evitar perder una torre.");
+  });
+
+  it("a quiet idea (a pawn the line promotes) replaces only a generic sentence", () => {
+    const idea = story({ kind: "promotes", achieves: "La línea principal lleva este peón a coronar en a8, en 2 jugadas." });
+    const generic = composeCoachComment(facts({ classification: "best", playedPiece: "peón", playedTo: "a7", story: idea }))!;
+    expect(generic).toBe("La línea principal lleva este peón a coronar en a8, en 2 jugadas.");
+    // A named descriptive rule (castling) keeps the sentence.
+    const named = composeCoachComment(facts({ classification: "best", isCastle: true, playedPiece: "rey", playedTo: "g1", story: idea }))!;
+    expect(named).not.toMatch(/coronar/);
+  });
 });
 
 describe("repetition", () => {

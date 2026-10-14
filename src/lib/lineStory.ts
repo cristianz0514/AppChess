@@ -21,6 +21,7 @@
 
 import { Chess, type Move } from "chess.js";
 import { attacksFrom, attackersOf, buildAttackMap, PIECE_VALUE, type Color } from "./attackMap";
+import { gainAvailable } from "./threats";
 
 const MATE_MAG = 90;           // |eval| at/above this is a mate score, not a pawn count
 const MATE_MAX_MOVES = 4;      // past this the distance is not worth quoting (see coachComment)
@@ -290,7 +291,7 @@ export interface StoryInput {
 export type StoryKind =
   | "mate" | "fork" | "discovered"
   | "undefended" | "tradedDown" | "unguard" | "ignored" | "opened"
-  | "check" | "quiet" | "capture" | "wins" | "sacrifice" | "missedWin" | "none";
+  | "check" | "quiet" | "capture" | "wins" | "sacrifice" | "missedWin" | "promotes" | "queenTrade" | "none";
 
 export interface Story {
   kind: StoryKind;
@@ -309,6 +310,9 @@ export interface Story {
    *  subject ("con el caballo a d6 te llevabas el peón de a4"), for the NEXT comment to say
    *  when the player did not take it. */
   missed: string | null;
+  /** Identifies WHAT an `achieves` sentence announces ("wins:rd5"), so the caller can avoid
+   *  announcing the same forced gain on every ply until it is collected. */
+  key: string | null;
 }
 
 
@@ -353,7 +357,7 @@ export function buildStory(inp: StoryInput): Story | null {
   if (L.length === 0 || clean(L[0].san) !== clean(inp.playedSan)) return null;
   const isError = inp.classification === "inaccuracy" || inp.classification === "mistake" || inp.classification === "blunder";
 
-  const story: Story = { kind: "none", allows: null, better: null, achieves: null, net: null, sacrifice: false, missed: null };
+  const story: Story = { kind: "none", allows: null, better: null, achieves: null, net: null, sacrifice: false, missed: null, key: null };
   if (L.length >= 2) {
     story.net = lineNet(inp.fenBefore, L, inp.mover);
     const M = L[0], r1 = L[1];
@@ -378,7 +382,7 @@ export function buildStory(inp: StoryInput): Story | null {
     if (b && b.gain >= 3 && (story.kind === "quiet" || story.kind === "check")) { story.allows = null; story.kind = "missedWin"; }
   } else if (inp.good && !inp.byOpponent) {
     const w = achievesStory(L, inp, story.net);
-    if (w) { story.achieves = w.text; story.kind = w.kind; }
+    if (w) { story.achieves = w.text; story.kind = w.kind; story.key = w.key ?? null; }
   }
   return story;
 }
@@ -501,8 +505,8 @@ function allowsStory(
           : `El rival deja ${art(mp)} en ${S} sin defensa: te ${clit(mp)} llevas con ${art(rv)}.${verdict}` };
       case "tradedDown":
         return { kind: "tradedDown", text: you
-          ? `${cap(art(rv))} del rival captura ${art(mp)} en ${S} y, aunque recuperes, el cambio te cuesta ${word}.`
-          : `Capturas ${art(mp)} en ${S} con ${art(rv)} y, aunque el rival recupere, el cambio te favorece: ganas ${word}.` };
+          ? `${cap(art(rv))} del rival captura ${art(mp) === art(rv) ? "" : `${art(mp)} `}en ${S} y, aunque recuperes, el cambio te cuesta ${word}.`
+          : `Capturas ${art(mp) === art(rv) ? `en ${S}` : `${art(mp)} en ${S}`} con ${art(rv)} y, aunque el rival recupere, el cambio te favorece: ganas ${word}.` };
       case "unguard":
         return { kind: "unguard", text: you
           ? `Al mover ${art(mp)} dejas sin defensa ${art(P)} de ${S}, y ${art(rv)} del rival se ${clit(P)} lleva.${verdict}`
@@ -608,29 +612,80 @@ function betterStory(
 
 // ── A good move: what it wins ─────────────────────────────────────────────────
 
-function achievesStory(
-  L: readonly Ev[], inp: StoryInput, net: number | null,
-): { text: string; kind: StoryKind } | null {
-  if (L.length < 2 || net == null || net < 2) return null;
+type Achieves = { text: string; kind: StoryKind; key?: string };
+
+function achievesStory(L: readonly Ev[], inp: StoryInput, net: number | null): Achieves | null {
+  if (L.length < 2 || net == null) return null;
+  return winsStory(L, net) ?? quietIdea(L, net);
+}
+
+/**
+ * What a QUIET move is for, when it wins nothing yet. These come from the line the engine
+ * returned for the position — the sweep's, for moves that never got a search of their own — and
+ * are claims about that line only: the pawn it walks to the last rank, the queens it trades.
+ */
+function quietIdea(L: readonly Ev[], net: number): Achieves | null {
+  const M = L[0];
+  if (M.captured || M.promotion) return null;       // a capture or a promotion is described as such
+
+  // A pawn that the line carries all the way to the last rank.
+  if (M.piece === "p" && net >= -0.5) {
+    const promo = L.find((e) => e.color === M.color && e.promotion && e.piece === "p" && e.to[0] === M.to[0]);
+    if (promo && promo.idx <= 9) {
+      const n = L.slice(0, promo.idx + 1).filter((e) => e.color === M.color).length;
+      return {
+        kind: "promotes", key: `promo:${promo.to}`,
+        text: `La línea principal lleva este peón a coronar en ${promo.to}, en ${n} ${n === 1 ? "jugada" : "jugadas"}.`,
+      };
+    }
+  }
+
+  // Both queens leave the board within the next few plies and nobody comes out ahead: the
+  // game is about to simplify, which is worth knowing when choosing a plan.
+  const firstSix = L.slice(0, 6).filter((e) => e.captured === "q");
+  if (firstSix.some((e) => e.color === "w") && firstSix.some((e) => e.color === "b") && Math.abs(net) <= 1) {
+    return {
+      kind: "queenTrade", key: "qtrade",
+      text: `Con esto se llega al cambio de damas: la línea principal las cambia y la partida se simplifica.`,
+    };
+  }
+  return null;
+}
+
+/** A gain that arrives LATER than the move, with the material it ends up worth. */
+function winsStory(L: readonly Ev[], net: number): Achieves | null {
+  if (net < 2) return null;
   const M = L[0], r1 = L[1];
   // A plain win of material already says itself ("Ganas el alfil"); the story adds value only
   // when the gain comes LATER than the move.
   if (M.captured && val(M.captured) >= net - 0.5) return null;
   const gone = biggestTaken(L, M.color);
   const word = worth(net, gone);
+  // A move that is itself a capture is part of an exchange, and the exchange rules tell that
+  // better ("Cambias el peón en d5: un cambio parejo") than "el rival ya no puede evitar perder
+  // material" did — that sentence is kept for tactics and sacrifices only.
+  const isCapture = !!M.captured;
+  // And a gain that was ALREADY on the board before the move (the rival hung a piece last turn)
+  // is not something this move did: any sensible move keeps it, so crediting this one is false.
+  let already = false;
+  try { already = (gainAvailable(M.fenBefore, M.color)?.gain ?? 0) >= 3; } catch { already = false; }
 
   const t = tacticOf(M);
   if (t && t.key === "fork" && tacticPays(L, 0, net)) {
-    return { kind: "fork", text: `Con ${art(M.piece)} a ${M.to} ${forkClause(t, "you")}: el rival no puede evitar perder ${word}.` };
+    return { kind: "fork", key: `fork:${M.to}`, text: `Con ${art(M.piece)} a ${M.to} ${forkClause(t, "you")}: el rival no puede evitar perder ${word}.` };
   }
   if (t && t.key === "discovered" && tacticPays(L, 0, net)) {
-    return { kind: "discovered", text: `Jaque a la descubierta: al mover ${art(M.piece)} a ${M.to}, ${art(t.checker)} da jaque y ganas ${word}.` };
+    return { kind: "discovered", key: `disc:${M.to}`, text: `Jaque a la descubierta: al mover ${art(M.piece)} a ${M.to}, ${art(t.checker)} da jaque y ganas ${word}.` };
   }
   const win = L.find((e, k) => k >= 2 && e.color === M.color && e.captured && val(e.captured) >= 1);
   if (!win) return null;
+  // The captured piece is quoted as the example only when it is a real part of the total
+  // ("perder más de una pieza: el peón de g5 caerá" made the example contradict the sum).
+  const exampleOk = val(win.captured) >= 3 || val(win.captured) >= net * 0.5;
   const tail = `${art(win.captured!)} de ${win.capSquare ?? win.to}`;
   if (r1.captured && r1.to === M.to && val(r1.captured) > val(M.captured)) {
-    return { kind: "sacrifice", text: `Entregas ${art(M.piece)} en ${M.to}, pero si lo toman ${art(win.piece)} se lleva ${tail} y ganas ${word}.` };
+    return { kind: "sacrifice", key: `sac:${M.to}`, text: `Entregas ${art(M.piece)} en ${M.to}, pero si lo toman ${art(win.piece)} se lleva ${tail} y ganas ${word}.` };
   }
-  return { kind: "wins", text: `Con ${art(M.piece)} a ${M.to} el rival ya no puede evitar perder ${word}: ${tail} caerá.` };
+  if (isCapture || already) return null;
+  return { kind: "wins", key: `wins:${win.captured}${win.capSquare ?? win.to}`, text: `Con ${art(M.piece)} a ${M.to} el rival ya no puede evitar perder ${word}${exampleOk ? `: ${tail} caerá` : ""}.` };
 }

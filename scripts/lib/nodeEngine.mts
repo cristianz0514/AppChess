@@ -11,7 +11,7 @@
 //   - each call records the depth the search actually reached, so a run can prove it.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { parseScore, parseMultiPvLine, type CoachEngine, type EvalResult, type EngineLine } from "@/lib/engineApi";
+import { parseScore, parseMultiPvLine, parsePv, type CoachEngine, type EvalResult, type EngineLine } from "@/lib/engineApi";
 
 const ENGINE = fileURLToPath(new URL("../../node_modules/stockfish/bin/stockfish-18-lite-single.js", import.meta.url));
 
@@ -62,17 +62,18 @@ export function createNodeEngine(opts: { hashMb?: number; searchTimeoutMs?: numb
     let best: EvalResult = { score: 0, mate: null };
     let bestMove: string | null = null;
     let reached = 0;
+    let pv: string[] | undefined;
     await wait([`position fen ${fen}`, `go depth ${depth}`], (l) => l.startsWith("bestmove"), (l) => {
       if (l.startsWith("info") && l.includes("score")) {
         const p = parseScore(l);
-        if (p) { best = p; reached = depthOf(l); }
+        if (p) { best = p; reached = depthOf(l); const v = parsePv(l); if (v) pv = v; }
       } else if (l.startsWith("bestmove")) {
         const u = l.split(/\s+/)[1];
         if (u && u !== "(none)") bestMove = u;
       }
     });
     depthsReached.push(reached);
-    return { ...best, bestMove };
+    return { ...best, bestMove, ...(pv ? { pv } : {}) };
   }
 
   async function topLines(fen: string, depth: number, multipv: number): Promise<EngineLine[]> {

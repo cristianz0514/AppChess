@@ -36,6 +36,32 @@ Un motor lee la **variación principal que Stockfish ya devolvió** (no busca na
 
 Pruebas: `src/lib/lineStory.test.ts` (24 casos con posiciones armadas a mano: pieza colgada, defensor movido, amenaza ignorada, doble de caballo, mate, líneas que no se cobran, líneas ilegales, etc.).
 
+### 2.1 Historia para TODAS las jugadas (sin búsquedas extra)
+
+Solo las ~48 jugadas notables reciben una búsqueda profunda propia; el resto se comentaba solo por su forma. Pero el barrido que evalúa cada posición ya calculaba la **variación principal** y la tiraba (solo guardaba la mejor jugada). Ahora `EvalResult.pv` la conserva: la línea de la posición posterior a la jugada es la **respuesta**, y la de la posición anterior es la **mejor línea**. Con eso las jugadas tranquilas tienen la misma historia verificada, a costo cero de motor.
+
+Lo que aporta a una jugada tranquila, siempre verificado contra la línea:
+
+- una pérdida que el rival cobra después (imprecisiones: *"Tras la torre del rival a c5, acaba llevándose el peón de f5: pierdes un peón"*);
+- una ganancia que la jugada **crea** (*"Con el peón a b4 atacas el caballo de a5 y el alfil de c5 a la vez: el rival no puede evitar perder una pieza"*);
+- un peón que la línea lleva a coronar, o el cambio de damas que la línea hace (ideas más débiles: solo reemplazan una frase genérica).
+
+Guardas que evitan atribuir mérito falso (todas con prueba):
+
+- si la ganancia **ya estaba en el tablero** antes de la jugada (el rival dejó una pieza colgada), no se le acredita a esta jugada;
+- una captura es parte de un cambio y se cuenta como tal; "ya no puede evitar perder…" queda para tácticas y sacrificios;
+- la misma ganancia forzada se anuncia **una vez** por bando, no en cada jugada hasta cobrarla;
+- no tapa un **amenaza de mate** ni el rescate de una pieza atacada, que son más urgentes.
+
+Medido con `scripts/measureStories.cjs` sobre las mismas 41 partidas (porcentaje de comentarios que cuentan una historia verificada):
+
+| | Antes | Después |
+|---|---|---|
+| Imprecisiones (las dos partes) | 20 % | **33 %** (genéricos: 36 % → 30 %) |
+| Mis jugadas buenas | 5 % | 8 % |
+| Mis errores / errores del rival | 63 % / 60 % | 64 % / 59 % (ya tenían búsqueda profunda: no era su límite) |
+
+Lint tras el cambio: 0 problemas en 2783 comentarios. Lo que falta para subir los errores es el paso 2 (errores posicionales) y el 3 (causas de casos concretos), ver abajo.
 ## 3. Contradicciones y repetición (`src/lib/coachComment.ts`)
 
 - "Se te escapó" solo sobre una jugada que fue un error; nunca junto a "mejor/excelente".
