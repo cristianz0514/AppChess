@@ -19,12 +19,17 @@ export interface EvalResult {
    * stop asking a second, shallower engine on the plies the comment tier skipped.
    */
   bestMove?: string | null;
+  /** Depth the search actually REACHED (it can be lower than requested when a search is
+   *  stopped at its deadline). Lets a caller tell a full-depth result from a truncated one. */
+  depth?: number;
 }
 
 export interface EngineLine {
   mate: number | null;
   scoreCp: number | null;
   pv: string[];
+  /** Depth of the iteration that produced this line. */
+  depth?: number;
 }
 
 /**

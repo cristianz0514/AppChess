@@ -15,6 +15,27 @@
 // The engine lives in a Worker so a 600ms search never freezes the page. The
 // rest of the pipeline (chess.js, the attack tables, the templates) stays on the
 // main thread: it costs microseconds per move and every await yields anyway.
+//
+// ── Three failure modes this file is written around ──────────────────────────
+//
+// 1. A SEARCH CUT SHORT must not leak into the next one. The old deadline resolved the
+//    promise and walked away from a search that was still running. The next position's
+//    `position`/`go` then queued behind it, the old search's `info` lines fed the NEW
+//    handler, and its `bestmove` ended the new search early — so one slow position could
+//    misattribute scores to the positions after it. A deadline now sends `stop` and waits
+//    for the engine's own `bestmove`, which is the only moment it is really idle again.
+//
+// 2. A WEDGED OR CRASHED ENGINE must not read as "equal position". With no `info` line,
+//    evaluateOne used to return {score: 0}, and every position after a WASM crash
+//    ("memory access out of bounds") was silently classified as dead level. No score is now
+//    a failure: the worker is replaced and the position retried once, and only then does
+//    the caller see an error (which analyzeAllFens turns into a missing evaluation).
+//
+// 3. THE DEADLINE MUST NOT BE WHAT DECIDES THE DEPTH. The average-centipawn-loss behind the
+//    Elo estimate only means something at a consistent depth: a phone that hits a 10-second
+//    cap at depth 11 records smaller losses than a laptop at depth 16, and the estimate
+//    drifts up by device. The deadlines below are a safety net for a hung engine, not a
+//    time budget — a slow device takes longer instead of searching shallower.
 
 import {
   type CoachEngine, type EngineLine, type EvalResult,
@@ -24,11 +45,24 @@ import {
   type BuildId, chooseBuild, fallbackAfter, markBuildFailed, threadsFor,
 } from "./engineBuild";
 
-interface Pending { onLine: (line: string) => void }
+interface Pending {
+  onLine: (line: string) => void;
+  /** The worker died (onerror) while this search was waiting. */
+  onDead?: () => void;
+}
+
+/** Soft deadline per position. At depth 16 a desktop needs ~1s and a phone ~5-10s; this
+ *  leaves ample room before `stop` is sent, so depth is reached rather than truncated. */
+export const SOFT_EVAL_MS = 60_000;
+/** Soft deadline for a MultiPV search (slower: it searches several lines to full depth). */
+export const SOFT_LINES_MS = 120_000;
+/** After `stop`, how long the engine gets to produce its `bestmove` before it counts as wedged. */
+export const HARD_AFTER_STOP_MS = 8_000;
 
 let workerPromise: Promise<Worker> | null = null;
 let chain: Promise<unknown> = Promise.resolve();
 let current: Pending | null = null;
+let needsRestart = false;
 let activeBuild: { id: BuildId; label: string; megabytes: number; threads: number } | null = null;
 
 /** Which build ended up running, for the UI to report honestly. */
@@ -78,6 +112,14 @@ async function bootBuild(
     worker.terminate();
     throw e;
   }
+  // Booted. From here a worker error means the engine died mid-analysis (the WASM heap
+  // running out is the usual cause): flag it for replacement and wake whoever is waiting.
+  worker.onerror = () => {
+    needsRestart = true;
+    const waiting = current;
+    current = null;
+    waiting?.onDead?.();
+  };
   return worker;
 }
 
@@ -119,58 +161,100 @@ async function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
+/**
+ * The worker to use for the next search: the current one, or a brand-new one when the last
+ * search proved it dead or wedged. Terminating the old worker matters — a hung WASM instance
+ * keeps its memory until it is told to go away.
+ */
+async function freshWorker(): Promise<Worker> {
+  if (needsRestart) {
+    needsRestart = false;
+    const old = workerPromise;
+    workerPromise = null;
+    current = null;
+    if (old) { try { (await old).terminate(); } catch { /* it never booted */ } }
+  }
+  return getWorker();
+}
+
 /** Is the engine already downloaded and handshaked? Lets the UI say so. */
 export const engineReady = () => workerPromise !== null;
 
 /** Pre-download the engine so the first analysis doesn't pay for it. */
 export const warmUpEngine = () => getWorker().then(() => undefined, () => undefined);
 
+/**
+ * Runs one UCI search and resolves when the engine is idle again.
+ *
+ * It resolves on the engine's own `bestmove` (`finish`), on the worker dying (`onDead`), or —
+ * if the soft deadline passes — after sending `stop` and either getting that `bestmove` or
+ * waiting HARD_AFTER_STOP_MS more. `clean` is false when the engine never became idle, in
+ * which case the worker is flagged for replacement. The result reflects whatever the search
+ * had reached: callers accumulate the deepest line seen, so a stopped search returns the
+ * deepest COMPLETED iteration rather than nothing.
+ */
 function search<T>(
   worker: Worker,
   command: string,
-  timeoutMs: number,
+  softMs: number,
   onLine: (line: string, finish: () => void) => void,
   result: () => T,
-): Promise<T> {
-  return new Promise<T>((resolve) => {
+): Promise<{ value: T; clean: boolean }> {
+  return new Promise((resolve) => {
     let settled = false;
-    const finish = () => {
+    let hardTimer: ReturnType<typeof setTimeout> | null = null;
+    const end = (clean: boolean) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      clearTimeout(softTimer);
+      if (hardTimer) clearTimeout(hardTimer);
       current = null;
-      resolve(result());
+      if (!clean) needsRestart = true;
+      resolve({ value: result(), clean });
     };
-    // A deadline costs DEPTH, not the result: callers accumulate the deepest
-    // line seen so far, so cutting a search short returns the shallowest
-    // completed iteration instead of nothing.
-    const timer = setTimeout(finish, timeoutMs);
-    current = { onLine: (line) => onLine(line, finish) };
+    const softTimer = setTimeout(() => {
+      worker.postMessage("stop");
+      hardTimer = setTimeout(() => end(false), HARD_AFTER_STOP_MS);
+    }, softMs);
+    current = { onLine: (line) => onLine(line, () => end(true)), onDead: () => end(false) };
     worker.postMessage(command);
   });
 }
 
+const depthOf = (line: string) => {
+  const m = line.match(/ depth (\d+)/);
+  return m ? parseInt(m[1]) : 0;
+};
+
 async function evaluateOne(fen: string, depth: number): Promise<EvalResult> {
-  const worker = await getWorker();
-  let best: EvalResult = { score: 0, mate: null };
-  let bestMove: string | null = null;
-  worker.postMessage("position fen " + fen);
-  return search(
-    worker, `go depth ${depth}`, 10000,
-    (line, finish) => {
-      if (line.startsWith("info") && line.includes("score")) {
-        const parsed = parseScore(line);
-        if (parsed) best = parsed;
-      } else if (line.startsWith("bestmove")) {
-        // Kept, not just used as an end-of-search signal: this is the same answer
-        // /api/bestmove was being asked for separately, already computed here.
-        const uci = line.split(/\s+/)[1];
-        if (uci && uci !== "(none)") bestMove = uci;
-        finish();
-      }
-    },
-    () => ({ ...best, bestMove }),
-  );
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const worker = await freshWorker();
+    let best: EvalResult | null = null;
+    let bestMove: string | null = null;
+    let reached = 0;
+    worker.postMessage("position fen " + fen);
+    await search(
+      worker, `go depth ${depth}`, SOFT_EVAL_MS,
+      (line, finish) => {
+        if (line.startsWith("info") && line.includes("score")) {
+          const parsed = parseScore(line);
+          if (parsed) { best = parsed; reached = depthOf(line); }
+        } else if (line.startsWith("bestmove")) {
+          // Kept, not just used as an end-of-search signal: this is the same answer
+          // /api/bestmove was being asked for separately, already computed here.
+          const uci = line.split(/\s+/)[1];
+          if (uci && uci !== "(none)") bestMove = uci;
+          finish();
+        }
+      },
+      () => null,
+    );
+    if (best) return { ...(best as EvalResult), bestMove, depth: reached };
+    // Not one score came back: the engine is dead or wedged, and a made-up 0.00 would be
+    // read as a level position. Replace it and try this position once more.
+    needsRestart = true;
+  }
+  throw new Error("El motor dejó de responder");
 }
 
 export const evaluatePosition = (fen: string, depth = 10): Promise<EvalResult> =>
@@ -178,23 +262,30 @@ export const evaluatePosition = (fen: string, depth = 10): Promise<EvalResult> =
 
 export async function getTopLines(fen: string, depth = 16, multipv = 2): Promise<EngineLine[]> {
   return runExclusive(async () => {
-    const worker = await getWorker();
-    const lines = new Map<number, EngineLine>();
-    worker.postMessage("setoption name MultiPV value " + multipv);
-    worker.postMessage("position fen " + fen);
-    const out = await search(
-      worker, `go depth ${depth}`, 25000,
-      (line, finish) => {
-        if (line.startsWith("info")) {
-          const parsed = parseMultiPvLine(line);
-          if (parsed) lines.set(parsed.index, parsed.value);
-        } else if (line.startsWith("bestmove")) finish();
-      },
-      () => [...lines.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v),
-    );
-    // Reset so plain evaluations aren't silently running MultiPV afterwards.
-    worker.postMessage("setoption name MultiPV value 1");
-    return out;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const worker = await freshWorker();
+      const lines = new Map<number, EngineLine>();
+      worker.postMessage("setoption name MultiPV value " + multipv);
+      worker.postMessage("position fen " + fen);
+      const { value: out, clean } = await search(
+        worker, `go depth ${depth}`, SOFT_LINES_MS,
+        (line, finish) => {
+          if (line.startsWith("info")) {
+            const parsed = parseMultiPvLine(line);
+            if (parsed) lines.set(parsed.index, { ...parsed.value, depth: depthOf(line) });
+          } else if (line.startsWith("bestmove")) finish();
+        },
+        () => [...lines.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v),
+      );
+      // Reset so plain evaluations aren't silently running MultiPV afterwards.
+      if (!needsRestart) worker.postMessage("setoption name MultiPV value 1");
+      // No lines is a legitimate answer for a position with no legal move (checkmate or
+      // stalemate): the engine ends cleanly with `bestmove (none)`. Only a search that never
+      // finished and produced nothing means the engine is wedged.
+      if (out.length > 0 || clean) return out;
+      needsRestart = true;
+    }
+    throw new Error("El motor dejó de responder");
   });
 }
 
@@ -220,13 +311,14 @@ export async function analyzeAllFens(
  */
 export async function newGame(): Promise<void> {
   return runExclusive(async () => {
-    const worker = await getWorker();
+    const worker = await freshWorker();
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => { current = null; resolve(); }, 10000);
+      const timer = setTimeout(() => { current = null; needsRestart = true; resolve(); }, 10000);
       current = {
         onLine: (line) => {
           if (line === "readyok") { clearTimeout(timer); current = null; resolve(); }
         },
+        onDead: () => { clearTimeout(timer); resolve(); },
       };
       worker.postMessage("ucinewgame");
       worker.postMessage("setoption name Clear Hash");
