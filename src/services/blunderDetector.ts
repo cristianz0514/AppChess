@@ -2,7 +2,7 @@ import { Chess, type Square } from "chess.js";
 import type { CoachEngine } from "@/lib/engineApi";
 import { supabase } from "@/lib/supabase";
 import { detectMotifs } from "@/lib/tacticalMotifs";
-import { composeCoachComment, type Motif } from "@/lib/coachComment";
+import { composeCoachComment, type Motif, type CommentInfo } from "@/lib/coachComment";
 import { isBookPosition } from "@/lib/openingBook";
 import { overloadedDefender, underDefended, defendsAttacked, batteryCreated } from "@/lib/attackMap";
 import { structureChange, pawnStructure } from "@/lib/pawnStructure";
@@ -11,6 +11,7 @@ import { ignoredThreat, ownThreat } from "@/lib/threats";
 import { ruleOfTheSquare, endgameKind, pawnMajority } from "@/lib/endgameRules";
 import { passivePiece } from "@/lib/pieceSquares";
 import { readLine, followUpClause } from "@/lib/mainLine";
+import { buildStory } from "@/lib/lineStory";
 import { sideAccuracy, winPercent } from "@/lib/accuracy";
 import { classifyWinLoss, isBrilliantSacrifice } from "@/lib/moveClassification";
 import { createEngineCache } from "@/lib/engineCache";
@@ -25,7 +26,7 @@ export type MoveClassification = Move["classification"];
 // Raised from 20 now that the analysis runs on the user's own CPU instead of a
 // shared 0.1-core server — the cap was a budget imposed by hardware we no longer
 // depend on.
-const MAX_EXPLAIN = 30;
+const MAX_EXPLAIN = 48;
 // Depth for the coach lines. Both the plain eval and getTopLines KEEP the
 // deepest line they saw before the deadline, so a timeout costs depth rather
 // than producing nothing.
@@ -145,6 +146,42 @@ export function tradeVerdictFor(fenAfter: string, h: { to: string; piece: string
     const see = seeAfterCapture(fenAfter, h.to, PIECE_VAL[h.captured] ?? 0, PIECE_VAL[h.piece] ?? 0);
     return see > 0 ? "gana" : see === 0 ? "pareja" : "pierde";
   } catch { return null; }
+}
+
+/**
+ * The verdict on a capture, corrected for the exchange it belongs to.
+ *
+ * SEE judges ONE square, so the last capture of a chain reads as a clean win: after
+ * 7...Nxe4 8.Bxe7 Qxe7 the bishop takes the knight on e4 and nothing recaptures there —
+ * "gana material", said the comment, about an exchange that left both sides level. The fix
+ * is to measure the material across the whole run of consecutive captures this move ends:
+ * if the balance is no better than before the first of them, the move closes an exchange
+ * and does not win anything.
+ */
+export function exchangeAwareVerdict(
+  history: readonly { captured?: string }[], fens: readonly string[], i: number, mover: "w" | "b",
+  verdict: "gana" | "pareja" | "pierde" | null,
+): "gana" | "pareja" | "pierde" | null {
+  if (verdict !== "gana" || i < 1) return verdict;
+  const bal = (fen: string) => {
+    let sum = 0;
+    for (const row of new Chess(fen).board()) for (const c of row) if (c) sum += (PIECE_VAL[c.type] ?? 0) * (c.color === mover ? 1 : -1);
+    return sum;
+  };
+  // The rival's last two moves (i-1 and i-3). If either captured, this capture may be the other
+  // half of an exchange — even with a quiet move in between (exd5 ... Nxd5 is a trade, not a
+  // pawn won). Measure the material from before THAT capture to after this one: level or worse
+  // means nothing was won.
+  for (const d of [1, 3]) {
+    if (i - d < 0 || !history[i - d]?.captured) continue;
+    // The exchange may have started with the player's own capture just before the rival's: walk
+    // back over consecutive captures (at most to i-4) so the count begins where it began.
+    let start = i - d;
+    while (start - 1 >= 0 && start - 1 > i - 4 && history[start - 1]?.captured) start--;
+    const before = start - 1 < 0 ? new Chess().fen() : fens[start - 1];
+    try { if (bal(fens[i]) - bal(before) <= 0) return "pareja"; } catch { /* keep the verdict */ }
+  }
+  return verdict;
 }
 
 // Quiescence search — keep playing only the forcing moves until the position
@@ -724,6 +761,8 @@ export async function analyzeGame(
   interface Opportunity {
     san: string; piece: string; to: string; captures: string | null;
     capturedVal: number; isMate: boolean; plan: string | null;
+    /** Verified reason it was worth taking, for "Se te escapó: …" (see lineStory.missed). */
+    missed: string | null;
   }
   const opportunityAt = new Map<number, Opportunity>();
 
@@ -749,8 +788,11 @@ export async function analyzeGame(
       tookOpportunity: took,
       // Only described when it was actually missed, so an absent opportunity can
       // never read as one the player failed to take.
-      missedOpportunity: took === false && prev && !wonAsMuch
-        ? { piece: prev.piece, to: prev.to, captures: prev.captures }
+      // Only an opportunity that GAINS something can be missed: a capture, a mate, or a plan
+      // that captures, checks or mates. Reproaching the player for not finding "el peón a a5"
+      // — a quiet move the engine merely ranked first — invented a miss out of nothing.
+      missedOpportunity: took === false && prev && !wonAsMuch && (prev.captures || prev.isMate || prev.missed || (prev.plan && /llev|jaque|remata/.test(prev.plan)))
+        ? { piece: prev.piece, to: prev.to, captures: prev.captures, how: prev.missed }
         : null,
     };
   };
@@ -892,6 +934,14 @@ export async function analyzeGame(
         const c = new Chess(fens[i]);
         const recapturerValues = c.moves({ verbose: true }).filter((x) => x.to === h.to && x.captured).map((x) => VAL[x.piece] ?? 99);
         brilliant = isBrilliantSacrifice({ movedValue: movedVal, capturedValue: capturedVal, evalBefore, recapturerValues });
+        // A sacrifice is only brilliant if it is ACCEPTED: the engine's best reply (the sweep
+        // already returned it) must be the capture of the piece that just moved. A piece that
+        // merely stands where it could be taken — and that the engine declines to take — was
+        // being praised as "Sacrificio correcto" on moves that gave nothing up.
+        if (brilliant) {
+          const reply = evals[i]?.bestMove;
+          brilliant = !!reply && c.moves({ verbose: true }).some((x) => x.from === reply.slice(0, 2) && x.to === h.to && !!x.captured);
+        }
       } catch { /* ignore */ }
     }
     if (brilliant) { moves[i].classification = "brilliant"; continue; }
@@ -982,6 +1032,10 @@ export async function analyzeGame(
   // viewer just labels those "Tu oponente". Seeing the opponent's play judged
   // by the same standard is what lets the player draw their own conclusions,
   // and it's how chess.com's review reads too.
+  // Which descriptive rule won on each ply, so the quiet tier can avoid saying the same
+  // standing fact on every move of an endgame (see MoveFacts.recentRules).
+  const winnerAt: (string | undefined)[] = [];
+
   const notable = moves
     .map((m, i) => ({ i, cls: m.classification, loss: m.centipawn_loss ?? 0 }))
     .filter((m) => (m.cls && EXPLAIN_CLASSES.has(m.cls)) || punishingBest.has(m.i))
@@ -1109,6 +1163,29 @@ export async function analyzeGame(
     let materialNet = 0, materialSettled = false, materialTrades = false;
     let allowsMotif: Motif | null = null;
     let punishFollowUp: string | null = null, punishFocusSquare: string | null = null;
+    // The engine's line AFTER the played move, kept for the story below. Fetched for every
+    // commented ply (not only the errors): a good move's story is the same line read for what
+    // it WINS. The search is cached by position and depth, so the error branch below that
+    // asks for the same line pays nothing again.
+    let replySans: string[] = [];
+    try {
+      const replyLines = (await cache.getAnalysis(fens[i], DEEP_DEPTH, 1)).lines;
+      replySans = replyLines[0] ? pvToSan(fens[i], replyLines[0].pv) : [];
+    } catch { /* no reply line: the story is simply not told */ }
+
+    // The move as cause and effect over the next plies, verified against the replayed lines.
+    // Its text fields are null whenever the lines prove nothing worth saying (the descriptive
+    // rules then speak as before); `net` is kept regardless, because "this exchange settles to
+    // no loss" is evidence the legacy rules must respect. Built HERE, before the error branch,
+    // so the opportunity recorded for the player's next move can carry its verified reason.
+    let story: ReturnType<typeof buildStory> = null;
+    try {
+      story = buildStory({
+        fenBefore, playedSan: moves[i].move, mover: playerColor, byOpponent: isOpponentPly(i),
+        reply: replySans, best: mainSans, evalBefore, evalAfter,
+        classification: moves[i].classification, good: good || onlyGoodMove,
+      });
+    } catch { story = null; }
     if (!good) {
       try {
         const opp = (await cache.getAnalysis(fens[i], DEEP_DEPTH, 1)).lines;
@@ -1149,6 +1226,7 @@ export async function analyzeGame(
                   // `punish` is already read from the player's side on these plies, so
                   // the player's voice is the correct one and the clause is free.
                   plan: followUpClause(punish, "player"),
+                  missed: story?.missed ?? null,
                 });
               }
             } catch { /* an unreplayable line simply yields no opportunity */ }
@@ -1206,6 +1284,7 @@ export async function analyzeGame(
       } catch { /* ignore */ }
     }
 
+    const info: CommentInfo = {};
     const text = composeCoachComment({
       variantSeed: i,
       playedPiece: movedName,
@@ -1215,6 +1294,7 @@ export async function analyzeGame(
       classification: moves[i].classification,
       good,
       evalBefore, evalAfter,
+      story,
       bestPiece, bestTo, bestCapturedPiece, bestGivesCheck, bestIsCastle,
       bestIsCenterPawn, bestDefendsHung, bestTradeVerdict,
       onlyGoodMove,
@@ -1226,7 +1306,8 @@ export async function analyzeGame(
       bestMotifs: rawBestMotifs.filter((m) => m.key !== "hangs_own").map(toMotif),
       materialLostPiece, materialNet, materialSettled, materialTrades,
       oppCapturesPiece,
-      isSacrificeConfirmed: isSacrifice && good,
+      // Verified from the engine's own reply, not from "the square is attacked".
+      isSacrificeConfirmed: (story?.sacrifice ?? false) && good && isSacrifice,
       allowsMotif,
       bestFollowUp, bestLineForced, bestLineWins,
       punishFollowUp, punishFocusSquare,
@@ -1241,7 +1322,7 @@ export async function analyzeGame(
       gaveCheck: /\+/.test(h.san),
       isLastBookMove: i === lastBookPly,
       openingName,
-      tradeVerdict: tradeVerdictFor(fens[i], h),
+      tradeVerdict: exchangeAwareVerdict(history, fens, i, moverWhite ? "w" : "b", tradeVerdictFor(fens[i], h)),
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
@@ -1249,7 +1330,8 @@ export async function analyzeGame(
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite, h.to),
       ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
-    });
+    }, info);
+    winnerAt[i] = info.winner;
 
     if (text) {
       // The recommended move travels WITH the sentence that recommends it. The
@@ -1315,7 +1397,12 @@ export async function analyzeGame(
     const evalBefore = i === 0 ? 0 : (whiteEval[i - 1] == null ? 0 : (moverWhite ? whiteEval[i - 1]! : -whiteEval[i - 1]!));
     const rawMotifs = detectMotifs(fenBefore, moves[i].move);
     const selfHang = rawMotifs.find((m) => m.key === "hangs_own");
+    // This side's last three descriptive winners: a standing fact that already spoke on any
+    // of them stays quiet, so the move gets a sentence about what IT did.
+    const recentRules = [2, 4, 6].map((d) => winnerAt[i - d]).filter((w): w is string => !!w);
+    const info: CommentInfo = {};
     const text = composeCoachComment({
+      recentRules,
       variantSeed: i,
       playedPiece: PIECE_ES[h.piece] ?? "pieza",
       playedTo: h.to,
@@ -1344,7 +1431,7 @@ export async function analyzeGame(
       isBook: bookPly[i],
       isLastBookMove: i === lastBookPly,
       openingName,
-      tradeVerdict: tradeVerdictFor(fens[i], h),
+      tradeVerdict: exchangeAwareVerdict(history, fens, i, moverWhite ? "w" : "b", tradeVerdictFor(fens[i], h)),
       trappedPiece: trappedPieceAfter(fens[i], h),
       backRankRisk: backRankBoxedIn(fens[i], moverWhite ? "w" : "b"),
       ...positionalFlags(h, moverWhite, fens[i], i > 0 ? history[i - 1].to : null, history, i),
@@ -1352,7 +1439,8 @@ export async function analyzeGame(
       ...boardReadingFacts(i === 0 ? new Chess().fen() : fens[i - 1], fens[i], moverWhite, h.to),
       ...endgameFlags(h, moverWhite, fens[i], i),
       dustMaterial: materialAfterDust(fens[i], moverWhite ? "w" : "b"),
-    });
+    }, info);
+    winnerAt[i] = info.winner;
     if (text) quietUpdates.push({ ply: i, text });
   }
   // Write in small concurrent batches — one round-trip per move would add ~25

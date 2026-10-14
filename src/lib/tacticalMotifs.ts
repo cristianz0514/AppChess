@@ -95,8 +95,13 @@ function detectPinOrSkewer(chess: Chess, sq: string, type: string, color: "w" | 
           break; // own piece, or the king itself right away — nothing to pin/skewer
         }
         if (p.color === oppColor) {
-          if (p.type === "k") return "pin";
-          if (PIECE_VALUE[front.type] > PIECE_VALUE[p.type]) return "skewer";
+          // A pawn in front of the king is "pinned" in the letter of the rule and in nothing
+          // that matters, and the template calls the pinned thing "una pieza". Require a piece.
+          if (p.type === "k") { if (PIECE_VALUE[front.type] >= 3) return "pin"; break; }
+          // A skewer wins material only when what sits BEHIND is worth taking: a knight in
+          // front of a pawn was being announced as "al mover la de delante cae la de atrás",
+          // which is true of a pawn and not worth a sentence.
+          if (PIECE_VALUE[front.type] > PIECE_VALUE[p.type] && PIECE_VALUE[p.type] >= 3) return "skewer";
         }
         break;
       }

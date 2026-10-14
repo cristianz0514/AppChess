@@ -191,7 +191,8 @@ export interface MoveFacts {
   // true if this move took it, false if it was there and went unplayed. Null when
   // there was no opportunity to speak of — so "missed" is never implied by silence.
   tookOpportunity?: boolean | null;
-  missedOpportunity?: { piece: string; to: string; captures: string | null } | null;
+  // `how` is the verified reason it was worth taking ("con el caballo a d6 te llevabas el peón").
+  missedOpportunity?: { piece: string; to: string; captures: string | null; how?: string | null } | null;
 
   // Read from the engine's MAIN LINE rather than the position in front of us.
   // Naming the best move says what to play; naming its follow-up says why, and
@@ -201,6 +202,26 @@ export interface MoveFacts {
   bestLineWins?: { piece: string; square: string } | null;
   punishFollowUp?: string | null;  // what the opponent does after their first reply
   punishFocusSquare?: string | null; // square the exchange sequence settles on
+
+  // The move told as cause and effect over the next two or three plies, already worded and
+  // already VERIFIED against a replayed engine line (lib/lineStory.ts). Present only when the
+  // line proved something; when it is absent the descriptive rules above run unchanged.
+  //   allows   — what an error lets happen ("Al mover el alfil dejas sin defensa el caballo
+  //              de e5, y el alfil del rival se lo lleva."), in the voice of the comment's reader
+  //   better   — what the recommended move did instead (the player's own errors only)
+  //   achieves — what a strong move wins by force (the player's own moves only)
+  story?: {
+    kind: string; allows: string | null; better: string | null; achieves: string | null;
+    /** Material the mover gains (+) or loses (−) over the verified engine line. */
+    net?: number | null; sacrifice?: boolean; missed?: string | null;
+  } | null;
+
+  // Ids of the descriptive rules that won on this side's previous few plies. A STANDING fact
+  // ("tienes dos peones pasados conectados", "estamos en un final de torres") is true on every
+  // move of an endgame, so it won every move and the comment read as one sentence printed
+  // eight times. Rules in STANDING_RULES are skipped while they appear here, which lets the
+  // next-best rule — usually a description of what THIS move did — speak instead.
+  recentRules?: string[];
 }
 
 const ART: Record<string, string> = {
@@ -467,7 +488,7 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
         // even true. The explanation is what makes the term learnable and checkable, so
         // it is not optional decoration.
         const clause =
-          tactic.key === "fork" ? `haces un doble: ${p} en ${f.playedTo} ataca dos piezas a la vez, y solo puedes salvar una`
+          tactic.key === "fork" ? `haces un doble: ${p} en ${f.playedTo} ataca dos piezas a la vez, y el rival solo puede salvar una`
           // detectPinOrSkewer calls it a pin only when the piece BEHIND is the king,
           // so "no se puede mover" is literal here: moving it would be illegal.
           // "el rey rival", not "su rey": with two kings on the board a possessive
@@ -478,7 +499,17 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
           : tactic.key === "skewer" ? `haces una enfilada: ${p} en ${f.playedTo} ataca dos piezas en la misma línea, y al mover la de delante cae la de atrás`
           // This motif only fires when the position IS in check and the check does NOT
           // come from the piece that moved, so "jaque a la descubierta" is exact.
-          : `das jaque a la descubierta: al mover ${p}, el jaque lo da la pieza que estaba detrás`;
+          : tactic.key === "double"
+            // The "doble amenaza" the engine tier builds from a move that attacks two pieces, or
+            // attacks one while giving check. It used to fall into the discovered-check branch
+            // below, so any double threat with a check was reported as a discovered check.
+            ? (/jaque/.test(tactic.label)
+              ? `das jaque con ${p} en ${f.playedTo} y, a la vez, amenazas otra pieza`
+              : `amenazas dos piezas a la vez con ${p} en ${f.playedTo}`)
+          : tactic.key === "discovered"
+            ? `das jaque a la descubierta: al mover ${p}, el jaque lo da la pieza que estaba detrás`
+            : null;
+        if (!clause) return null;
         return {
           text: f.capturedPiece
             ? `Capturas ${art(f.capturedPiece)} en ${f.playedTo} y ${clause}.`
@@ -494,8 +525,11 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
     applies: (f, c) => {
 
       if (f.isBook) {
-        // Said once per game, on the move where theory runs out — not on all
-        // fourteen book moves, which would be noise.
+        // Theory is worth saying at two moments: the first move of each side, and the move
+        // where it runs out. In between, "Teoría de la apertura, el alfil a e2" repeated on
+        // eight plies in a row and said nothing — the rules below describe what the move
+        // actually does, which is more than "it is in the book".
+        if (!f.isLastBookMove && f.variantSeed >= 2) return null;
         if (f.isLastBookMove) {
           const named = f.openingName ? ` Vienes de la ${f.openingName}.` : "";
           return { text: pick([
@@ -587,7 +621,11 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
   {
     id: "check", group: "tactics",
     applies: (f, c) => {
-      if (f.gaveCheck) return { text: `Das jaque con ${art(f.playedPiece)} y quedas ${c.standing}.`, namesMaterial: false };
+      if (f.gaveCheck) return { text: pick([
+        `Das jaque con ${art(f.playedPiece)} y quedas ${c.standing}.`,
+        `${cap(art(f.playedPiece))} da jaque; ${c.stays} ${c.standing}.`,
+        `Jaque con ${art(f.playedPiece)}: ${c.stays} ${c.standing}.`,
+      ], c.s), namesMaterial: false };
       return null;
     },
   },
@@ -634,9 +672,12 @@ export const QUIET_RULES: ReadonlyArray<CoachRule> = [
       {
         const loose = f.playedMotifs.find((m) => m.key === "hanging");
         if (loose?.piece && loose.square) {
+          // The pronoun has to agree with the piece ("el alfil … llevártelo", "la torre … llevártela"),
+          // and Spanish has no "a el": both seams shipped in the same two templates.
+          const la = loose.piece === "torre" || loose.piece === "dama" ? "la" : "lo";
           return { text: pick([
-            `${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevártela.`,
-            `Ojo a ${art(loose.piece)} de ${loose.square}: nadie la defiende.`,
+            `${cap(art(loose.piece))} de ${loose.square} se queda sin defensa: puedes llevárte${la}.`,
+            `Ojo con ${art(loose.piece)} de ${loose.square}: nadie ${la} defiende.`,
           ], c.s), namesMaterial: true };
         }
       }
@@ -1356,6 +1397,22 @@ export function validatePriority(
   return problems;
 }
 
+/** Facts about the situation rather than about the move: true on every ply while they hold. */
+export const STANDING_RULES: ReadonlySet<string> = new Set([
+  "connectedPassedPair", "connectedPassedOne", "majority", "endgameKind", "islands",
+  "backwardPawn", "isolatedTheirs", "passivePiece", "endgameFallback", "dominantTermGain",
+  "theirKingWorse", "trappedAside", "backRankAside", "overloadedAside", "underDefendedAside",
+  "oppConnectedPassedPair", "oppConnectedPassedOne", "oppMajority", "oppEndgameKind",
+  "oppPassivePiece", "oppEndgameFallback", "oppTheirKingWorse", "oppUnderDefended",
+  "oppDominantTermGain",
+  // Not standing facts, but the same sentence on every pawn move near the king.
+  "givesKingLuft", "oppGivesKingLuft",
+]);
+
+/** Out-parameter of composeCoachComment: which descriptive rule won, for the recency memory. */
+export interface CommentInfo { winner?: string }
+let activeInfo: CommentInfo | null = null;
+
 function runRules<C, R>(
   rules: ReadonlyArray<CoachRule<C, R>>,
   rank: Map<string, number>,
@@ -1365,6 +1422,7 @@ function runRules<C, R>(
 ): R {
   const candidates: RuleCandidate<R>[] = [];
   for (const rule of rules) {
+    if (f.recentRules && STANDING_RULES.has(rule.id) && f.recentRules.includes(rule.id)) continue;
     let result: R | null = null;
     try {
       result = rule.applies(f, ctx);
@@ -1378,6 +1436,7 @@ function runRules<C, R>(
     if (result) candidates.push({ id: rule.id, group: rule.group, result });
   }
   candidates.sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9));
+  if (candidates.length > 0 && activeInfo) activeInfo.winner = candidates[0].id;
   if (candidates.length === 0) {
     // Unreachable: the `fallback` rule is unconditional. Loud rather than silent,
     // because a move with no comment at all is worse than any comment.
@@ -1512,7 +1571,12 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
         `Te llevas ${art(f.capturedPiece)}.`,
       ], s), namesMaterial: true };
     }
-    return { text: `Jugada precisa: el motor la confirma como la mejor de la posición.`, namesMaterial: false };
+    // "La mejor de la posición" only for a move the engine ranks best. A good move that
+    // merely punished the rival's error can be "excellent" — one the engine ranks second —
+    // and calling it the best contradicts the missed-opportunity clause that may follow.
+    return { text: f.classification === "best" || f.classification === "brilliant" || f.classification === "great"
+      ? `Jugada precisa: el motor la confirma como la mejor de la posición.`
+      : `Buena jugada: el motor la confirma como una de las mejores de la posición.`, namesMaterial: false };
   }
 
   // ── errors ──
@@ -1563,7 +1627,7 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
     return { text: pick([
       `${cap(p)} de ${sq} queda sin defensa.`,
       `Dejas ${p} de ${sq} sin ningún defensor.`,
-      `${cap(p)} de ${sq} se queda colgado.`,
+      `${cap(p)} de ${sq} se queda colgad${f.selfHang.piece === "torre" || f.selfHang.piece === "dama" ? "a" : "o"}.`,
     ], s), namesMaterial: true };
   }
 
@@ -1597,7 +1661,10 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
   const evalBacksIt = Math.abs(f.evalBefore) < MATE_MAG && Math.abs(f.evalAfter) < MATE_MAG
     ? evalDrop >= f.materialNet * 0.5
     : true;   // in a mate line the eval is not a material scale, so don't gate on it
-  if (f.materialLostPiece && f.materialSettled && f.materialNet >= 2 && evalBacksIt) {
+  // A verified line that settles to no loss overrules the walk above: "tras los cambios pierdes
+  // la torre" was printed on an exchange the player recaptures in full.
+  const lineSaysNoLoss = f.story?.net != null && f.story.net > -1;
+  if (f.materialLostPiece && f.materialSettled && f.materialNet >= 2 && evalBacksIt && !lineSaysNoLoss) {
     const p = art(f.materialLostPiece);
     return { text: f.materialTrades
       ? pick([
@@ -1614,13 +1681,13 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
   // happens; adding where the exchange settles, or what comes after their first
   // move, is the two-or-three-moves-ahead view — and it's read off a line the
   // engine actually returned, not guessed.
-  if (f.oppCapturesPiece && (f.punishFollowUp || f.punishFocusSquare)) {
+  if (f.oppCapturesPiece && !lineSaysNoLoss && (f.punishFollowUp || f.punishFocusSquare)) {
     const opener = `El rival te captura ${art(f.oppCapturesPiece)}`;
     if (f.punishFollowUp) return { text: `${opener} ${f.punishFollowUp}.`, namesMaterial: true };
     return { text: `${opener}, y la lucha en ${f.punishFocusSquare} acaba a su favor.`, namesMaterial: true };
   }
 
-  if (f.oppCapturesPiece) {
+  if (f.oppCapturesPiece && !lineSaysNoLoss) {
     return { text: pick([
       `El rival te captura ${art(f.oppCapturesPiece)}.`,
       `Le regalas ${art(f.oppCapturesPiece)} al rival.`,
@@ -1777,7 +1844,13 @@ function slotA(f: MoveFacts): { text: string; namesMaterial: boolean; usedBestMo
   const bm = f.bestMotifs.find((x) => x.key !== "hangs_own");
   if (bm) {
     if (isHanging(bm)) {
-      return { text: `${cap(hangingPhrase(bm))}.`, namesMaterial: true, usedBestMotif: true };
+      // "Podías capturar" only when the better move IS the capture. Otherwise it attacks the
+      // piece, and saying it could be captured claims a move that was not available.
+      const direct = f.bestCapturedPiece != null || !(f.bestPiece && f.bestTo && bm.piece && bm.square);
+      return { text: direct
+        ? `${cap(hangingPhrase(bm))}.`
+        : `Con ${art(f.bestPiece)} a ${f.bestTo} atacabas ${art(bm.piece)} de ${bm.square}, que estaba sin defensa.`,
+        namesMaterial: true, usedBestMotif: true };
     }
     const target = bm.piece && bm.square ? ` sobre ${art(bm.piece)} de ${bm.square}` : "";
     return { text: pick([
@@ -1888,6 +1961,10 @@ function slotB(f: MoveFacts, aNamesMaterial: boolean): string | null {
   if (b === "perdida" && a === "peor") return pick([`Sigues peor, pero la posición ya no está perdida.`, `Reduces el daño: la partida deja de estar perdida.`], s);
 
   if (f.good) return null; // the rest describe losing ground
+  // "Desperdicias la ventaja" beside a move the engine rates best, excellent or good is a
+  // contradiction of the badge on the same row: those labels mean less than 4 points of win
+  // probability were given up. Losing ground is only claimed about a real error.
+  if (f.classification !== "inaccuracy" && f.classification !== "mistake" && f.classification !== "blunder") return null;
 
   if (b === "igualada" && nowBad) return pick([`Estaba parejo y ahora el rival toma la ventaja.`, `De una posición igualada pasas a estar peor.`], s);
   if (wasGood && a === "igualada") return pick([`Tenías ventaja y la dejas escapar: queda igualada.`, `Se te va la ventaja y la partida se iguala.`], s);
@@ -1900,7 +1977,7 @@ function slotB(f: MoveFacts, aNamesMaterial: boolean): string | null {
   // reading a single game.
   const worsened = f.evalAfter < f.evalBefore - 0.05;
   if (b === "perdida" && a === "perdida") return pick([`Ya venías mal, así que esto no la decide, pero tampoco ayuda.`, `La posición ya era difícil de antes.`], s);
-  if (b === "ganando" && a === "ganando" && worsened) return pick([`Sigues ganando, pero desperdicias parte de la ventaja.`, `Aún ganas, aunque cediste terreno.`], s);
+  if (b === "ganando" && a === "ganando" && worsened && f.evalAfter < 6 && f.evalBefore - f.evalAfter >= 0.8) return pick([`Sigues ganando, pero desperdicias parte de la ventaja.`, `Aún ganas, aunque cediste terreno.`], s);
   return null;
 }
 
@@ -1999,6 +2076,12 @@ function slotC(f: MoveFacts, usedBestMotif: boolean): string | null {
 function opportunityClause(f: MoveFacts): string | null {
   const o = f.opportunity;
   if (!o) return null;
+  // An opportunity is only worth announcing when the line actually GAINS something: a
+  // capture, a mate, or a follow-up that captures, checks or mates. "Tu oportunidad: el peón
+  // a a5, y después el peón a c6" is two quiet pawn moves and tells the player nothing about
+  // why the rival's move was an error — measured on real games, it was the commonest
+  // empty comment on the rival's plies.
+  if (!o.isMate && !o.captures && !(o.plan && /llev|jaque|remata/.test(o.plan))) return null;
   const s = f.variantSeed;
   // A mate needs no follow-up: the mate IS the follow-up.
   if (o.isMate) return `Tienes mate con ${art(o.piece)} en ${o.to}.`;
@@ -2045,6 +2128,13 @@ function opportunityClause(f: MoveFacts): string | null {
  */
 function opportunityOutcome(f: MoveFacts): string | null {
   const s = f.variantSeed;
+  const wasError = f.classification === "inaccuracy" || f.classification === "mistake" || f.classification === "blunder";
+  // "Se te escapó" next to a move the engine rates best or excellent contradicts the badge on
+  // the same row — and, worse, it contradicts "la mejor jugada de la posición", which the
+  // good-move branch says right before it. A reproach is only coherent about a move that WAS
+  // an error.
+  if (f.tookOpportunity === false && !wasError) return null;
+  if (f.tookOpportunity === true && wasError) return null;
   if (f.tookOpportunity === true) {
     return pick([
       `Lo viste y lo aprovechaste.`,
@@ -2054,6 +2144,9 @@ function opportunityOutcome(f: MoveFacts): string | null {
   }
   const m = f.missedOpportunity;
   if (f.tookOpportunity === false && m) {
+    // With the verified reason, say it: "con el caballo a d6 te llevabas el peón de a4" teaches
+    // what the opportunity WAS; naming the move alone only repeats the arrow.
+    if (m.how) return pick([`Se te escapó: ${m.how}.`, `Ahí estaba la oportunidad: ${m.how}.`], s);
     const what = m.captures
       ? `llevarte ${art(m.captures)} con ${art(m.piece)} a ${m.to}`
       : `jugar ${art(m.piece)} a ${m.to}`;
@@ -2082,15 +2175,67 @@ function opportunityOutcome(f: MoveFacts): string | null {
 function opponentSlip(f: MoveFacts): string {
   const s = f.variantSeed;
   if (f.classification === "blunder") {
-    return pick([`El rival comete un error grave.`, `Error grave del rival.`], s);
+    return pick([`El rival comete un error grave.`, `Error grave del rival.`, `El rival se equivoca de forma grave.`, `Gran error del rival.`], s);
   }
   if (f.classification === "mistake") {
-    return pick([`El rival se equivoca.`, `Fallo del rival.`], s);
+    return pick([`El rival se equivoca.`, `Fallo del rival.`, `El rival comete un error.`, `Error del rival.`], s);
   }
-  return pick([`El rival no juega lo más preciso.`, `Imprecisión del rival.`], s);
+  return pick([`El rival no juega lo más preciso.`, `Imprecisión del rival.`, `Pequeño desliz del rival.`, `El rival se aparta de la mejor jugada.`], s);
 }
 
-export function composeCoachComment(f: MoveFacts): string | null {
+/**
+ * Why the RIVAL's move cost them, when no engine line proved a material story: the part of
+ * the evaluation that moved, read from the player's side. `effect` is what the move did to the
+ * game; `cause` is a structural reason when one is known. Both are kept separate because the
+ * caller composes them differently: a known cause stands alone ("Dobla sus peones: …"), an
+ * unknown one is appended to the move's own description rather than replacing it.
+ */
+function opponentShift(f: MoveFacts): { cause: string | null; effect: string } | null {
+  // evalBefore/evalAfter are the MOVER's — here the rival's — so the player's view is the negation.
+  if (Math.abs(f.evalBefore) >= MATE_MAG || Math.abs(f.evalAfter) >= MATE_MAG) return null;
+  const was = band(-f.evalBefore), now = band(-f.evalAfter);
+  const name: Record<string, string> = {
+    perdida: "claramente peor", peor: "algo peor", igualada: "igualada", mejor: "algo mejor", ganando: "claramente mejor",
+  };
+  const effect = was === now
+    ? `tu posición mejora, aunque sigue ${name[now]}`
+    : `la posición pasa de ${name[was]} a ${name[now]} para ti`;
+
+  const s = f.structure, dt = f.dominantTerm;
+  const cause =
+    s?.gaveSelfDoubled ? `Dobla sus peones en la columna ${s.gaveSelfDoubled}`
+    : s?.gaveSelfIsolated ? `Deja aislado su peón de ${s.gaveSelfIsolated}`
+    : f.weakensKingShield ? `Debilita la cobertura de su propio rey`
+    : f.kingToCenter ? `Saca el rey al centro con piezas en juego`
+    : f.queenOutEarly ? `Saca la dama antes de tiempo`
+    : f.movesPieceTwice ? `Mueve la misma pieza otra vez sin terminar el desarrollo`
+    : dt && dt.delta < 0 && dt.term === "mobility" ? `Sus piezas pierden movilidad`
+    : dt && dt.delta < 0 && dt.term === "space" ? `Cede espacio`
+    : dt && dt.delta < 0 && dt.term === "kingSafety" ? `Deja su rey más expuesto`
+    : dt && dt.delta < 0 && dt.term === "development" ? `Se retrasa en el desarrollo`
+    : null;
+  return { cause, effect };
+}
+
+/**
+ * The rival's "Error grave del rival." header, unless the story already says it: a sentence
+ * that opens "El rival deja el caballo sin defensa…" or "Se le escapó al rival…" repeated
+ * the subject right after a header that had just named it.
+ */
+function withSlip(f: MoveFacts, body: string): string {
+  return /^(El rival|Se le escapó al rival|Al rival se le escapó)/.test(body) ? body : `${opponentSlip(f)} ${body}`;
+}
+
+/** Number of sentences in a rendered comment (a stop before a space or the end). */
+const sentenceCount = (t: string) => (t.match(/[.!?](\s|$)/g) ?? []).length;
+
+export function composeCoachComment(f: MoveFacts, info?: CommentInfo): string | null {
+  const outer = activeInfo;
+  activeInfo = info ?? null;
+  try { return composeInner(f); } finally { activeInfo = outer; }
+}
+
+function composeInner(f: MoveFacts): string | null {
   // The opponent's plies are handled FIRST and never fall through to the
   // player-voiced templates below. Keeping this branch at the top is what makes
   // "the text is always addressed to the player" a property of the structure
@@ -2099,10 +2244,58 @@ export function composeCoachComment(f: MoveFacts): string | null {
   // "Tu oponente: ¡Jaque mate! El caballo remata en f7", which reads as the
   // player's own mate wearing a label.
   if (f.byOpponent) {
+    const isError = f.classification === "inaccuracy" || f.classification === "mistake" || f.classification === "blunder";
+    // A verified story beats everything: it says what the rival's move allowed AND what the
+    // player can do about it, read off the same engine line.
+    if (isError && f.story?.allows) return withSlip(f, f.story.allows);
+    // The rival's error did not hand over material, but the engine had a better move for
+    // them: say what they missed. It is what to watch for in the player's own games.
+    if (isError && f.story?.better) return withSlip(f, f.story.better);
     const opportunity = opportunityClause(f);
     // Their mistake, plus what to do about it.
     if (opportunity) return `${opponentSlip(f)} ${opportunity}`;
+    // A flagged error with no capture or mate to hand over: say what the move cost them,
+    // not what shape it had. Silent fallbacks like "El rival mueve el peón a h3" next to an
+    // error badge were the other half of the empty comments.
+    if (isError) {
+      const shift = opponentShift(f);
+      if (shift?.cause) return `${opponentSlip(f)} ${shift.cause}: ${shift.effect}.`;
+      if (shift) {
+        // No reason to name: keep what the move DID ("El caballo del rival se va a la banda…")
+        // and add what the engine says it cost. Replacing the description with the cost alone
+        // threw away the one informative sentence on moves like a knight to the rim.
+        const quiet = opponentQuietComment(f);
+        // When the description is the generic fallback ("Jugada tranquila del rival: el peón a
+        // b4") it carries no information, and following it with "aun así le cuesta" reads as a
+        // contradiction. Lead with the error instead.
+        if (activeInfo?.winner === "oppFallback" || activeInfo?.winner === "oppEndgameFallback") {
+          return `${opponentSlip(f)} ${cap(shift.effect)}.`;
+        }
+        const joiner = pick([`Aun así, esa jugada le cuesta:`, `Pero el motor la marca como error:`], f.variantSeed);
+        return `${quiet} ${joiner} ${shift.effect}.`;
+      }
+    }
     return opponentQuietComment(f);
+  }
+
+  // The player's own move, with a verified story.
+  const st = f.story;
+  if (st) {
+    const isError = f.classification === "inaccuracy" || f.classification === "mistake" || f.classification === "blunder";
+    // The error is the win that was not played, and the consequence of the move played is only
+    // a footnote to it: say the win alone, with no descriptive sentence about the move.
+    if (isError && st.kind === "missedWin" && st.better) return st.better;
+    if (isError && st.allows && !(f.isMate && f.evalAfter > 0)) {
+      // The consequence, then what was better. When the story could not prove a reason for the
+      // better move, name it plainly — the arrow in the viewer shows it anyway — but only if
+      // the consequence was one sentence, so the comment stays short.
+      const plain = f.bestPiece && f.bestTo && sentenceCount(st.allows) < 2
+        ? `Lo indicado era ${art(f.bestPiece)} a ${f.bestTo}.` : null;
+      const second = st.better ?? plain;
+      return second ? `${st.allows} ${second}` : st.allows;
+    }
+    // Not over a mate: the mate rules say "mate en 3", which is the larger fact.
+    if (st.achieves && !isError && !f.isMate && Math.abs(f.evalAfter) < MATE_MAG) return st.achieves;
   }
 
   const a = slotA(f);
@@ -2110,10 +2303,13 @@ export function composeCoachComment(f: MoveFacts): string | null {
   if (f.isMate && f.evalAfter > 0) return a.text;
 
   const b = slotB(f, a.namesMaterial);
-  const c = slotC(f, a.usedBestMotif ?? false);
+  // A verified reason for the better move replaces the generic "lo indicado era" slot.
+  const c = st?.better ?? slotC(f, a.usedBestMotif ?? false);
   // The outcome of the previous move's opportunity outranks the generic "how the
   // game changed" line: "se te escapó la torre" is the more useful second half.
-  const outcome = opportunityOutcome(f);
+  // "La viste" followed by "Lo viste y lo aprovechaste" says the same thing twice.
+  const praised = /encontraste|la viste/.test(a.text);
+  const outcome = praised && f.tookOpportunity === true ? null : opportunityOutcome(f);
   const second = outcome ?? c ?? b;
   return second ? `${a.text} ${second}` : a.text;
 }
@@ -2199,7 +2395,14 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
             t.key === "fork" ? `te hace un doble: ${c.piece} en ${c.to} ataca dos de tus piezas a la vez, y solo puedes salvar una`
             : t.key === "pin" ? `te clava una pieza: ${c.piece} en ${c.to} la deja inmóvil contra tu rey`
             : t.key === "skewer" ? `te hace una enfilada: ${c.piece} en ${c.to} ataca dos de tus piezas en línea, y al mover la de delante cae la de atrás`
-            : `te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás`;
+            : t.key === "double"
+              ? (/jaque/.test(t.label)
+                ? `te da jaque con ${c.piece} en ${c.to} y, a la vez, amenaza otra de tus piezas`
+                : `ataca dos de tus piezas a la vez con ${c.piece} en ${c.to}`)
+            : t.key === "discovered"
+              ? `te da jaque a la descubierta: el jaque viene de la pieza que estaba detrás`
+              : null;
+          if (!clause) return null;
           return f.capturedPiece
             ? `El rival captura ${art(f.capturedPiece)} en ${c.to} y ${clause}.`
             : `¡Cuidado! El rival ${clause}.`;
@@ -2305,6 +2508,7 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
     id: "oppBook", group: "phase",
     applies: (f, c) => {
       if (f.isBook) {
+        if (!f.isLastBookMove && f.variantSeed >= 2) return null;
         return f.isLastBookMove
           // Not "también": lastBookPly is a SINGLE marker for the whole game, so when
           // it lands on the rival's ply the player never got their own version — and
@@ -2607,7 +2811,11 @@ export const OPPONENT_RULES: ReadonlyArray<CoachRule<OpponentCtx, string>> = [
   {
     id: "oppGivesKingLuft", group: "shape",
     applies: (f, _c) => {
-      if (f.givesKingLuft) return `El rival le da aire a su rey: gana casilla de escape.`;
+      if (f.givesKingLuft) return pick([
+        `El rival le da aire a su rey: gana casilla de escape.`,
+        `El rival se hace un hueco para su rey y evita problemas en la última fila.`,
+        `Con esa jugada el rey rival ya tiene por dónde escapar.`,
+      ], _c.s);
       return null;
     },
   },

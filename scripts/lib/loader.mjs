@@ -28,6 +28,11 @@ async function withExtension(specifier, context, nextResolve) {
 }
 
 export async function resolve(specifier, context, nextResolve) {
+  // OFFLINE_STUB=1: swap the real database client for the in-memory one, so the app's
+  // own analysis can run end to end inside a script with no database at all.
+  if (process.env.OFFLINE_STUB === "1" && specifier === "@/lib/supabase") {
+    return { url: new URL("scripts/lib/supabaseStub.mts", PROJECT).href, shortCircuit: true };
+  }
   if (specifier.startsWith("@/")) {
     return withExtension(new URL(specifier.slice(2), SRC).href, context, nextResolve);
   }
