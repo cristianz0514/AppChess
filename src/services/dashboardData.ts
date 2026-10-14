@@ -440,6 +440,21 @@ export async function getUnanalyzedGameIds(userId: string, limit = 50): Promise<
   return allIds.filter((id) => !analyzed.has(id));
 }
 
+/**
+ * The user's most recent game ids, analysed or not. Used to REGENERATE the analysis of games
+ * that already have comments: the comment engine improves, and games analysed before the
+ * improvement keep the old text until they are analysed again.
+ */
+export async function getAllGameIds(userId: string, limit = 200): Promise<string[]> {
+  const { data: games } = await supabase
+    .from("games")
+    .select("id")
+    .eq("user_id", userId)
+    .order(await gameOrderCol(), { ascending: false, nullsFirst: true })
+    .limit(limit);
+  return (games ?? []).map((g) => g.id);
+}
+
 export interface ResultStats {
   wins: number;
   losses: number;

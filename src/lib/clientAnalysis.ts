@@ -92,14 +92,17 @@ export async function analyzePendingInBrowser(
     // game would leave it with a partial set of moves, which reads as a broken
     // analysis rather than an unfinished one.
     shouldStop?: () => boolean;
+    /** Re-analyse games that already have rows (regenerates their comments). */
+    force?: boolean;
   } = {},
 ): Promise<{ analyzed: number; failed: number; stopped: boolean }> {
-  const { onProgress, shouldStop } = opts;
+  const { onProgress, shouldStop, force = false } = opts;
   let analyzed = 0, failed = 0;
   for (let i = 0; i < gameIds.length; i++) {
     if (shouldStop?.()) return { analyzed, failed, stopped: true };
     try {
       await analyzeGameInBrowser(gameIds[i], {
+        force,
         onProgress: (p) => onProgress?.(i, gameIds.length, p),
       });
       analyzed++;

@@ -20,12 +20,14 @@ El motor Stockfish se copia a `public/engine/` antes de `dev` y `build` (`script
 |---|---|
 | `npx tsc --noEmit` | tipos |
 | `npm run lint` | ESLint (debe salir sin errores ni avisos) |
-| `npm test` | pruebas de la lógica que decide las cifras: clasificación y "brillante", precisión, Elo estimado, libro de aperturas, parser de PGN, validaciones y límite de uso |
+| `npm test` | pruebas de la lógica que decide las cifras y los textos: clasificación y "brillante", precisión, Elo estimado, libro de aperturas, parser de PGN, validaciones y límite de uso, la "historia de la jugada", el compositor de comentarios y el motor del navegador (con un Worker simulado) |
 | `npm run build` | build de producción (acepta valores ficticios de Supabase) |
 
 GitHub Actions corre las cuatro en cada push a `main` (`.github/workflows/ci.yml`).
 
 `scripts/audit*.cjs` y `scripts/checkPlan.cjs` auditan los comentarios del coach (afirmaciones, cobertura, disparos); sus resultados quedan en `docs/`.
+
+Para medir lo que la app **realmente dice y calcula** sobre partidas reales (con Stockfish real y sin base de datos): `scripts/analyzeOffline.mts` → `scripts/lintComments.cjs` (costuras y contradicciones en miles de comentarios) y `scripts/calibrateElo.mts` (Elo contra ratings reales). Cómo funcionan y qué midieron: `docs/MOTOR-DE-COMENTARIOS.md`.
 
 ## Modelo de acceso (leer antes de tocar la seguridad)
 
@@ -39,5 +41,7 @@ GitHub Actions corre las cuatro en cada push a `main` (`.github/workflows/ci.yml
 - `src/app/` páginas y rutas de API · `src/components/` UI · `src/lib/` lógica pura (probada) · `src/services/` acceso a datos y motor.
 - `src/lib/moveClassification.ts` umbrales de clasificación y regla de "brillante".
 - `src/lib/coachComment.ts` plantillas de comentario (archivo grande; ver `docs/coach-categorias.md`).
+- `src/lib/lineStory.ts` la "historia de la jugada": lee la variación del motor y cuenta causa y efecto de las próximas 2–3 jugadas, verificada antes de decirla.
+- `src/lib/eloEstimate.ts` Elo estimado, calibrado contra ratings reales y mostrado con su rango.
 - `supabase/migrations/` esquema, en orden numérico.
 - `public/campeones/` retratos y escenas en WebP.

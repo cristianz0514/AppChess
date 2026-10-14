@@ -8,7 +8,7 @@ import { PIECE_VALUE } from "@/lib/attackMap";
 import { ReviewSummaryModal } from "./ReviewSummaryModal";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, Search, Target, Volume2, VolumeX, FlipVertical2, X } from "lucide-react";
 import { play as playSound, isMuted, subscribeMuted, toggleMuted } from "@/lib/sound";
-import { estimateEloFromAcpl, acplForElo } from "@/lib/eloEstimate";
+import { estimateElo } from "@/lib/eloEstimate";
 import { isBookPosition } from "@/lib/openingBook";
 import { verifiedLine } from "@/lib/mainLine";
 import type { Game } from "@/types";
@@ -337,11 +337,14 @@ interface Props {
   opening?: string;
   accuracy?: number | null;
   avgAccuracy?: number | null;
+  /** The ratings both players really had in this game (chess.com), when known. */
+  myRating?: number | null;
+  theirRating?: number | null;
   gameId?: string;
   autoStory?: boolean;
 }
 
-export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, accuracy, avgAccuracy }: Props) {
+export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, accuracy, avgAccuracy, myRating, theirRating }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
 
   const firstBlunderIdx = jumpToBlunder
@@ -511,27 +514,19 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
   // short game's whole average — so book moves (openingBook.ts) are
   // excluded here, and a minimum sample of real, post-book moves is
   // required before showing a number at all.
-  const MIN_MOVES_FOR_ELO_ESTIMATE = 6;
+  //
+  // The minimum number of real moves, the loss cap and the curve all live in
+  // lib/eloEstimate.ts, calibrated against real ratings (scripts/calibrateElo.mts). The
+  // result carries a RANGE: one game cannot pin a rating down to better than a few hundred
+  // points, and a bare number claimed more than that.
   const eloEstimates = useMemo(() => {
-    const acplFor = (color: "w" | "b") => {
+    const estimateFor = (color: "w" | "b") => {
       const losses = moves
-        .map((m, i) => ({ m, i }))
-        .filter(({ m }) => m.color === color && m.centipawnLoss !== null && !isBookPosition(m.fen))
-        .map(({ m }) => m.centipawnLoss as number);
-      if (losses.length < MIN_MOVES_FOR_ELO_ESTIMATE) return null;
-      // acplForElo, not a plain mean: it caps each move's loss at the value the
-      // anchor curve was calibrated with, so one catastrophe can't dominate a
-      // 20-move average. Measured over 36 real games, that cap halved the median
-      // error (354 -> 188 points). The cap deliberately does NOT touch the stored
-      // centipawn_loss shown elsewhere — see lib/eloEstimate.ts.
-      return acplForElo(losses);
+        .filter((m) => m.color === color && m.centipawnLoss !== null && !isBookPosition(m.fen))
+        .map((m) => m.centipawnLoss as number);
+      return estimateElo(losses);
     };
-    const myAcpl = acplFor(playerColor);
-    const theirAcpl = acplFor(opponentColor);
-    return {
-      mine: myAcpl !== null ? estimateEloFromAcpl(myAcpl) : null,
-      theirs: theirAcpl !== null ? estimateEloFromAcpl(theirAcpl) : null,
-    };
+    return { mine: estimateFor(playerColor), theirs: estimateFor(opponentColor) };
   }, [moves, playerColor, opponentColor]);
   const toMine = useCallback(
     (e: number | null) => (e === null ? null : playerColor === "w" ? e : -e),
@@ -696,6 +691,8 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, 
           theirCounts={theirClassSummary}
           myEloEstimate={eloEstimates.mine}
           theirEloEstimate={eloEstimates.theirs}
+          myRating={myRating ?? null}
+          theirRating={theirRating ?? null}
           momentsCount={0}
           gameResult={gameResult}
         />

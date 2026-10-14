@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Play, Sparkles } from "lucide-react";
+import type { EloEstimate } from "@/lib/eloEstimate";
 
 const COLOR: Record<string, string> = {
   brilliant: "#1BAAA6", great: "#5C8AE6", best: "var(--bv-green)",
@@ -35,13 +36,35 @@ interface Props {
   // not just the one you're tracking; these are optional so older call
   // sites without this data still render the single-column view.
   theirCounts?: Record<string, number>;
-  myEloEstimate?: number | null;
-  theirEloEstimate?: number | null;
+  myEloEstimate?: EloEstimate | null;
+  theirEloEstimate?: EloEstimate | null;
+  /** The ratings the players really had, shown beside the single-game estimate. */
+  myRating?: number | null;
+  theirRating?: number | null;
   momentsCount: number;
   gameResult?: "win" | "loss" | "draw";
 }
 
-export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, avgAccuracy, counts, theirCounts, myEloEstimate, theirEloEstimate, momentsCount, gameResult }: Props) {
+function EloFigure({ label, estimate, rating }: { label: string; estimate?: EloEstimate | null; rating?: number | null }) {
+  return (
+    <div className="text-center">
+      <p className="text-lg font-display font-bold leading-none">
+        {estimate ? `≈ ${estimate.elo}` : "—"}
+      </p>
+      {estimate && (
+        <p className="text-[10px] text-muted-foreground leading-none mt-1">
+          probable entre {estimate.low} y {estimate.high}
+        </p>
+      )}
+      {rating != null && rating > 0 && (
+        <p className="text-[10px] text-muted-foreground leading-none mt-1">rating real: {rating}</p>
+      )}
+      <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-1">{label}</p>
+    </div>
+  );
+}
+
+export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, avgAccuracy, counts, theirCounts, myEloEstimate, theirEloEstimate, myRating, theirRating, momentsCount, gameResult }: Props) {
   // `render` keeps the modal mounted while it animates out. It is turned on
   // during render (derived from `open`) and off by the timer below, so no effect
   // sets state synchronously.
@@ -150,15 +173,16 @@ export function ReviewSummaryModal({ open, onClose, onReviewMoments, accuracy, a
               centipawn loss (see eloEstimate.ts). Approximate, so it's
               labeled as an estimate rather than a real rating. */}
           {(myEloEstimate != null || theirEloEstimate != null) && (
-            <div className="mt-3 pt-3 flex items-center justify-around" style={{ borderTop: "1px solid var(--border)" }}>
-              <div className="text-center">
-                <p className="text-lg font-display font-bold leading-none">{myEloEstimate ?? "—"}</p>
-                <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-1">Tu Elo estimado</p>
+            <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+              <div className="flex items-center justify-around">
+                <EloFigure label="Tu nivel en esta partida" estimate={myEloEstimate} rating={myRating} />
+                <EloFigure label="Nivel del rival" estimate={theirEloEstimate} rating={theirRating} />
               </div>
-              <div className="text-center">
-                <p className="text-lg font-display font-bold leading-none">{theirEloEstimate ?? "—"}</p>
-                <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mt-1">Elo del rival</p>
-              </div>
+              {/* Honest about the precision: one game identifies a rating to within a few
+                  hundred points at best (measured against real ratings — see eloEstimate.ts). */}
+              <p className="text-[9px] text-muted-foreground text-center mt-2">
+                Estimación a partir de esta sola partida: orientativa. Tu rating real es el que cuenta.
+              </p>
             </div>
           )}
         </div>

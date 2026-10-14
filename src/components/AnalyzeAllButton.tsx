@@ -18,7 +18,7 @@ interface Props {
 // would be a lie, so it now says the opposite. Progress itself is still safe —
 // each game's moves are written as they're analysed, so nothing already finished
 // is lost and restarting picks up from what's left.
-export function AnalyzeAllButton({ username }: Props) {
+export function AnalyzeAllButton({ username: _username }: Props) {
   const router = useRouter();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(false);
@@ -27,7 +27,7 @@ export function AnalyzeAllButton({ username }: Props) {
   const [label, setLabel] = useState("");
   const stopRequested = useRef(false);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (regenerate = false) => {
     setError(false);
     stopRequested.current = false;
     setRunning(true);
@@ -39,7 +39,7 @@ export function AnalyzeAllButton({ username }: Props) {
       // This route only READS the database — no engine — so it stays on the
       // server, where it already has the session cookie.
       const res = await fetch(
-        `/api/analyze/pending?username=${encodeURIComponent(username)}`,
+        `/api/analyze/pending${regenerate ? "?all=1" : ""}`,
         { cache: "no-store" },
       );
       if (!res.ok) throw new Error();
@@ -54,6 +54,7 @@ export function AnalyzeAllButton({ username }: Props) {
 
       setTotal(pending.length);
       await analyzePendingInBrowser(pending, {
+        force: regenerate,
         shouldStop: () => stopRequested.current,
         onProgress: (gameIndex, totalGames, p) => {
           setDone(gameIndex);
@@ -69,7 +70,7 @@ export function AnalyzeAllButton({ username }: Props) {
       setRunning(false);
       setError(true);
     }
-  }, [username, router]);
+  }, [router]);
 
   const stop = () => {
     stopRequested.current = true;
@@ -112,7 +113,7 @@ export function AnalyzeAllButton({ username }: Props) {
       ) : error ? (
         <div className="space-y-2">
           <p className="text-sm" style={{ color: "var(--bv-red)" }}>No se pudo iniciar el análisis.</p>
-          <button onClick={start} className="text-xs font-bold px-3 py-1.5 rounded-xl"
+          <button onClick={() => start()} className="text-xs font-bold px-3 py-1.5 rounded-xl"
             style={{ background: "var(--bv-electric)", color: "#fff" }}>
             Reintentar
           </button>
@@ -123,11 +124,20 @@ export function AnalyzeAllButton({ username }: Props) {
             Evalúa tus partidas con Stockfish en este dispositivo: precisión, detección de
             errores y comentarios en cada jugada. La primera vez descarga el motor (7 MB).
           </p>
-          <button onClick={start}
+          <button onClick={() => start()}
             className="w-full py-2.5 rounded-xl text-sm font-bold transition active:scale-[0.98]"
             style={{ background: "var(--bv-electric)", color: "#fff" }}>
             Analizar mis partidas
           </button>
+          <button onClick={() => start(true)}
+            className="w-full py-2 rounded-xl border text-xs font-semibold transition-colors hover:bg-muted/40"
+            style={{ borderColor: "var(--border)" }}>
+            Volver a analizar todo con el coach mejorado
+          </button>
+          <p className="text-[10px] text-muted-foreground">
+            Regenera los comentarios y la precisión de tus partidas ya analizadas. Tarda más: cada
+            partida se vuelve a evaluar a fondo.
+          </p>
         </>
       )}
     </div>

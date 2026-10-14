@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUsername } from "@/lib/getUsername";
 import { supabase } from "@/lib/supabase";
@@ -11,12 +12,12 @@ import type { Game } from "@/types";
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ blunder?: string; story?: string; coach?: string }>;
+  searchParams: Promise<{ blunder?: string; story?: string; coach?: string; reanalyze?: string }>;
 }
 
 export default async function GameDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const { blunder, story, coach } = await searchParams;
+  const { blunder, story, coach, reanalyze } = await searchParams;
   await getUsername();
 
   const { data: game } = await supabase
@@ -86,7 +87,11 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
   const hasCoach = dbMoves.some((m) => m.explanation);
   // `coach=1` marks that a regeneration was already attempted this navigation —
   // prevents an infinite re-analyze loop if the comments can't be persisted.
-  const needsCoach = coach !== "1" && explanationColumn && dbMoves.length > 0 && notableCount > 0 && !hasCoach;
+  // `reanalyze=1` is the user asking for it (the "Volver a analizar" link below): it forces a fresh
+  // analysis even when comments already exist, which is how a game analysed by an older version
+  // of the coach gets the new comments.
+  const needsCoach = reanalyze === "1"
+    || (coach !== "1" && explanationColumn && dbMoves.length > 0 && notableCount > 0 && !hasCoach);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
@@ -101,6 +106,12 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <Link href={`/blunders/${id}?reanalyze=1`} prefetch={false}
+            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border hover:bg-muted/40"
+            style={{ borderColor: "var(--border)" }}
+            title="Vuelve a evaluar esta partida con el motor y regenera los comentarios">
+            Volver a analizar
+          </Link>
           <ShareGameButton />
         </div>
       </header>
@@ -121,6 +132,10 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             opening={translateOpening(game.opening)}
             accuracy={game.accuracy}
             avgAccuracy={avgAccuracy}
+            // The ratings the two players REALLY had, so the summary can set the single-game
+            // estimate next to them instead of presenting it as the player's level.
+            myRating={(game.played_as === "white" ? game.white_rating : game.black_rating) ?? null}
+            theirRating={(game.played_as === "white" ? game.black_rating : game.white_rating) ?? null}
             gameId={id}
             autoStory={story === "1"}
           />
