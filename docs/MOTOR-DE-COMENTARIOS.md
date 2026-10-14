@@ -62,6 +62,38 @@ Medido con `scripts/measureStories.cjs` sobre las mismas 41 partidas (porcentaje
 | Mis errores / errores del rival | 63 % / 60 % | 64 % / 59 % (ya tenían búsqueda profunda: no era su límite) |
 
 Lint tras el cambio: 0 problemas en 2783 comentarios. Lo que falta para subir los errores es el paso 2 (errores posicionales) y el 3 (causas de casos concretos), ver abajo.
+### 2.2 Errores posicionales (`src/lib/positionalDiff.ts`)
+
+Cuando un error no pierde material ni permite una táctica, el motor igual lo marca, y el coach solo podía decir "pasa de igualada a algo mejor". La razón está en **cómo termina la posición** unas jugadas después. Se compara el final de la línea que juegas con el final de la mejor línea (mismo largo, en un punto tranquilo: sin captura ni jaque en la última jugada, y con el mismo material) y se nombra lo que **empeora para quien movió**:
+
+| Qué cambia | Ejemplo |
+|---|---|
+| Un peón pasado del rival | *En la línea principal el rival consigue un peón pasado en b4. Con el alfil a e6 lo evitabas.* |
+| La pareja de alfiles | *En la línea principal te quedas sin la pareja de alfiles. Con el rey a g1 la conservabas.* |
+| Una columna abierta | *En la línea principal el rival se hace con la columna c. Con la torre a c1 la controlabas tú.* |
+| El enroque / el rey | *…te quedas sin poder enrocar y con el rey en el centro* · *tu rey queda más expuesto: los ataques sobre su zona pasan de 1 a 5* |
+| Peones doblados o aislados | *En la línea principal te quedan peones doblados en la columna g.* |
+| Una pieza encerrada o mal colocada | *En la línea principal el alfil de c1 queda encerrado, casi sin casillas.* |
+| Actividad / desarrollo | *…tus piezas quedan bastante menos activas…* · *te quedas con 2 piezas menores menos desarrolladas* |
+
+Reglas para no decir más de lo que se sabe:
+
+- Solo se reporta lo que es **peor** para quien movió; nunca una diferencia que le favorece.
+- Con el material distinto (aunque sea un peón) se calla: eso es de la historia de material.
+- **Cuanto mayor el error, mayor debe ser la diferencia**: umbral 1.5 para una imprecisión, 2 para un error, 3 para un error grave (un peón aislado explica una imprecisión, no un error grave).
+- Las frases describen dos tableros, no adivinan la causa de la evaluación. Se evitaron números inventados ("controlan 15 casillas menos" era un conteo interno mal nombrado) y frases demasiado fuertes ("sin casillas útiles" para una pieza con una casilla libre).
+
+Medido con `scripts/measureStories.cjs` sobre las mismas 41 partidas:
+
+| | Paso 1 | Paso 2 |
+|---|---|---|
+| Imprecisiones con texto genérico | 29 % | **21 %** |
+| Errores míos con texto genérico | 12 % | 11 % |
+| Errores del rival con texto genérico | 19 % | 18 % |
+| Errores y errores graves con explicación posicional | — | 17 de 307 (5 %) |
+| Imprecisiones + errores con explicación posicional | — | 75 de 611 |
+
+**Lectura honesta:** el paso 2 ayuda sobre todo a las imprecisiones. En los errores y errores graves rinde poco (17 de 307) porque casi todos ya tenían material o táctica que contar; los que no, suelen ser situaciones donde la diferencia entre dos finales de línea no es tan nítida como para nombrarla con seguridad. Lint: 0 problemas en 2783 comentarios. 155 pruebas.
 ## 3. Contradicciones y repetición (`src/lib/coachComment.ts`)
 
 - "Se te escapó" solo sobre una jugada que fue un error; nunca junto a "mejor/excelente".

@@ -2202,7 +2202,7 @@ function opponentSlip(f: MoveFacts): string {
   if (f.classification === "mistake") {
     return pick([`El rival se equivoca.`, `Fallo del rival.`, `El rival comete un error.`, `Error del rival.`], s);
   }
-  return pick([`El rival no juega lo más preciso.`, `Imprecisión del rival.`, `Pequeño desliz del rival.`, `El rival se aparta de la mejor jugada.`], s);
+  return pick([`El rival no juega lo más preciso.`, `Imprecisión del rival.`, `Pequeño desliz del rival.`, `El rival se aparta de la mejor jugada.`, `La jugada del rival no es la más precisa.`, `El rival podía jugar algo mejor.`], s);
 }
 
 /**

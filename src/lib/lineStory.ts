@@ -22,6 +22,7 @@
 import { Chess, type Move } from "chess.js";
 import { attacksFrom, attackersOf, buildAttackMap, PIECE_VALUE, type Color } from "./attackMap";
 import { gainAvailable } from "./threats";
+import { compareEndpoints, describeDifference } from "./positionalDiff";
 
 const MATE_MAG = 90;           // |eval| at/above this is a mate score, not a pawn count
 const MATE_MAX_MOVES = 4;      // past this the distance is not worth quoting (see coachComment)
@@ -291,7 +292,7 @@ export interface StoryInput {
 export type StoryKind =
   | "mate" | "fork" | "discovered"
   | "undefended" | "tradedDown" | "unguard" | "ignored" | "opened"
-  | "check" | "quiet" | "capture" | "wins" | "sacrifice" | "missedWin" | "promotes" | "queenTrade" | "none";
+  | "check" | "quiet" | "capture" | "wins" | "sacrifice" | "missedWin" | "promotes" | "queenTrade" | "positional" | "none";
 
 export interface Story {
   kind: StoryKind;
@@ -377,6 +378,12 @@ export function buildStory(inp: StoryInput): Story | null {
     story.better = b?.text ?? null;
     // When the consequence already names what is lost, the better move only has to say it avoids it.
     if (b?.avoids && story.allows) story.better = b.text.replace(/ evitabas perder .*$/, ' lo evitabas.');
+    // No material, no tactic, no mate: the error is in the SHAPE of the position the move leads
+    // to. Compare where it leads with where the best move leads.
+    if (!story.allows && !story.better) {
+      const pos = positionalStory(L, replay(inp.fenBefore, inp.best, WINDOW), inp);
+      if (pos) { story.allows = pos.cause; story.better = pos.contrast; story.kind = "positional"; }
+    }
     // A weak consequence ("tras X el rival acaba llevándose un peón") beside a much bigger
     // missed win is a red herring: the real error is the move that was not played. Say that.
     if (b && b.gain >= 3 && (story.kind === "quiet" || story.kind === "check")) { story.allows = null; story.kind = "missedWin"; }
@@ -385,6 +392,31 @@ export function buildStory(inp: StoryInput): Story | null {
     if (w) { story.achieves = w.text; story.kind = w.kind; story.key = w.key ?? null; }
   }
   return story;
+}
+
+/**
+ * The positional story: where the played line ends versus where the best line ends, both cut to
+ * the same length at a QUIET ply (no capture or check on the last move), so a half-finished
+ * exchange does not look like a structural change.
+ */
+function positionalStory(
+  L: readonly Ev[], B: readonly Ev[], inp: StoryInput,
+): { cause: string; contrast: string | null } | null {
+  if (B.length === 0 || clean(B[0].san) === clean(inp.playedSan)) return null;
+  // A line that ends in mate has no "shape" to compare.
+  if (L.some((e) => e.mate) || B.some((e) => e.mate)) return null;
+  let k = Math.min(L.length, B.length, 8);
+  const quiet = (e: Ev | undefined) => !!e && !e.captured && !e.check;
+  while (k >= 3 && !(quiet(L[k - 1]) && quiet(B[k - 1]))) k--;
+  if (k < 3) return null;
+  // The bigger the error, the bigger the difference has to be to explain it: an isolated pawn
+  // is a fair reason for an inaccuracy and a poor one for a blunder.
+  const need = inp.classification === "blunder" ? 3 : inp.classification === "mistake" ? 2 : 1.5;
+  const d = compareEndpoints(L[k - 1].fenAfter, B[k - 1].fenAfter, inp.mover, need);
+  if (!d) return null;
+  const b1 = B[0];
+  const text = describeDifference(d, !inp.byOpponent, `${art(b1.piece)} a ${b1.to}`);
+  return text;
 }
 
 /**
