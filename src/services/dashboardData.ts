@@ -419,10 +419,16 @@ export async function getUnanalyzedGameIds(userId: string, limit = 50): Promise<
   const allIds = games.map((g) => g.id);
 
   // Every analysed game has a row for its first move: asking for just those keeps the answer
-  // to a couple of rows per game instead of every move of every game.
-  const analyzedRows = await getMovesOfGames<{ game_id: string }>(allIds, "game_id", { moveNumber: 1 });
+  // to a couple of rows per game instead of every move of every game. A game whose rows have no
+  // `ply` was analysed before that column existed: it cannot say whose errors are whose, so it is
+  // pending again (`ply === undefined` means the database has no such column: keep it as analysed).
+  const analyzedRows = await getMovesOfGames<{ game_id: string; ply?: number | null }>(
+    allIds,
+    (await hasPlyColumn()) ? "game_id, ply" : "game_id",
+    { moveNumber: 1 },
+  );
 
-  const analyzed = new Set(analyzedRows.map((r) => r.game_id));
+  const analyzed = new Set(analyzedRows.filter((r) => r.ply !== null).map((r) => r.game_id));
   return allIds.filter((id) => !analyzed.has(id));
 }
 

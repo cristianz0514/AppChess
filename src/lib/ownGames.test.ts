@@ -7,10 +7,21 @@ describe("own half-moves", () => {
     expect([0, 1, 2, 3].map((p) => isOwnPly(p, "black"))).toEqual([false, true, false, true]);
   });
 
-  it("keeps only the player's rows, and keeps rows analysed before `ply` existed", () => {
-    const rows = [{ ply: 0, id: "a" }, { ply: 1, id: "b" }, { ply: 2, id: "c" }, { ply: null, id: "legacy" }, { id: "none" }];
-    expect(ownRows(rows, "white").map((r) => r.id)).toEqual(["a", "c", "legacy", "none"]);
-    expect(ownRows(rows, "black").map((r) => r.id)).toEqual(["b", "legacy", "none"]);
+  it("keeps only the player's rows", () => {
+    const rows = [{ ply: 0, id: "a" }, { ply: 1, id: "b" }, { ply: 2, id: "c" }];
+    expect(ownRows(rows, "white").map((r) => r.id)).toEqual(["a", "c"]);
+    expect(ownRows(rows, "black").map((r) => r.id)).toEqual(["b"]);
+  });
+
+  it("does not attribute a row analysed before `ply` existed: its side cannot be told", () => {
+    const rows = [{ ply: 0, id: "a" }, { ply: null, id: "legacy" }];
+    expect(ownRows(rows, "white").map((r) => r.id)).toEqual(["a"]);
+    expect(ownRows(rows, "black").map((r) => r.id)).toEqual([]);
+  });
+
+  it("keeps every row when the database has no `ply` column at all", () => {
+    const rows: { id: string; ply?: number | null }[] = [{ id: "x" }, { id: "y" }];
+    expect(ownRows(rows, "white").length).toBe(2);
   });
 });
 

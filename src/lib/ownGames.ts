@@ -15,15 +15,18 @@ export function isOwnPly(ply: number, playedAs: Side): boolean {
 }
 
 /**
- * Whether a `moves` row is the player's own. A row without `ply` comes from a game analysed
- * before the `ply` column existed: its side cannot be told, so it counts (the previous
- * behaviour) until the game is analysed again.
+ * Whether a `moves` row is the player's own. A row whose `ply` is null comes from a game
+ * analysed before that column existed: whose move it was cannot be told, so it is NOT counted as
+ * the player's (counting both sides, as it used to, put the rival's errors on the player) until
+ * the game is analysed again. A row with no `ply` property at all means the database has no such
+ * column yet; then nothing can tell the sides apart and every row is kept.
  */
 export function isOwnRow(row: { ply?: number | null }, playedAs: Side): boolean {
-  return row.ply == null || isOwnPly(row.ply, playedAs);
+  if (row.ply === undefined) return true;
+  return row.ply !== null && isOwnPly(row.ply, playedAs);
 }
 
-/** The player's own rows out of one game's rows. */
+/** The player's own rows out of one game's rows (see isOwnRow for the ones that cannot be told). */
 export function ownRows<T extends { ply?: number | null }>(rows: readonly T[], playedAs: Side): T[] {
   return rows.filter((r) => isOwnRow(r, playedAs));
 }
