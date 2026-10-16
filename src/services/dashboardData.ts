@@ -115,6 +115,9 @@ export const getGameWindow = cache(async function(
     .select(modern ? `${base}, time_class, ended_by_abandonment, played_at` : base)
     .eq("user_id", userId);
   if (modern && filtersClass(timeClass)) q = timeClass === "unknown" ? q.or(UNKNOWN_CLASS) : q.eq("time_class", timeClass!);
+  // Left out in the query, not after it, so the window is a full `limit` of real games instead of
+  // one short by each battle (chess_game_id is NOT NULL, so this drops nothing else).
+  if (!includeChampions) q = q.not("chess_game_id", "like", "campeones-%");
   // NULLS FIRST matches the games_user_played_at_idx index (created as `desc`,
   // Postgres' default is nulls-first) — NULLS LAST forces a full sort instead
   // of an index scan and was ~3-4x slower on a large account (measured).
@@ -412,6 +415,7 @@ export async function getUnanalyzedGameIds(userId: string, limit = 50): Promise<
     .from("games")
     .select("id")
     .eq("user_id", userId)
+    .not("chess_game_id", "like", "campeones-%") // battles are not games to analyse in bulk
     .order(await gameOrderCol(), { ascending: false, nullsFirst: true })
     .limit(limit);
 
@@ -442,6 +446,7 @@ export async function getAllGameIds(userId: string, limit = 200): Promise<string
     .from("games")
     .select("id")
     .eq("user_id", userId)
+    .not("chess_game_id", "like", "campeones-%") // battles are not games to analyse in bulk
     .order(await gameOrderCol(), { ascending: false, nullsFirst: true })
     .limit(limit);
   return (games ?? []).map((g) => g.id);

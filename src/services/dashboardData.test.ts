@@ -12,7 +12,7 @@ vi.mock("@/lib/supabase", () => ({
     from: (name: string) => {
       if (name === "games") {
         const g = {
-          select: () => g, eq: () => g, order: () => g,
+          select: () => g, eq: () => g, not: () => g, order: () => g,
           limit: () => Promise.resolve({ data: gameIds.map((id) => ({ id })), error: null }),
         };
         return g;
