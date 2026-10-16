@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
-import { getUserId, getExampleGames } from "@/services/dashboardData";
-import type { ExampleGame } from "@/services/dashboardData";
-import { getInsights } from "@/services/insightsGenerator";
-import { InsightsCard } from "@/components/InsightsCard";
+import { getUserId } from "@/services/dashboardData";
+import { getCoachInsights } from "@/services/insightsGenerator";
+import type { RelatedGame } from "@/services/insightsGenerator";
 import { Sparkles, TrendingUp, AlertTriangle } from "lucide-react";
 import { translateOpening } from "@/lib/translateOpening";
 import type { Insight } from "@/types";
@@ -23,7 +22,7 @@ const resultColor: Record<string, string> = {
   win: "var(--bv-green)", loss: "var(--bv-red)", draw: "var(--bv-orange)",
 };
 
-function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: boolean }) {
+function GameList({ games, jumpBlunder }: { games: RelatedGame[]; jumpBlunder?: boolean }) {
   if (games.length === 0) return null;
   return (
     <div className="mt-2 space-y-1.5">
@@ -35,7 +34,7 @@ function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: 
             {resultLabel[g.result] ?? "—"}
           </span>
           <span className="text-xs flex-1 truncate">{translateOpening(g.opening)}</span>
-          <span className="text-[10px] text-muted-foreground shrink-0">{g.errorCount} error{g.errorCount !== 1 ? "es" : ""}</span>
+          <span className="text-[10px] text-muted-foreground shrink-0">{g.detail}</span>
           <span className="text-muted-foreground text-xs">›</span>
         </Link>
       ))}
@@ -45,15 +44,14 @@ function GameList({ games, jumpBlunder }: { games: ExampleGame[]; jumpBlunder?: 
 
 export const metadata = { title: "Coach IA" };
 
+// The notices are worked out from the games on every visit (see getCoachInsights): what is
+// shown is always what the player's analysed games say now, not a copy saved earlier.
 export default async function InsightsPage() {
   const username  = await getUsername();
   const userId    = await getUserId(username);
   if (!userId) return null;
 
-  const [insights, exampleGames] = await Promise.all([
-    getInsights(userId),
-    getExampleGames(userId),
-  ]);
+  const { insights, analyzedGames } = await getCoachInsights(userId);
 
   const featured = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
   const rest      = insights.filter((i) => i !== featured);
@@ -69,7 +67,7 @@ export default async function InsightsPage() {
           <h1 className="font-deco text-2xl mt-0.5">Hola, <span className="capitalize">{username}</span>.</h1>
           {insights.length > 0 && (
             <p className="text-sm text-muted-foreground mt-1">
-              Analicé tus últimas partidas. Esto es lo que encontré.
+              Basado en tus últimas {analyzedGames} partidas analizadas. Esto es lo que encontré.
             </p>
           )}
         </div>
@@ -87,12 +85,23 @@ export default async function InsightsPage() {
             </div>
             <p className="text-sm leading-relaxed font-medium">{featured.message}</p>
             <GameList
-              games={exampleGames[featured.category]}
+              games={featured.games}
               jumpBlunder={featured.category === "tactical" || featured.category === "recurring_blunder"}
             />
           </div>
         ) : (
-          <InsightsCard insights={[]} username={username} />
+          <div className="bg-card border border-border rounded-2xl p-5 space-y-3 text-center">
+            <Sparkles size={16} className="mx-auto" style={{ color: "var(--bv-purple)" }} />
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {analyzedGames === 0
+                ? "Todavía no tienes partidas analizadas. Analiza una y el coach te dirá qué patrones encuentra."
+                : `Con ${analyzedGames} ${analyzedGames === 1 ? "partida analizada" : "partidas analizadas"} todavía no hay un patrón claro. Analiza más partidas para que el coach pueda compararlas.`}
+            </p>
+            <Link href="/blunders" className="inline-block text-xs font-semibold px-4 py-2 rounded-full border transition-colors hover:bg-muted/50"
+              style={{ borderColor: "var(--bv-electric)", color: "var(--bv-electric)" }}>
+              Ir a Partidas
+            </Link>
+          </div>
         )}
 
         {/* Patrones de comportamiento */}
@@ -104,10 +113,9 @@ export default async function InsightsPage() {
             <div className="divide-y divide-border">
               {rest.map((insight) => {
                 const isPositive = insight.severity === "low";
-                const games = exampleGames[insight.category];
                 const jumpBlunder = insight.category === "tactical" || insight.category === "recurring_blunder";
                 return (
-                  <div key={insight.id} className="px-4 py-3 space-y-2">
+                  <div key={insight.message} className="px-4 py-3 space-y-2">
                     <div className="flex items-start gap-3">
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
                         style={{ background: isPositive ? "oklch(0.77 0.17 177 / 0.12)" : "oklch(0.70 0.18 50 / 0.12)" }}>
@@ -120,9 +128,9 @@ export default async function InsightsPage() {
                         <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{insight.message}</p>
                       </div>
                     </div>
-                    {games.length > 0 && (
+                    {insight.games.length > 0 && (
                       <div className="pl-11">
-                        <GameList games={games} jumpBlunder={jumpBlunder} />
+                        <GameList games={insight.games} jumpBlunder={jumpBlunder} />
                       </div>
                     )}
                   </div>

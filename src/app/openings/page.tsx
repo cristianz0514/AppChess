@@ -113,7 +113,7 @@ export default function OpeningsPage() {
                       <div className="h-full w-full rounded-full transition"
                         style={{ transform: `scaleX(${stats.winrate / 100})`, transformOrigin: "left", background: accent }} />
                     </div>
-                    <p className="text-[10px] text-muted-foreground">{stats.games} partidas · {stats.wins}V {stats.losses}D</p>
+                    <p className="text-[10px] text-muted-foreground">{stats.games} partidas · {stats.wins}V {stats.losses}D {stats.draws}T</p>
                   </div>
                 ))}
               </div>
@@ -155,7 +155,7 @@ export default function OpeningsPage() {
                         href={`/blunders?opening=${encodeURIComponent(o.opening_name)}`}
                         className="block space-y-0.5 hover:opacity-75 transition-opacity">
                         <p className="text-xs font-semibold truncate">{translateOpening(o.opening_name)}</p>
-                        <p className="text-[10px] text-muted-foreground">{o.winrate}% · {o.games_played}p →</p>
+                        <p className="text-[10px] text-muted-foreground">{Math.round(o.winrate)}% · {o.games_played}p →</p>
                       </Link>
                     ))}
                   </div>
@@ -169,7 +169,7 @@ export default function OpeningsPage() {
                         href={`/blunders?opening=${encodeURIComponent(o.opening_name)}`}
                         className="block space-y-0.5 hover:opacity-75 transition-opacity">
                         <p className="text-xs font-semibold truncate">{translateOpening(o.opening_name)}</p>
-                        <p className="text-[10px] text-muted-foreground">{o.winrate}% · {o.games_played}p →</p>
+                        <p className="text-[10px] text-muted-foreground">{Math.round(o.winrate)}% · {o.games_played}p →</p>
                       </Link>
                     ))}
                   </div>
@@ -200,7 +200,7 @@ export default function OpeningsPage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <p className="text-sm font-semibold" style={{ color: o.winrate >= 50 ? "var(--bv-green)" : "var(--bv-red)" }}>
-                            {o.winrate}%
+                            {Math.round(o.winrate)}%
                           </p>
                           <span className="text-base font-bold" style={{ color: trendColor }}>{trend}</span>
                         </div>

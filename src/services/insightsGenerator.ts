@@ -2,29 +2,32 @@ import { Chess } from "chess.js";
 import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
 import { detectMotifs } from "@/lib/tacticalMotifs";
-import { hasModernSchema } from "./dashboardData";
+import { isChampionBattle, isOwnPly, isOwnRow } from "@/lib/ownGames";
+import { getMovesOfGames, getOpeningsByColor, hasModernSchema, hasPlyColumn } from "./dashboardData";
 import type { Insight } from "@/types";
 
 // ─── Clock parsing ────────────────────────────────────────────────────────────
 
 // Returns remaining seconds for each half-move (ply) in the order they appear in PGN.
-// Chess.com encodes: 1. e4 { [%clk 0:10:00] } 1... e5 { [%clk 0:09:58] }
-function parsePgnClocks(pgn: string): number[] {
+// Chess.com encodes: 1. e4 { [%clk 0:10:00] } 1... e5 { [%clk 0:09:58.3] }
+// The seconds carry tenths ("0:03:00.5") on fast games; a pattern that only took whole
+// seconds skipped those entries and shifted every later clock one ply earlier.
+export function parsePgnClocks(pgn: string): number[] {
   const times: number[] = [];
-  const re = /\[%clk\s+(\d+):(\d+):(\d+)\]/g;
+  const re = /\[%clk\s+(\d+):(\d+):(\d+(?:\.\d+)?)\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(pgn)) !== null) {
-    times.push(parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]));
+    times.push(parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]));
   }
   return times;
 }
 
-// Detects a "time collapse": clock was fine (>60s) then fell below 30s, meaning
-// the player was in a scramble during those plies.
-function timePressurePlies(clocks: number[]): Set<number> {
+// The plies at which the PLAYER's own clock was under 30s. The PGN lists both clocks in move
+// order; the rival's low clock says nothing about the player's time.
+export function timePressurePlies(clocks: number[], playedAs: "white" | "black"): Set<number> {
   const pressurePlies = new Set<number>();
   for (let i = 0; i < clocks.length; i++) {
-    if (clocks[i] < 30) pressurePlies.add(i);
+    if (isOwnPly(i, playedAs) && clocks[i] < 30) pressurePlies.add(i);
   }
   return pressurePlies;
 }
@@ -46,21 +49,39 @@ interface BlunderPhases {
   endgame: number;    // moves 26+
 }
 
-interface PlayerSnapshot {
+/** One game and how many times it contributes to a figure (errors, hung pieces, …). */
+export interface GameCount { id: string; count: number }
+
+/** The rows each figure was counted from, so a notice and its related games always agree. */
+export interface GamesBehind {
+  info: Record<string, { opening: string | null; result: "win" | "loss" | "draw" }>;
+  errors: Record<string, number>;               // the player's own errors per game
+  earlyQueen: GameCount[];                      // count = move number of the first queen move
+  lowDevelopment: GameCount[];                  // count = knights/bishops moved in the first 10
+  timePressure: GameCount[];                    // errors made with the own clock under 30s
+  hung: GameCount[];                            // pieces left undefended
+  phase: Record<keyof BlunderPhases, GameCount[]>; // blunders per phase
+  peak: GameCount[];                            // errors inside the peak window
+  severe: GameCount[];                          // moves that gave away more than 3 points
+  openingGames: Record<string, string[]>;       // opening name (as stored) → game ids
+}
+
+export interface PlayerSnapshot {
   totalGames: number;
+  analyzedGames: number;          // games with saved moves: the base of the per-game habits
   winrate: number;
   avgAccuracy: number | null;
 
   // Opening habits
-  topOpenings: { name: string; games: number; winrate: number }[];
-  worstOpenings: { name: string; games: number; winrate: number }[];
+  topOpenings: { name: string; raw: string; games: number; winrate: number }[];
+  worstOpenings: { name: string; raw: string; games: number; winrate: number }[];
   earlyQueenGames: number;        // games with a queen move before move 6
   lowDevelopmentGames: number;    // games with <3 N/B moves in first 10 plies
 
   // Time pressure
   hasClockData: boolean;
-  timePressureGames: number;      // games where clock fell below 30s
-  timePressureBlunders: number;   // blunders that occurred during time pressure
+  timePressureGames: number;      // games where the player's clock fell below 30s
+  timePressureBlunders: number;   // errors that occurred during time pressure
   totalBlundersInTimeGames: number;
 
   // Tactical weaknesses
@@ -75,8 +96,16 @@ interface PlayerSnapshot {
   // verified by board geometry (detectMotifs), NOT an aggregate stat. This is
   // what turns "revisa tus errores" into "colgaste el caballo en f5, el alfil
   // en c4…" — a real, specific, non-generic diagnosis.
-  hungPieces: { piece: string; square: string; opening: string | null; phase: keyof BlunderPhases }[];
+  hungPieces: { piece: string; square: string; opening: string | null; phase: keyof BlunderPhases; gameId: string }[];
+
+  behind: GamesBehind;
 }
+
+const tally = (rows: { game_id: string }[]): GameCount[] => {
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.game_id, (counts.get(r.game_id) ?? 0) + 1);
+  return [...counts].map(([id, count]) => ({ id, count }));
+};
 
 async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   // Fetch game IDs first so we can join cleanly.
@@ -86,33 +115,36 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   // Reuses dashboardData's cache()-memoized probe instead of re-querying —
   // a dashboard load calls both this and getDashboardStats in the same request.
   const orderCol = (await hasModernSchema()) ? "played_at" : "created_at";
-  const { data: gameRows } = await supabase
+  const { data: allGameRows } = await supabase
     .from("games")
-    .select("id, result, accuracy, pgn, played_as, opening")
+    .select("id, result, accuracy, pgn, played_as, opening, chess_game_id")
     .eq("user_id", userId)
     .order(orderCol, { ascending: false, nullsFirst: true }) // matches games_user_played_at_idx (faster)
     .limit(50);
 
-  if (!gameRows || gameRows.length === 0) return null;
+  // Champion battles are not rated games against a real rival: they say nothing about the
+  // player's habits.
+  const gameRows = (allGameRows ?? []).filter((g) => !isChampionBattle(g.chess_game_id));
+  if (gameRows.length === 0) return null;
 
   const gameIds = gameRows.map((g) => g.id);
 
-  const [movesRes, openingsRes] = await Promise.all([
-    supabase
-      .from("moves")
-      .select("game_id, move_number, move, centipawn_loss, classification")
-      .in("game_id", gameIds),
-    supabase
-      .from("opening_stats")
-      .select("opening_name, games_played, wins, losses, draws, winrate")
-      .eq("user_id", userId)
-      .gte("games_played", 2)
-      .order("games_played", { ascending: false })
-      .limit(12),
+  type MoveRow = { game_id: string; ply?: number | null; move_number: number; move: string | null; centipawn_loss: number | null; classification: string | null };
+  const [allMoves, openingsRes] = await Promise.all([
+    // Both sides' moves are saved: everything below is about the player's own, so the rival's
+    // are dropped here (see isOwnRow). A "tus errores" figure must not count the rival's.
+    getMovesOfGames<MoveRow>(
+      gameIds,
+      (await hasPlyColumn()) ? "game_id, ply, move_number, move, centipawn_loss, classification" : "game_id, move_number, move, centipawn_loss, classification",
+    ),
+    // The same figures the Aperturas tab shows (its window of games, not the all-time table
+    // that only this screen read), so a notice and the tab never quote different numbers.
+    getOpeningsByColor(userId, "both"),
   ]);
 
-  const moves = movesRes.data ?? [];
-  const openings = openingsRes.data ?? [];
+  const sideOf = new Map(gameRows.map((g) => [g.id, g.played_as === "black" ? "black" : "white"] as const));
+  const moves = allMoves.filter((m) => isOwnRow(m, sideOf.get(m.game_id) ?? "white"));
+  const openings = openingsRes.slice(0, 12);
 
   // ── General stats ──────────────────────────────────────────────────────────
   const wins = gameRows.filter((g) => g.result === "win").length;
@@ -132,18 +164,16 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     movesByGame.get(m.game_id)!.push(m);
   }
 
-  let earlyQueenGames = 0;
-  let lowDevelopmentGames = 0;
+  const earlyQueen: GameCount[] = [];
+  const lowDevelopment: GameCount[] = [];
 
-  for (const [, gameMoves] of movesByGame) {
-    const early = gameMoves.filter((m) => m.move_number <= 5);
-    if (early.some((m) => m.move !== null && isQueenMove(m.move))) {
-      earlyQueenGames++;
-    }
+  for (const [id, gameMoves] of movesByGame) {
+    const queenMoves = gameMoves.filter((m) => m.move_number <= 5 && m.move !== null && isQueenMove(m.move));
+    if (queenMoves.length > 0) earlyQueen.push({ id, count: Math.min(...queenMoves.map((m) => m.move_number)) });
 
     const first10 = gameMoves.filter((m) => m.move_number <= 10);
     const devCount = first10.filter((m) => m.move !== null && isDevelopmentMove(m.move)).length;
-    if (devCount < 3) lowDevelopmentGames++;
+    if (devCount < 3) lowDevelopment.push({ id, count: devCount });
   }
 
   // ── Tactical weaknesses ───────────────────────────────────────────────────
@@ -151,19 +181,24 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   const blunders = analyzed.filter((m) => m.classification === "blunder");
   const mistakes = analyzed.filter((m) => m.classification === "mistake");
 
+  const inPhase = {
+    opening:    (m: MoveRow) => m.move_number <= 10,
+    middlegame: (m: MoveRow) => m.move_number > 10 && m.move_number <= 25,
+    endgame:    (m: MoveRow) => m.move_number > 25,
+  };
   const blundersByPhase: BlunderPhases = {
-    opening:    blunders.filter((m) => m.move_number <= 10).length,
-    middlegame: blunders.filter((m) => m.move_number > 10 && m.move_number <= 25).length,
-    endgame:    blunders.filter((m) => m.move_number > 25).length,
+    opening:    blunders.filter(inPhase.opening).length,
+    middlegame: blunders.filter(inPhase.middlegame).length,
+    endgame:    blunders.filter(inPhase.endgame).length,
   };
 
-  const severeBlunders = analyzed.filter(
-    (m) => m.centipawn_loss !== null && m.centipawn_loss > 300
-  ).length;
+  const severeMoves = analyzed.filter((m) => m.centipawn_loss !== null && m.centipawn_loss > 300);
+  const severeBlunders = severeMoves.length;
 
   // Find the 8-move window with the most blunders+mistakes.
   const errors = [...blunders, ...mistakes];
   let peakBlunderMoveRange: string | null = null;
+  let peakErrors: MoveRow[] = [];
   if (errors.length >= 3) {
     let bestStart = 1;
     let bestCount = 0;
@@ -178,6 +213,7 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     }
     if (bestCount >= 2) {
       peakBlunderMoveRange = `moves ${bestStart}–${bestStart + 7}`;
+      peakErrors = errors.filter((e) => e.move_number >= bestStart && e.move_number < bestStart + 8);
     }
   }
 
@@ -191,16 +227,15 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     moveNumber <= 10 ? "opening" : moveNumber <= 25 ? "middlegame" : "endgame";
   const hungPieces: PlayerSnapshot["hungPieces"] = [];
   for (const game of gameRows) {
-    if (hungPieces.length >= 8) break;
     if (!game.pgn) continue;
     const playerColor = game.played_as === "white" ? "w" : "b";
-    // Only this game's OWN blunder/mistake moves, keyed by (move_number, SAN).
-    const errs = new Set(
-      (movesByGame.get(game.id) ?? [])
-        .filter((m) => (m.classification === "blunder" || m.classification === "mistake") && m.move)
-        .map((m) => `${m.move_number}:${m.move}`),
-    );
-    if (errs.size === 0) continue;
+    // Only this game's OWN blunder/mistake moves (the rival's were dropped above), by ply
+    // when the row has one, else by (move_number, SAN).
+    const ownErrors = (movesByGame.get(game.id) ?? [])
+      .filter((m) => (m.classification === "blunder" || m.classification === "mistake") && m.move);
+    const errPlies = new Set(ownErrors.filter((m) => m.ply != null).map((m) => m.ply!));
+    const errs = new Set(ownErrors.filter((m) => m.ply == null).map((m) => `${m.move_number}:${m.move}`));
+    if (errPlies.size === 0 && errs.size === 0) continue;
     const chess = new Chess();
     try { chess.loadPgn(game.pgn); } catch { continue; }
     const hist = chess.history({ verbose: true });
@@ -208,7 +243,7 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
       const h = hist[ply];
       if (h.color !== playerColor) continue;
       const moveNumber = Math.floor(ply / 2) + 1;
-      if (!errs.has(`${moveNumber}:${h.san}`)) continue;
+      if (!errPlies.has(ply) && !errs.has(`${moveNumber}:${h.san}`)) continue;
       const selfHang = detectMotifs(h.before, h.san).find((mo) => mo.key === "hangs_own");
       if (selfHang?.pieceName && selfHang.square) {
         hungPieces.push({
@@ -216,8 +251,8 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
           square: selfHang.square,
           opening: game.opening ? translateOpening(game.opening) : null,
           phase: phaseOf(moveNumber),
+          gameId: game.id,
         });
-        if (hungPieces.length >= 8) break;
       }
     }
   }
@@ -227,13 +262,15 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
   let timePressureBlunders = 0;
   let totalBlundersInTimeGames = 0;
   let hasClockData = false;
+  const timePressure: GameCount[] = [];
 
   for (const game of gameRows) {
     const clocks = parsePgnClocks(game.pgn ?? "");
     if (clocks.length === 0) continue;
     hasClockData = true;
 
-    const pressurePlies = timePressurePlies(clocks);
+    const playedAs = game.played_as === "black" ? "black" : "white";
+    const pressurePlies = timePressurePlies(clocks, playedAs);
     const inTimePressure = pressurePlies.size > 0;
 
     if (!inTimePressure) continue;
@@ -245,37 +282,44 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     totalBlundersInTimeGames += gameBlunders.length;
 
     // A move_number maps to ply index: white move N = ply (2N-2), black = ply (2N-1).
-    // We check the ply just before the move to see if the clock was low.
+    // The error was made under pressure if the player's clock was under 30s after it or
+    // before it (their previous move, two plies back).
+    let underPressure = 0;
     for (const m of gameBlunders) {
-      const ply = game.played_as === "white"
-        ? (m.move_number - 1) * 2
-        : (m.move_number - 1) * 2 + 1;
-      if (pressurePlies.has(ply) || pressurePlies.has(ply - 1)) {
-        timePressureBlunders++;
-      }
+      const ply = m.ply ?? (playedAs === "white" ? (m.move_number - 1) * 2 : (m.move_number - 1) * 2 + 1);
+      if (pressurePlies.has(ply) || pressurePlies.has(ply - 2)) underPressure++;
     }
+    timePressureBlunders += underPressure;
+    if (underPressure > 0) timePressure.push({ id: game.id, count: underPressure });
   }
 
   // ── Openings ranking ──────────────────────────────────────────────────────
   const sorted = [...openings].sort((a, b) => b.winrate - a.winrate);
+  const asOpening = (o: (typeof sorted)[number]) => ({
+    name: translateOpening(o.opening_name),
+    raw: o.opening_name,
+    games: o.games_played,
+    winrate: o.winrate,
+  });
+
+  const openingGames: Record<string, string[]> = {};
+  for (const g of gameRows) {
+    if (!g.opening) continue;
+    (openingGames[g.opening] ??= []).push(g.id);
+  }
+
+  const ownErrorRows = moves.filter((m) => m.classification === "blunder" || m.classification === "mistake");
 
   return {
     totalGames: gameRows.length,
+    analyzedGames: movesByGame.size,
     winrate: Math.round((wins / gameRows.length) * 100),
     avgAccuracy,
 
-    topOpenings: sorted.slice(0, 3).map((o) => ({
-      name: translateOpening(o.opening_name),
-      games: o.games_played,
-      winrate: o.winrate,
-    })),
-    worstOpenings: sorted.slice(-3).reverse().map((o) => ({
-      name: translateOpening(o.opening_name),
-      games: o.games_played,
-      winrate: o.winrate,
-    })),
-    earlyQueenGames,
-    lowDevelopmentGames,
+    topOpenings: sorted.slice(0, 3).map(asOpening),
+    worstOpenings: sorted.slice(-3).reverse().map(asOpening),
+    earlyQueenGames: earlyQueen.length,
+    lowDevelopmentGames: lowDevelopment.length,
 
     hasClockData,
     timePressureGames,
@@ -288,6 +332,23 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
     totalMistakes: mistakes.length,
     peakBlunderMoveRange,
     hungPieces,
+
+    behind: {
+      info: Object.fromEntries(gameRows.map((g) => [g.id, { opening: g.opening ?? null, result: g.result as "win" | "loss" | "draw" }])),
+      errors: Object.fromEntries(tally(ownErrorRows).map((c) => [c.id, c.count])),
+      earlyQueen,
+      lowDevelopment,
+      timePressure,
+      hung: tally(hungPieces.map((h) => ({ game_id: h.gameId }))),
+      phase: {
+        opening: tally(blunders.filter(inPhase.opening)),
+        middlegame: tally(blunders.filter(inPhase.middlegame)),
+        endgame: tally(blunders.filter(inPhase.endgame)),
+      },
+      peak: tally(peakErrors),
+      severe: tally(severeMoves),
+      openingGames,
+    },
   };
 }
 
@@ -304,9 +365,26 @@ interface Fact extends GeneratedInsight {
   weight: number; // higher = more prominent; used to pick and order the top few
 }
 
-function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
   const facts: Fact[] = [];
   const phaseEs = { opening: "la apertura", middlegame: "el medio juego", endgame: "el final" } as const;
+
+  // The games a notice comes from, with what each one contributes. Built from the same rows the
+  // figure was counted from. `order`: biggest contribution first, or earliest first.
+  const related = (list: GameCount[], detail: (n: number) => string, order: "most" | "least" = "most"): RelatedGame[] =>
+    [...list]
+      .filter((g) => s.behind.info[g.id])
+      .sort((a, b) => (order === "most" ? b.count - a.count : a.count - b.count))
+      .slice(0, 5)
+      .map((g) => ({
+        id: g.id,
+        opening: s.behind.info[g.id].opening ?? "Desconocida",
+        result: s.behind.info[g.id].result,
+        detail: detail(g.count),
+      }));
+  const errorsDetail = (n: number) => plural(n, "error", "errores");
 
   // 1. Time pressure — the clearest behavioral pattern when clock data exists.
   if (s.hasClockData && s.totalBlundersInTimeGames >= 3) {
@@ -316,6 +394,7 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
         category: "time_management",
         message: `El ${share}% de tus errores (${s.timePressureBlunders} de ${s.totalBlundersInTimeGames}) llegan con menos de 30s en el reloj. Juega la apertura más rápido para guardar tiempo.`,
         severity: share >= 50 ? "high" : "medium",
+        games: related(s.behind.timePressure, (n) => plural(n, "error con poco tiempo", "errores con poco tiempo")),
         weight: 100 + share,
       });
     }
@@ -357,7 +436,11 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
       const examples = uniqueExamples.slice(0, 3).join(", ");
       message = `Colgaste una pieza sin defensa en ${n} jugadas: ${examples}${uniqueExamples.length > 3 ? ", entre otras" : ""}.${phaseHint} Antes de mover, revisa si tu pieza queda defendida.`;
     }
-    facts.push({ category: "recurring_blunder", message, severity: n >= 6 ? "high" : "medium", weight: 95 + n });
+    facts.push({
+      category: "recurring_blunder", message, severity: n >= 6 ? "high" : "medium",
+      games: related(s.behind.hung, (k) => plural(k, "pieza colgada", "piezas colgadas")),
+      weight: 95 + n,
+    });
   }
 
   // 2. Peak error window — where in the game your mistakes cluster.
@@ -367,6 +450,7 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
       category: "tactical",
       message: `Tu zona de mayor error es ${range}: es donde más se te escapan las partidas. Revísalas con calma.`,
       severity: "medium",
+      games: related(s.behind.peak, (n) => `${plural(n, "error", "errores")} en esa zona`),
       weight: 70,
     });
   }
@@ -379,6 +463,7 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
       category: "recurring_blunder",
       message: `${topPhase[1]} de tus errores graves ocurren en ${phaseEs[topPhase[0]]}. Es tu fase más floja.`,
       severity: "medium",
+      games: related(s.behind.phase[topPhase[0]], (n) => plural(n, "error grave", "errores graves")),
       weight: 60 + topPhase[1],
     });
   }
@@ -388,28 +473,31 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
   if (worst) {
     facts.push({
       category: "opening",
-      message: `Con ${worst.name} solo ganas ${worst.winrate}% (${worst.games} partidas) — es tu apertura más floja. Estúdiala o cámbiala.`,
+      message: `Con ${worst.name} solo ganas ${Math.round(worst.winrate)}% (${worst.games} partidas) — es tu apertura más floja. Estúdiala o cámbiala.`,
       severity: worst.winrate < 30 ? "high" : "medium",
+      games: related((s.behind.openingGames[worst.raw] ?? []).map((id) => ({ id, count: s.behind.errors[id] ?? 0 })), errorsDetail),
       weight: 65 + (45 - worst.winrate),
     });
   }
 
   // 5. Early-queen habit.
-  if (s.earlyQueenGames >= Math.max(4, s.totalGames * 0.15)) {
+  if (s.earlyQueenGames >= Math.max(4, s.analyzedGames * 0.15)) {
     facts.push({
       category: "opening",
       message: `Sacas la dama antes de la jugada 6 en ${s.earlyQueenGames} partidas: la expones a ataques que te hacen perder tiempo.`,
       severity: "low",
+      games: related(s.behind.earlyQueen, (n) => `dama en la jugada ${n}`, "least"),
       weight: 40 + s.earlyQueenGames,
     });
   }
 
   // 6. Passive development.
-  if (s.lowDevelopmentGames >= Math.max(4, s.totalGames * 0.2)) {
+  if (s.lowDevelopmentGames >= Math.max(4, s.analyzedGames * 0.2)) {
     facts.push({
       category: "opening",
       message: `En ${s.lowDevelopmentGames} partidas desarrollaste menos de 3 piezas en las primeras 10 jugadas. Prioriza sacar caballos y alfiles.`,
       severity: "low",
+      games: related(s.behind.lowDevelopment, (n) => `${plural(n, "pieza desarrollada", "piezas desarrolladas")} en 10 jugadas`, "least"),
       weight: 38 + s.lowDevelopmentGames,
     });
   }
@@ -420,6 +508,7 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
       category: "tactical",
       message: `${s.severeBlunders} veces regalaste más de 3 puntos de ventaja en una sola jugada. Antes de mover, revisa capturas y jaques del rival.`,
       severity: s.severeBlunders >= 10 ? "high" : "medium",
+      games: related(s.behind.severe, (n) => `${plural(n, "jugada", "jugadas")} de más de 3 puntos`),
       weight: 50 + s.severeBlunders,
     });
   }
@@ -439,6 +528,7 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
     category: f.category,
     message: f.message,
     severity: f.severity,
+    games: f.games,
   }));
 }
 
@@ -449,7 +539,7 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
 // matters more than any single sentence. It was also the only thing in the project
 // that could not run without a server, since an API key cannot live in the client.
 //
-// Nothing is lost in substance. computeFacts() below produces the verified
+// Nothing is lost in substance. computeFacts() produces the verified
 // sentence; deepening only reworded it, and already fell back to that same
 // sentence whenever the key was missing or the call failed — so this is the path
 // that was already running in every failure case.
@@ -460,37 +550,29 @@ function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-interface GeneratedInsight {
+/** A game behind a notice, with what it contributes ("2 errores con poco tiempo"). */
+export interface RelatedGame {
+  id: string;
+  opening: string;
+  result: "win" | "loss" | "draw";
+  detail: string;
+}
+
+export interface GeneratedInsight {
   category: Insight["category"];
   message: string;
   severity: Insight["severity"];
+  games: RelatedGame[];
 }
 
-export async function generateInsights(userId: string): Promise<void> {
+/**
+ * The coach's notices, computed from the player's games AT THE MOMENT of the request.
+ * They used to be stored in a table by a "Generar" button, so the page showed whatever was
+ * saved the last time someone pressed it — stale after every new analysis — and nothing
+ * regenerated them on its own.
+ */
+export async function getCoachInsights(userId: string): Promise<{ insights: GeneratedInsight[]; analyzedGames: number }> {
   const snapshot = await buildSnapshot(userId);
-  if (!snapshot) return;
-
-  // Computed directly from the player's data: deterministic, and every figure in
-  // the sentence came from their own games (see computeFacts).
-  const insights = computeFacts(snapshot);
-  if (insights.length === 0) return;
-
-  await supabase.from("insights").delete().eq("user_id", userId);
-  await supabase.from("insights").insert(
-    insights.map((ins) => ({
-      user_id: userId,
-      category: ins.category,
-      message: ins.message,
-      severity: ins.severity,
-    }))
-  );
-}
-
-export async function getInsights(userId: string): Promise<Insight[]> {
-  const { data } = await supabase
-    .from("insights")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  return data ?? [];
+  if (!snapshot) return { insights: [], analyzedGames: 0 };
+  return { insights: computeFacts(snapshot), analyzedGames: snapshot.analyzedGames };
 }

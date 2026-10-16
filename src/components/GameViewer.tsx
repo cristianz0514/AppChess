@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart2, Sear
 import { play as playSound, isMuted, subscribeMuted, toggleMuted } from "@/lib/sound";
 import { estimateElo } from "@/lib/eloEstimate";
 import { isBookPosition } from "@/lib/openingBook";
+import { isOwnPly } from "@/lib/ownGames";
 import { verifiedLine } from "@/lib/mainLine";
 import type { Game } from "@/types";
 
@@ -333,6 +334,8 @@ interface Props {
   playedAs: "white" | "black";
   dbMoves: DbMove[];
   jumpToBlunder?: boolean;
+  /** Open on this exact half-move (0 = White's first), e.g. from the error trainer. */
+  jumpToPly?: number;
   gameResult?: Game["result"];
   opening?: string;
   accuracy?: number | null;
@@ -344,12 +347,19 @@ interface Props {
   autoStory?: boolean;
 }
 
-export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, gameResult, accuracy, avgAccuracy, myRating, theirRating }: Props) {
+export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, jumpToPly, gameResult, accuracy, avgAccuracy, myRating, theirRating }: Props) {
   const moves = useMemo(() => buildMoves(pgn, dbMoves), [pgn, dbMoves]);
 
-  const firstBlunderIdx = jumpToBlunder
-    ? moves.findIndex((m) => m.classification === "blunder")
-    : -1;
+  // "Go to the blunder" lands on the first error the PLAYER made (a blunder, else a mistake):
+  // the rival's moves are classified too, and a link that says "your error" must not open on
+  // theirs. An exact half-move (from the error trainer) wins over both.
+  const firstOwn = (cls: string) => moves.findIndex((m, i) => m.classification === cls && isOwnPly(i, playedAs));
+  const exactIdx = jumpToPly != null && jumpToPly >= 0 && jumpToPly < moves.length ? jumpToPly : -1;
+  const firstBlunderIdx = exactIdx >= 0
+    ? exactIdx
+    : jumpToBlunder
+      ? (firstOwn("blunder") >= 0 ? firstOwn("blunder") : firstOwn("mistake"))
+      : -1;
 
   const [idx, setIdx] = useState(firstBlunderIdx >= 0 ? firstBlunderIdx : moves.length - 1);
   // The coach line was clamped to 2 lines forever so the board never shifts

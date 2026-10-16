@@ -222,7 +222,7 @@ function ExerciseView({
           </div>
         )}
 
-        <Link href={`/blunders/${ex.gameId}?blunder=1`}
+        <Link href={`/blunders/${ex.gameId}?ply=${ex.ply}`}
           className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
           Ver esta partida completa <ExternalLink size={12} />
         </Link>

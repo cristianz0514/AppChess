@@ -1,7 +1,8 @@
 import { Chess } from "chess.js";
 import { supabase } from "@/lib/supabase";
 import { translateOpening } from "@/lib/translateOpening";
-import { hasModernSchema } from "./dashboardData";
+import { isChampionBattle } from "@/lib/ownGames";
+import { getMovesOfGames, hasModernSchema, hasPlyColumn } from "./dashboardData";
 
 // "Entrena tus errores" — turns the player's OWN blunder/mistake positions
 // into replayable exercises: the board at the position right before the bad
@@ -13,6 +14,7 @@ import { hasModernSchema } from "./dashboardData";
 export interface ErrorExercise {
   id: string;              // stable key (gameId:ply) — used for localStorage progress
   gameId: string;
+  ply: number;             // 0-based half-move of the mistake: opens the game right there
   fen: string;             // position BEFORE the mistake — the player is to move
   playedSan: string;       // the move they actually played (the mistake)
   orientation: "white" | "black";
@@ -21,9 +23,6 @@ export interface ErrorExercise {
   result: "win" | "loss" | "draw";
   centipawnLoss: number;
 }
-
-// Champion-battle games aren't real rated games — skip them as exercise sources.
-const isChampionBattle = (chessGameId: string | null) => chessGameId?.startsWith("campeones-") ?? false;
 
 export async function getErrorExercises(userId: string, limit = 12): Promise<ErrorExercise[]> {
   const orderCol = (await hasModernSchema()) ? "played_at" : "created_at";
@@ -41,21 +40,25 @@ export async function getErrorExercises(userId: string, limit = 12): Promise<Err
   const gameIds = games.map((g) => g.id);
   if (gameIds.length === 0) return [];
 
-  const { data: moveRows } = await supabase
-    .from("moves")
-    .select("game_id, move_number, move, classification, centipawn_loss")
-    .in("game_id", gameIds)
-    .in("classification", ["blunder", "mistake"]);
+  // Champion battles are not rated games, so they are not exercise sources.
+  // Every game's errors are read (the table also holds the rival's moves and answers at most
+  // 1000 rows per request — see getMovesOfGames).
+  const moveRows = await getMovesOfGames<{ game_id: string; ply?: number | null; move_number: number; move: string | null; centipawn_loss: number | null }>(
+    gameIds,
+    (await hasPlyColumn()) ? "game_id, ply, move_number, move, centipawn_loss" : "game_id, move_number, move, centipawn_loss",
+    { classes: ["blunder", "mistake"] },
+  );
 
-  if (!moveRows || moveRows.length === 0) return [];
+  if (moveRows.length === 0) return [];
 
-  // Group blunders per game, keyed by move_number+SAN (unambiguous enough with
-  // the player-color check below), carrying the centipawn loss for ranking.
+  // Group errors per game, keyed by ply when the row has one (exact: the rival can play the
+  // same SAN in the same move number), else by move_number+SAN, carrying the centipawn loss
+  // for ranking.
   const blundersByGame = new Map<string, Map<string, number>>();
   for (const m of moveRows) {
     if (!m.move) continue;
     if (!blundersByGame.has(m.game_id)) blundersByGame.set(m.game_id, new Map());
-    blundersByGame.get(m.game_id)!.set(`${m.move_number}:${m.move}`, m.centipawn_loss ?? 0);
+    blundersByGame.get(m.game_id)!.set(m.ply != null ? `ply:${m.ply}` : `${m.move_number}:${m.move}`, m.centipawn_loss ?? 0);
   }
 
   const exercises: ErrorExercise[] = [];
@@ -71,11 +74,12 @@ export async function getErrorExercises(userId: string, limit = 12): Promise<Err
       const h = hist[ply];
       if (h.color !== playerColor) continue;
       const moveNumber = Math.floor(ply / 2) + 1;
-      const cpl = blunders.get(`${moveNumber}:${h.san}`);
+      const cpl = blunders.get(`ply:${ply}`) ?? blunders.get(`${moveNumber}:${h.san}`);
       if (cpl === undefined) continue;
       exercises.push({
         id: `${gameId}:${ply}`,
         gameId,
+        ply,
         fen: h.before,
         playedSan: h.san,
         orientation: game.played_as === "white" ? "white" : "black",

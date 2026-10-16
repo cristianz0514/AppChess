@@ -12,12 +12,12 @@ import type { Game } from "@/types";
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ blunder?: string; story?: string; coach?: string; reanalyze?: string }>;
+  searchParams: Promise<{ blunder?: string; ply?: string; story?: string; coach?: string; reanalyze?: string }>;
 }
 
 export default async function GameDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const { blunder, story, coach, reanalyze } = await searchParams;
+  const { blunder, ply, story, coach, reanalyze } = await searchParams;
   await getUsername();
 
   const { data: game } = await supabase
@@ -128,6 +128,7 @@ export default async function GameDetailPage({ params, searchParams }: Props) {
             playedAs={game.played_as as "white" | "black"}
             dbMoves={dbMoves}
             jumpToBlunder={blunder === "1"}
+            jumpToPly={ply != null && /^[0-9]{1,4}$/.test(ply) ? Number(ply) : undefined}
             gameResult={game.result as Game["result"]}
             opening={translateOpening(game.opening)}
             accuracy={game.accuracy}

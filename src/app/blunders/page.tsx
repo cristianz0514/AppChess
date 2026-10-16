@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
 import { getUserId, getRecentGames, getGamesByOpening } from "@/services/dashboardData";
 import { translateOpening } from "@/lib/translateOpening";
+import { isChampionBattle } from "@/lib/ownGames";
 
 function resultBadge(result: string) {
   if (result === "win")  return { label: "V", bg: "oklch(0.77 0.17 177 / 0.18)", color: "var(--bv-green)" };
@@ -44,15 +45,6 @@ function groupByDay(games: GameRow[], now: Date): { key: string; label: string; 
     grp.games.push(g);
   }
   return groups;
-}
-
-// Champion-battle games (Nacimiento de un Campeón) get inserted with a
-// synthetic "campeones-..." chess_game_id instead of a real chess.com one
-// (see api/champions/analyze) — that's the only marker distinguishing them
-// from real imported games, since they share the same `games` table so the
-// existing analysis viewer (/blunders/{id}) works for both.
-function isChampionBattle(chessGameId: string | null): boolean {
-  return chessGameId?.startsWith("campeones-") ?? false;
 }
 
 export const metadata = { title: "Partidas" };

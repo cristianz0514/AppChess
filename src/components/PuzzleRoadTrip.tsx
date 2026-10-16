@@ -9,7 +9,7 @@ interface Props {
   worlds: RoadTripWorld[];
 }
 
-// Abstract coordinate system for the winding path â€” an SVG viewBox and the
+// Abstract coordinate system for the winding path — an SVG viewBox and the
 // HTML node overlay share these units, so the same path shape scales to any
 // screen width and to any NUMBER of puzzles (no fixed background artwork).
 const ROW = 130;
@@ -59,7 +59,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
       toast("Completa el ejercicio anterior para desbloquear este");
       return;
     }
-    // A real navigation, not a bottom sheet â€” the puzzle opens as its own
+    // A real navigation, not a bottom sheet — the puzzle opens as its own
     // full page (matches how /blunders/[id] works) and progress is re-read
     // fresh from the server every time this road trip page is revisited.
     router.push(`/practica-mate/${node.id}`);
@@ -70,7 +70,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
 
   return (
     <div className="relative">
-      {/* Progress summary now lives in the page's fixed header (chip + %) â€”
+      {/* Progress summary now lives in the page's fixed header (chip + %) —
           just the thin bar stays here as a visual anchor under it. */}
       <div className="h-1.5 rounded-full overflow-hidden mb-6" style={{ background: "var(--border)" }}>
         <div className="h-full w-full rounded-full transition duration-500"
@@ -79,7 +79,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
 
       {worlds.map((world) => (
         <div key={world.mateIn} className="mb-6">
-          {/* World banner â€” frosted glass card */}
+          {/* World banner — frosted glass card */}
           <div className="mx-auto max-w-[300px] rounded-3xl p-6 text-center border mb-2"
             style={{
               background: "rgba(255,255,255,0.95)", backdropFilter: "blur(10px)",
@@ -132,7 +132,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
                 <div key={node.id} className="absolute flex flex-col items-center gap-2"
                   style={{
                     left: `${x}%`, top: `${y}px`,
-                    // Staggered pop-in as the path reveals itself â€” this page is
+                    // Staggered pop-in as the path reveals itself — this page is
                     // seen occasionally (not dozens of times a day like the
                     // dashboard), so a bit of delight here doesn't get old.
                     // Capped stagger so a 50-node world still settles quickly.
@@ -143,7 +143,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
                     <div className="absolute -top-11 flex flex-col items-center" style={{ animation: "puzzleBob 1.6s ease-in-out infinite" }}>
                       <div className="px-3.5 py-1.5 rounded-xl text-[10px] font-bold text-white whitespace-nowrap shadow-lg"
                         style={{ background: "var(--foreground)" }}>
-                        AquÃ­ vas
+                        Aquí vas
                       </div>
                       {/* Speech-bubble tail pointing down at the node */}
                       <div style={{
@@ -193,7 +193,7 @@ export function PuzzleRoadTrip({ worlds: initialWorlds }: Props) {
                       backdropFilter: "blur(4px)",
                       color: isPersonal ? "#1BAAA6" : "var(--muted-foreground)",
                     }}>
-                    {node.state === "locked" ? "â€”" : isPersonal ? "De tu partida" : `Ej. ${i + 1}`}
+                    {node.state === "locked" ? "—" : isPersonal ? "De tu partida" : `Ej. ${i + 1}`}
                   </span>
                 </div>
               );

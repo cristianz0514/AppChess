@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { supabase } from "@/lib/supabase";
+import { isChampionBattle, isOwnRow } from "@/lib/ownGames";
 import type { DashboardStats, OpeningStat, Game } from "@/types";
 
 export const getUserId = cache(async function(username: string): Promise<string | null> {
@@ -19,13 +20,56 @@ export const hasModernSchema = cache(async function(): Promise<boolean> {
   return !error;
 });
 
+// Whether `moves.ply` exists (migration 006). It is what tells the player's moves from the
+// rival's; without it every row is counted as before rather than failing the whole query.
+export const hasPlyColumn = cache(async function(): Promise<boolean> {
+  const { error } = await supabase.from("moves").select("ply").limit(1);
+  return !error;
+});
+
+// Reads move rows of many games. PostgREST answers at most 1000 rows per request and a long
+// `in (...)` list overflows the URL, so a single query over dozens of games silently returned
+// only the first thousand moves (a handful of games) and every total built on it was short.
+// Games go in chunks, each chunk paged in a stable order, so the rows are all of them.
+const MOVES_PAGE = 1000;
+const GAMES_PER_REQUEST = 100;
+
+export async function getMovesOfGames<T>(
+  gameIds: readonly string[],
+  columns: string,
+  where: { classes?: readonly string[]; moveNumber?: number } = {},
+): Promise<T[]> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < gameIds.length; i += GAMES_PER_REQUEST) chunks.push(gameIds.slice(i, i + GAMES_PER_REQUEST));
+
+  const readChunk = async (ids: string[]): Promise<T[]> => {
+    const out: T[] = [];
+    for (let from = 0; ; from += MOVES_PAGE) {
+      let q = supabase.from("moves").select(columns).in("game_id", ids);
+      if (where.classes) q = q.in("classification", [...where.classes]);
+      if (where.moveNumber != null) q = q.eq("move_number", where.moveNumber);
+      const { data } = await q.order("id").range(from, from + MOVES_PAGE - 1);
+      const rows = (data ?? []) as unknown as T[];
+      out.push(...rows);
+      if (rows.length < MOVES_PAGE) break;
+    }
+    return out;
+  };
+
+  return (await Promise.all(chunks.map(readChunk))).flat();
+}
+
 // Order games by real play date when available, else by import time.
 async function gameOrderCol(): Promise<"played_at" | "created_at"> {
   return (await hasModernSchema()) ? "played_at" : "created_at";
 }
 
 // Whether a chosen class actually filters (undefined/"all" → mixed, all games).
-const filtersClass = (tc?: string) => !!tc && tc !== "all" && tc !== "unknown";
+const filtersClass = (tc?: string) => !!tc && tc !== "all";
+
+// "unknown" is the chip for games with no usable time class: stored as null (imported before the
+// column existed) or as the literal "unknown". Picking it has to show exactly those games, not all.
+const UNKNOWN_CLASS = "time_class.is.null,time_class.eq.unknown";
 
 // ── Shared bounded window ────────────────────────────────────────────────────
 // The dashboard (and Aperturas) scope to the user's most recent 1000 games.
@@ -55,10 +99,14 @@ export interface GameWindowRow {
   chess_game_id: string | null;
 }
 
+// Champion battles are left out unless asked for: they have no rating, no time class and
+// no chess.com opponent, so they would skew the rating, win-rate and opening figures (and
+// sort first, because their played_at is empty). Only the games list shows them.
 export const getGameWindow = cache(async function(
   userId: string,
   timeClass?: string,
   limit = DASHBOARD_WINDOW,
+  includeChampions = false,
 ): Promise<GameWindowRow[]> {
   const modern = await hasModernSchema();
   const base = "id, opening, result, accuracy, played_as, white_rating, black_rating, time_control, created_at, chess_game_id";
@@ -66,7 +114,7 @@ export const getGameWindow = cache(async function(
     .from("games")
     .select(modern ? `${base}, time_class, ended_by_abandonment, played_at` : base)
     .eq("user_id", userId);
-  if (filtersClass(timeClass)) q = q.eq("time_class", timeClass!);
+  if (modern && filtersClass(timeClass)) q = timeClass === "unknown" ? q.or(UNKNOWN_CLASS) : q.eq("time_class", timeClass!);
   // NULLS FIRST matches the games_user_played_at_idx index (created as `desc`,
   // Postgres' default is nulls-first) — NULLS LAST forces a full sort instead
   // of an index scan and was ~3-4x slower on a large account (measured).
@@ -74,35 +122,46 @@ export const getGameWindow = cache(async function(
     .order(modern ? "played_at" : "created_at", { ascending: false, nullsFirst: true })
     .limit(limit);
 
-  return ((data ?? []) as unknown as Partial<GameWindowRow>[]).map((g) => ({
-    id: g.id!,
-    opening: g.opening ?? null,
-    result: g.result as "win" | "loss" | "draw",
-    accuracy: g.accuracy ?? null,
-    played_as: g.played_as as "white" | "black",
-    white_rating: g.white_rating ?? 0,
-    black_rating: g.black_rating ?? 0,
-    time_control: g.time_control ?? "",
-    time_class: g.time_class ?? null,
-    ended_by_abandonment: g.ended_by_abandonment ?? false,
-    played_at: g.played_at ?? null,
-    chess_game_id: g.chess_game_id ?? null,
-    created_at: g.created_at!,
-  }));
+  return ((data ?? []) as unknown as Partial<GameWindowRow>[])
+    .filter((g) => includeChampions || !isChampionBattle(g.chess_game_id))
+    .map((g) => ({
+      id: g.id!,
+      opening: g.opening ?? null,
+      result: g.result as "win" | "loss" | "draw",
+      accuracy: g.accuracy ?? null,
+      played_as: g.played_as as "white" | "black",
+      white_rating: g.white_rating ?? 0,
+      black_rating: g.black_rating ?? 0,
+      time_control: g.time_control ?? "",
+      time_class: g.time_class ?? null,
+      ended_by_abandonment: g.ended_by_abandonment ?? false,
+      played_at: g.played_at ?? null,
+      chess_game_id: g.chess_game_id ?? null,
+      created_at: g.created_at!,
+    }));
 });
 
-// Distinct time controls the player has games in, with counts (most-played
-// first). Scoped to the same last-1000 window as the rest of the dashboard.
+// The time controls the player has games in, with how many each one shows (most-played first).
+// A chip's number is what its page shows: the player's games of that class, up to the last 1000
+// that every dashboard figure is computed over. It used to count the classes inside the last
+// 1000 games OF ANY CLASS, so a chip said 988 while its own page, which reads the last 1000 of
+// that class, said 1000.
 export const getTimeClasses = cache(async function(userId: string): Promise<{ time_class: string; count: number }[]> {
   if (!(await hasModernSchema())) return []; // column absent → no separation yet
-  const rows = await getGameWindow(userId, undefined, DASHBOARD_WINDOW);
-  const counts = new Map<string, number>();
-  for (const g of rows) {
-    const tc = g.time_class ?? "unknown";
-    counts.set(tc, (counts.get(tc) ?? 0) + 1);
+  const named = new Set<string>(["blitz", "rapid", "bullet", "daily"]);
+  for (const g of await getGameWindow(userId, undefined, DASHBOARD_WINDOW)) {
+    if (g.time_class && g.time_class !== "unknown") named.add(g.time_class);
   }
-  return [...counts.entries()]
-    .map(([time_class, count]) => ({ time_class, count }))
+  const countOf = async (tc: string) => {
+    let q = supabase.from("games").select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .not("chess_game_id", "like", "campeones-%");
+    q = tc === "unknown" ? q.or(UNKNOWN_CLASS) : q.eq("time_class", tc);
+    const { count } = await q;
+    return { time_class: tc, count: Math.min(count ?? 0, DASHBOARD_WINDOW) };
+  };
+  return (await Promise.all([...named, "unknown"].map(countOf)))
+    .filter((c) => c.count > 0)
     .sort((a, b) => b.count - a.count);
 });
 
@@ -216,81 +275,6 @@ export interface RecentGame {
   chess_game_id: string | null;
 }
 
-export interface ExampleGame {
-  id: string;
-  opening: string;
-  result: "win" | "loss" | "draw";
-  errorCount: number;
-}
-
-export interface ExampleGamesMap {
-  tactical:          ExampleGame[];
-  time_management:   ExampleGame[];
-  opening:           ExampleGame[];
-  recurring_blunder: ExampleGame[];
-}
-
-// Returns up to 5 representative games per insight category.
-export async function getExampleGames(userId: string): Promise<ExampleGamesMap> {
-  const empty = (): ExampleGame[] => [];
-  const emptyMap = (): ExampleGamesMap => ({
-    tactical: empty(), time_management: empty(), opening: empty(), recurring_blunder: empty(),
-  });
-
-  const { data: games } = await supabase
-    .from("games")
-    .select("id, opening, result")
-    .eq("user_id", userId)
-    .order("played_at", { ascending: false, nullsFirst: true })
-    .limit(200);
-
-  if (!games || games.length === 0) return emptyMap();
-
-  const ids = games.map((g) => g.id);
-  const gameInfo = new Map(games.map((g) => [g.id, { opening: g.opening ?? "Desconocido", result: g.result as "win" | "loss" | "draw" }]));
-
-  // Fetch all error moves with phase info so we can build distinct lists per category.
-  const { data: errorMoves } = await supabase
-    .from("moves")
-    .select("game_id, move_number, classification")
-    .in("game_id", ids)
-    .in("classification", ["blunder", "mistake"]);
-
-  // Tally errors per game by phase / severity.
-  const tacticalCount  = new Map<string, number>(); // blunders only (severe tactical lapses)
-  const recurringCount = new Map<string, number>(); // all errors (blunders + mistakes)
-  const openingCount   = new Map<string, number>(); // errors in the opening (move ≤ 10)
-  const lateCount      = new Map<string, number>(); // errors in the endgame (move > 25), proxy for time scrambles
-
-  const bump = (map: Map<string, number>, id: string) => map.set(id, (map.get(id) ?? 0) + 1);
-
-  for (const row of errorMoves ?? []) {
-    recurringCount.set(row.game_id, (recurringCount.get(row.game_id) ?? 0) + 1);
-    if (row.classification === "blunder") bump(tacticalCount, row.game_id);
-    if (row.move_number <= 10) bump(openingCount, row.game_id);
-    if (row.move_number > 25)  bump(lateCount, row.game_id);
-  }
-
-  function topGames(countMap: Map<string, number>, limit = 5): ExampleGame[] {
-    return [...countMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([id, count]) => ({
-        id,
-        opening: gameInfo.get(id)?.opening ?? "Desconocido",
-        result: gameInfo.get(id)?.result ?? "draw",
-        errorCount: count,
-      }));
-  }
-
-  return {
-    tactical:          topGames(tacticalCount),
-    recurring_blunder: topGames(recurringCount),
-    opening:           topGames(openingCount),
-    time_management:   topGames(lateCount),
-  };
-}
-
 export interface HighlightGame {
   id: string;
   opening: string;
@@ -316,14 +300,17 @@ export const getHighlightGames = cache(async function(userId: string, timeClass?
 
   const ids = games.map((g) => g.id);
 
-  const { data: moveRows } = await supabase
-    .from("moves")
-    .select("game_id")
-    .in("game_id", ids)
-    .in("classification", ["blunder", "mistake"]);
+  const moveRows = await getMovesOfGames<{ game_id: string; ply?: number | null }>(
+    ids,
+    (await hasPlyColumn()) ? "game_id, ply" : "game_id",
+    { classes: ["blunder", "mistake"] },
+  );
 
+  // Only the player's own errors: the table also holds the rival's moves.
+  const side = new Map(games.map((g) => [g.id, g.played_as]));
   const errorCount = new Map<string, number>();
-  for (const row of moveRows ?? []) {
+  for (const row of moveRows) {
+    if (!isOwnRow(row, side.get(row.game_id) ?? "white")) continue;
     errorCount.set(row.game_id, (errorCount.get(row.game_id) ?? 0) + 1);
   }
 
@@ -431,12 +418,11 @@ export async function getUnanalyzedGameIds(userId: string, limit = 50): Promise<
   if (!games || games.length === 0) return [];
   const allIds = games.map((g) => g.id);
 
-  const { data: analyzedRows } = await supabase
-    .from("moves")
-    .select("game_id")
-    .in("game_id", allIds);
+  // Every analysed game has a row for its first move: asking for just those keeps the answer
+  // to a couple of rows per game instead of every move of every game.
+  const analyzedRows = await getMovesOfGames<{ game_id: string }>(allIds, "game_id", { moveNumber: 1 });
 
-  const analyzed = new Set((analyzedRows ?? []).map((r) => r.game_id));
+  const analyzed = new Set(analyzedRows.map((r) => r.game_id));
   return allIds.filter((id) => !analyzed.has(id));
 }
 
@@ -546,7 +532,7 @@ export const getEloHistory = cache(async function(userId: string, timeClass?: st
 });
 
 export async function getRecentGames(userId: string, limit = 20, timeClass?: string): Promise<RecentGame[]> {
-  const rows = await getGameWindow(userId, timeClass, limit);
+  const rows = await getGameWindow(userId, timeClass, limit, true);
   return rows.map((g) => ({
     id: g.id,
     opening: g.opening ?? "Desconocida",

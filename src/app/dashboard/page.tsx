@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getUserId, getDashboardStats, getHighlightGames, getEloHistory, getResultStats, getTimeClasses, pickDefaultClass } from "@/services/dashboardData";
+import { DASHBOARD_WINDOW, getUserId, getDashboardStats, getHighlightGames, getEloHistory, getResultStats, getTimeClasses, pickDefaultClass } from "@/services/dashboardData";
 import { TimeClassSelector } from "@/components/TimeClassSelector";
 import { EloEvolutionChart } from "@/components/charts/EloEvolutionChart";
 import { translateOpening } from "@/lib/translateOpening";
@@ -40,6 +40,10 @@ export default async function DashboardPage({ searchParams }: Props) {
     getEloHistory(userId, activeTc),
     getResultStats(userId, activeTc),
   ]);
+
+  // Every figure below is computed over at most the last DASHBOARD_WINDOW games: say so when the
+  // player has more, instead of presenting the cap as if it were their whole history.
+  const gamesText = (n: number) => (n >= DASHBOARD_WINDOW ? `últimas ${n} partidas` : `${n} partidas`);
 
   return (
     <AppLayout username={username}>
@@ -96,7 +100,7 @@ export default async function DashboardPage({ searchParams }: Props) {
             <p className="font-deco text-4xl leading-none" style={{ color: "var(--bv-green)" }}>
               {stats.currentRating ?? "—"}
             </p>
-            <p className="text-xs text-muted-foreground">{stats.totalGames} partidas</p>
+            <p className="text-xs text-muted-foreground">{gamesText(stats.totalGames)}</p>
           </div>
 
           <div className="deco-step-sm bg-card border border-border p-4 space-y-1">
@@ -117,7 +121,7 @@ export default async function DashboardPage({ searchParams }: Props) {
 
         {/* ── ELO Evolution ── */}
         <div className="pt-2">
-          <EloEvolutionChart history={eloHistory} />
+          <EloEvolutionChart history={eloHistory} label={gamesText(eloHistory.length)} />
         </div>
 
       </div>

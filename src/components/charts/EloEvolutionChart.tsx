@@ -14,9 +14,11 @@ import type { EloPoint } from "@/services/dashboardData";
 
 interface Props {
   history: EloPoint[];
+  /** What the games count is called, e.g. "últimas 1000 partidas" when the window is capped. */
+  label?: string;
 }
 
-export function EloEvolutionChart({ history }: Props) {
+export function EloEvolutionChart({ history, label }: Props) {
   if (history.length < 2) return null;
 
   const elos = history.map((p) => p.elo);
@@ -39,7 +41,7 @@ export function EloEvolutionChart({ history }: Props) {
             Evolución de ELO
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {history.length} partidas
+            {label ?? `${history.length} partidas`}
           </p>
         </div>
         <div className="text-right">
