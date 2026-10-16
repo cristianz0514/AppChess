@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getUsername } from "@/lib/getUsername";
-import { getUserId } from "@/services/dashboardData";
+import { DASHBOARD_WINDOW, getUserId } from "@/services/dashboardData";
 import { getCoachInsights } from "@/services/insightsGenerator";
+import { AnalyzeAllButton } from "@/components/AnalyzeAllButton";
 import type { RelatedGame } from "@/services/insightsGenerator";
 import { Sparkles, TrendingUp, AlertTriangle } from "lucide-react";
 import { translateOpening } from "@/lib/translateOpening";
@@ -51,7 +52,7 @@ export default async function InsightsPage() {
   const userId    = await getUserId(username);
   if (!userId) return null;
 
-  const { insights, analyzedGames } = await getCoachInsights(userId);
+  const { insights, analyzedGames, totalGames } = await getCoachInsights(userId);
 
   const featured = insights.find((i) => i.severity === "high") ?? insights[0] ?? null;
   const rest      = insights.filter((i) => i !== featured);
@@ -67,7 +68,8 @@ export default async function InsightsPage() {
           <h1 className="font-deco text-2xl mt-0.5">Hola, <span className="capitalize">{username}</span>.</h1>
           {insights.length > 0 && (
             <p className="text-sm text-muted-foreground mt-1">
-              Basado en tus últimas {analyzedGames} partidas analizadas. Esto es lo que encontré.
+              Errores y hábitos: {analyzedGames} de tus últimas {totalGames} partidas están analizadas.
+              Resultados por apertura: tus últimas {DASHBOARD_WINDOW}.
             </p>
           )}
         </div>
@@ -94,13 +96,9 @@ export default async function InsightsPage() {
             <Sparkles size={16} className="mx-auto" style={{ color: "var(--bv-purple)" }} />
             <p className="text-sm text-muted-foreground leading-relaxed">
               {analyzedGames === 0
-                ? "Todavía no tienes partidas analizadas. Analiza una y el coach te dirá qué patrones encuentra."
-                : `Con ${analyzedGames} ${analyzedGames === 1 ? "partida analizada" : "partidas analizadas"} todavía no hay un patrón claro. Analiza más partidas para que el coach pueda compararlas.`}
+                ? "Todavía no tienes partidas analizadas. Analízalas abajo y el coach te dirá qué patrones encuentra."
+                : `Con ${analyzedGames} de tus últimas ${totalGames} partidas analizadas todavía no hay un patrón claro. Analiza las demás para que el coach pueda compararlas.`}
             </p>
-            <Link href="/blunders" className="inline-block text-xs font-semibold px-4 py-2 rounded-full border transition-colors hover:bg-muted/50"
-              style={{ borderColor: "var(--bv-electric)", color: "var(--bv-electric)" }}>
-              Ir a Partidas
-            </Link>
           </div>
         )}
 
@@ -140,12 +138,9 @@ export default async function InsightsPage() {
           </div>
         )}
 
-        {/* CTA */}
-        <div className="rounded-2xl p-5 text-center space-y-2"
-          style={{ background: "oklch(0.34 0.10 264 / 0.15)", border: "1px solid oklch(0.34 0.10 264 / 0.25)" }}>
-          <p className="text-sm font-bold">La maestría es un camino.</p>
-          <p className="text-xs text-muted-foreground">Sigue analizando tus partidas para descubrir patrones más profundos.</p>
-        </div>
+        {/* The coach only knows the games that were analysed: this is how the rest get analysed
+            (and how old ones get the improved comments). It had no entrance anywhere. */}
+        <AnalyzeAllButton username={username} />
 
       </div>
     </AppLayout>

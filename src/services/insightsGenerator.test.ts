@@ -32,6 +32,7 @@ const snapshot = (over: Partial<PlayerSnapshot> = {}): PlayerSnapshot => ({
       g2: { opening: "Italian Game", result: "win" },
       g3: { opening: "Sicilian Defense", result: "loss" },
     },
+    analyzed: ["g1", "g2", "g3"],
     errors: { g1: 3, g2: 0, g3: 1 },
     earlyQueen: [], lowDevelopment: [], timePressure: [], hung: [],
     phase: { opening: [], middlegame: [], endgame: [] },
@@ -55,14 +56,23 @@ describe("the related games of a notice", () => {
     ]);
   });
 
-  it("for the weakest opening are the games played with it, with their own errors", () => {
+  it("for the weakest opening are the games played with it, lost ones first, with their own errors", () => {
     const s = snapshot({
       worstOpenings: [{ name: "Defensa Siciliana", raw: "Sicilian Defense", games: 4, winrate: 25 }],
-      behind: { ...snapshot().behind, openingGames: { "Sicilian Defense": ["g3", "g1"] } },
+      behind: { ...snapshot().behind, openingGames: { "Sicilian Defense": ["g2", "g3", "g1"] } },
     });
     const [fact] = computeFacts(s);
     expect(fact.category).toBe("opening");
-    expect(fact.games.map((g) => [g.id, g.detail])).toEqual([["g1", "3 errores"], ["g3", "1 error"]]);
+    // g2 was won, so it goes after the two lost games, which keep their order.
+    expect(fact.games.map((g) => [g.id, g.detail])).toEqual([["g3", "1 error"], ["g1", "3 errores"], ["g2", "0 errores"]]);
+  });
+
+  it("says a game was not analysed instead of claiming it had no errors", () => {
+    const s = snapshot({
+      worstOpenings: [{ name: "Defensa Siciliana", raw: "Sicilian Defense", games: 4, winrate: 25 }],
+      behind: { ...snapshot().behind, analyzed: ["g1"], openingGames: { "Sicilian Defense": ["g3", "g1"] } },
+    });
+    expect(computeFacts(s)[0].games.map((g) => [g.id, g.detail])).toEqual([["g3", "sin analizar"], ["g1", "3 errores"]]);
   });
 
   it("never lists a game that is not in the snapshot", () => {

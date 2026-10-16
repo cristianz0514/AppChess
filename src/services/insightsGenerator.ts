@@ -55,6 +55,7 @@ export interface GameCount { id: string; count: number }
 /** The rows each figure was counted from, so a notice and its related games always agree. */
 export interface GamesBehind {
   info: Record<string, { opening: string | null; result: "win" | "loss" | "draw" }>;
+  analyzed: string[];                           // games that have saved moves (the rest have no error count)
   errors: Record<string, number>;               // the player's own errors per game
   earlyQueen: GameCount[];                      // count = move number of the first queen move
   lowDevelopment: GameCount[];                  // count = knights/bishops moved in the first 10
@@ -335,6 +336,7 @@ async function buildSnapshot(userId: string): Promise<PlayerSnapshot | null> {
 
     behind: {
       info: Object.fromEntries(gameRows.map((g) => [g.id, { opening: g.opening ?? null, result: g.result as "win" | "loss" | "draw" }])),
+      analyzed: [...movesByGame.keys()],
       errors: Object.fromEntries(tally(ownErrorRows).map((c) => [c.id, c.count])),
       earlyQueen,
       lowDevelopment,
@@ -475,7 +477,18 @@ export function computeFacts(s: PlayerSnapshot): GeneratedInsight[] {
       category: "opening",
       message: `Con ${worst.name} solo ganas ${Math.round(worst.winrate)}% (${worst.games} partidas) — es tu apertura más floja. Estúdiala o cámbiala.`,
       severity: worst.winrate < 30 ? "high" : "medium",
-      games: related((s.behind.openingGames[worst.raw] ?? []).map((id) => ({ id, count: s.behind.errors[id] ?? 0 })), errorsDetail),
+      // The games played with it, the lost ones first. A game that was never analysed has no
+      // error count, so it says so instead of "0 errores".
+      games: (s.behind.openingGames[worst.raw] ?? [])
+        .filter((id) => s.behind.info[id])
+        .map((id): RelatedGame => ({
+          id,
+          opening: s.behind.info[id].opening ?? "Desconocida",
+          result: s.behind.info[id].result,
+          detail: s.behind.analyzed.includes(id) ? errorsDetail(s.behind.errors[id] ?? 0) : "sin analizar",
+        }))
+        .sort((a, b) => Number(b.result === "loss") - Number(a.result === "loss"))
+        .slice(0, 5),
       weight: 65 + (45 - worst.winrate),
     });
   }
@@ -571,8 +584,8 @@ export interface GeneratedInsight {
  * saved the last time someone pressed it — stale after every new analysis — and nothing
  * regenerated them on its own.
  */
-export async function getCoachInsights(userId: string): Promise<{ insights: GeneratedInsight[]; analyzedGames: number }> {
+export async function getCoachInsights(userId: string): Promise<{ insights: GeneratedInsight[]; analyzedGames: number; totalGames: number }> {
   const snapshot = await buildSnapshot(userId);
-  if (!snapshot) return { insights: [], analyzedGames: 0 };
-  return { insights: computeFacts(snapshot), analyzedGames: snapshot.analyzedGames };
+  if (!snapshot) return { insights: [], analyzedGames: 0, totalGames: 0 };
+  return { insights: computeFacts(snapshot), analyzedGames: snapshot.analyzedGames, totalGames: snapshot.totalGames };
 }
