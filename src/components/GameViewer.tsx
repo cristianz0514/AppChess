@@ -600,8 +600,14 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, jumpToPly, g
     }
     return out;
   }, [moves]);
+  // A finished game (mate, stalemate) has no move to recommend. Asking the server anyway answered
+  // 404 on every game that ended in mate, and the console showed it as an error.
+  const currentIsOver = useMemo(() => {
+    try { return new Chess(currentFen).isGameOver(); } catch { return false; }
+  }, [currentFen]);
   useEffect(() => {
     if (inExplore) return;
+    if (currentIsOver) return;
     if (autoBest[idx] !== undefined) return;
     // Already answered by the analysis itself — don't ask a second, different
     // engine the same question.
@@ -622,7 +628,7 @@ export function GameViewer({ pgn, playedAs, dbMoves, jumpToBlunder, jumpToPly, g
       })
       .catch(() => { if (!cancelled) setAutoBest((prev) => ({ ...prev, [idx]: null })); });
     return () => { cancelled = true; };
-  }, [idx, inExplore, currentFen, autoBest, storedBest]);
+  }, [idx, inExplore, currentFen, currentIsOver, autoBest, storedBest]);
 
   // Tapping the best-move readout plays it out on the board (Lichess-style
   // preview) instead of only pointing an arrow at it — the position itself
